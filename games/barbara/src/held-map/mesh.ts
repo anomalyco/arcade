@@ -7,10 +7,12 @@ export const VERTEX_FLOATS = 12
 
 export const MAT = {
   paper: 0, acrylic: 1, bezelTop: 2, floor: 3, glass: 4, needle: 5, metal: 6, glove: 7, torch: 8, lens: 9, cord: 10,
-  sleeve: 11, bubble: 12, bezelSide: 13, plateEdge: 14, jewel: 15,
+  sleeve: 11, bubble: 12, bezelSide: 13, plateEdge: 14, jewel: 15, dial: 16, hand: 17,
 } as const
 
-export const OBJ = { sheet: 0, compass: 1, bezel: 2, needle: 3, bubble: 4, left: 5, right: 6 } as const
+/** Objects with their own transform; the watch's hands turn on the left wrist (`watchFrame`). */
+export const OBJ = { sheet: 0, compass: 1, bezel: 2, needle: 3, bubble: 4, left: 5, right: 6, hour: 7, minute: 8 } as const
+export const OBJ_COUNT = 9
 
 export type V3 = [number, number, number]
 

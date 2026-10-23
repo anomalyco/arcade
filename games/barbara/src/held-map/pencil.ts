@@ -1,3 +1,4 @@
+import type { Clue, ClueKind, NightLayout } from "../../shared/night"
 import type { MapKnowledge, WoodsState } from "../../shared/sim"
 import type { WoodsWorld } from "../../shared/world"
 import type { Rect } from "./mips"
@@ -7,7 +8,8 @@ import { rng, SHEET, worldToSheet } from "./sheet"
  * The pencil layer: what this player's map knows, drawn as graphite on a persistent canvas, appended to as it grows.
  * Your own path is a soft HB line with a slight wobble; paths copied from friends are in blue pencil in a looser,
  * dashed hand; tapes are fluorescent pink crayon crosses (the flagging tape's colour); found markers a circled
- * triangle with the number; a hand-lettered note in the top margin. The alpha is graphite coverage (the shader adds the
+ * triangle with the number; the night's clues in red pencil with their bearings ruled out; a hand-lettered note in the
+ * top margin. The alpha is graphite coverage (the shader adds the
  * paper's tooth and a dull metallic sheen). It never marks where you are.
  */
 
@@ -20,6 +22,9 @@ const HAND = "Noteworthy, 'Bradley Hand', 'Segoe Print', 'Comic Sans MS', cursiv
 const OWN: Omit<Style, "seed"> = { color: "40,40,46", width: 0.75, alpha: 0.95, wobble: 0.28 }
 const HEARD: Omit<Style, "seed"> = { color: "38,70,150", width: 0.6, alpha: 0.85, wobble: 0.45, dash: [2.4, 1.3] }
 const TAPE = "230,40,135"
+/** Clues and their bearings go on in red pencil, so they stand off the graphite. */
+const CLUE_RED = "176,34,30"
+const CLUE_WORDS: Record<ClueKind, string> = { car: "her car (unlocked!)", page: "diary page", badge: "ID badge (creek)", cassette: "tape recorder", strip: "one strip (Walt's knot?)" }
 
 const hash = (a: number, b: number) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s) }
 
@@ -32,6 +37,9 @@ export class PencilLayer {
   private heard = new Map<number, Drawn>()
   private tapes = new Set<number>()
   private markers = new Set<number>()
+  private clues = new Set<number>()
+  /** The night the clue marks belong to (a new night clears the sheet). */
+  private seed = NaN
   private dirty: [number, number, number, number] | null = null
 
   constructor(longSide: number) {
@@ -43,8 +51,8 @@ export class PencilLayer {
 
   /** Draws what this map learned since the last call. Returns the changed area in canvas pixels, or null. */
   update(world: WoodsWorld, m: MapKnowledge, state: WoodsState): Rect | null {
-    const shrank = m.trail.length / 2 < this.own.count || m.heard.some((h) => { const d = this.heard.get(h.from); return !!d && (h.trail.length / 2 < d.count || d.serial !== h.serial) }) || [...this.heard.keys()].some((k) => !m.heard.some((h) => h.from === k)) || [...this.tapes].some((t) => !m.tapes.includes(t)) || [...this.markers].some((t) => !m.markers.includes(t))
-    if (world !== this.world || shrank) this.reset(world)
+    const shrank = m.trail.length / 2 < this.own.count || m.heard.some((h) => { const d = this.heard.get(h.from); return !!d && (h.trail.length / 2 < d.count || d.serial !== h.serial) }) || [...this.heard.keys()].some((k) => !m.heard.some((h) => h.from === k)) || [...this.tapes].some((t) => !m.tapes.includes(t)) || [...this.markers].some((t) => !m.markers.includes(t)) || [...this.clues].some((t) => !m.clues.includes(t)) || state.night.seed !== this.seed
+    if (world !== this.world || shrank) { this.reset(world); this.seed = state.night.seed }
     this.dirty = null
     const g = this.g
     g.setTransform(this.k, 0, 0, this.k, 0, 0)
@@ -80,6 +88,13 @@ export class PencilLayer {
       g.save(); g.translate(x + 4.2, y + 0.4); g.rotate(-0.08); g.fillText(`#${id}`, 0, 0); g.restore()
       this.grow(x - 4, y - 4, x + 14, y + 4)
     }
+    for (const id of m.clues) {
+      if (this.clues.has(id)) continue
+      const c = state.night.layout.clues.find((k) => k.id === id)
+      if (!c) continue
+      this.clues.add(id)
+      this.clue(world, c, state.night.layout)
+    }
     const d = this.dirty
     if (!d) return null
     const x0 = Math.max(0, Math.floor(d[0] * this.k)), y0 = Math.max(0, Math.floor(d[1] * this.k))
@@ -90,7 +105,7 @@ export class PencilLayer {
   private reset(world: WoodsWorld) {
     this.world = world
     this.own = { count: 0, along: 0, last: null }
-    this.heard.clear(); this.tapes.clear(); this.markers.clear()
+    this.heard.clear(); this.tapes.clear(); this.markers.clear(); this.clues.clear()
     const g = this.g
     g.setTransform(1, 0, 0, 1, 0, 0)
     g.clearRect(0, 0, this.canvas.width, this.canvas.height)
@@ -100,6 +115,45 @@ export class PencilLayer {
     g.font = `4.2px ${HAND}`; g.textAlign = "left"; g.textBaseline = "alphabetic"
     g.save(); g.translate(SHEET.map.x + 118, 19.5); g.rotate(-0.025); g.fillText("Cabin 3 — night course, stay on the ridge", 0, 0); g.restore()
     this.dirty = [0, 0, SHEET.w, SHEET.h]
+  }
+
+  /** A clue in red pencil: a ringed cross, its name, and the bearing it gives drawn out as a dashed ruled line. */
+  private clue(world: WoodsWorld, c: Clue, layout: NightLayout) {
+    const g = this.g
+    const [x, y] = worldToSheet(world, c.x, c.z)
+    const style = { color: CLUE_RED, width: 0.5, alpha: 0.92, wobble: 0.08 }
+    for (const s of [1, -1]) this.line([[x - 1.5, y - 1.5 * s], [x + 1.5, y + 1.5 * s]], { ...style, seed: c.id * 5 + s })
+    const ring: Pt[] = []
+    for (let i = 0; i <= 26; i++) { const a = (i / 24) * Math.PI * 2 + 0.6; ring.push([x + Math.cos(a) * (2.8 + i * 0.015), y + Math.sin(a) * 2.6]) }
+    this.line(ring, { ...style, width: 0.38, seed: c.id * 11 })
+    g.fillStyle = `rgba(${CLUE_RED},0.9)`
+    g.font = `3.6px ${HAND}`
+    g.textBaseline = "middle"; g.textAlign = "left"
+    g.save(); g.translate(x + 3.8, y - 2.6); g.rotate(-0.06); g.fillText(CLUE_WORDS[c.kind], 0, 0); g.restore()
+    this.grow(x - 4, y - 6, x + 26, y + 4)
+    const mm = SHEET.map.size / (world.params.half * 2)
+    for (const l of c.leads) {
+      const place = l.ridge ? layout.ridge : null
+      // A bearing ruled out past where the next clue should be; the tape's lead goes all the way to the place.
+      const len = place ? Math.hypot(place.x - l.x, place.z - l.z) - 6 : c.kind === "car" ? 125 : 150
+      const a: Pt = [x + l.dx * 4, y + l.dz * 4], b: Pt = [x + l.dx * len * mm, y + l.dz * len * mm]
+      g.setLineDash([1.8, 1.2])
+      g.strokeStyle = `rgba(${CLUE_RED},0.7)`
+      g.lineWidth = 0.32
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke()
+      g.setLineDash([])
+      // An arrowhead at the far end.
+      const px = -l.dz, pz = l.dx
+      this.line([[b[0] - l.dx * 2.2 + px * 1.2, b[1] - l.dz * 2.2 + pz * 1.2], b, [b[0] - l.dx * 2.2 - px * 1.2, b[1] - l.dz * 2.2 - pz * 1.2]], { ...style, width: 0.4, seed: c.id * 17 + l.to })
+      if (place) {
+        // Her words, under the place's printed name.
+        const [qx, qy] = worldToSheet(world, place.x, place.z)
+        this.line([[qx - 9, qy + 3.2], [qx + 9, qy + 3.4]], { ...style, width: 0.4, seed: 91 })
+        g.save(); g.translate(qx - 8, qy + 6.4); g.rotate(-0.04); g.fillText("she was going up here (red light)", 0, 0); g.restore()
+        this.grow(qx - 12, qy, qx + 50, qy + 9)
+      }
+      this.grow(Math.min(a[0], b[0]) - 3, Math.min(a[1], b[1]) - 3, Math.max(a[0], b[0]) + 3, Math.max(a[1], b[1]) + 3)
+    }
   }
 
   private grow(x0: number, y0: number, x1: number, y1: number) {

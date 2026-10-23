@@ -1,15 +1,15 @@
 import { type Activity, type IdleState, RoomCore } from "@arcade/kit/net/room-core"
 import { BUILD } from "../shared/build.gen"
 import {
-  decodeClient, encodeServer, GRACE_MS, intentOps, MAX_PLAYERS, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
+  decodeClient, encodeServer, GRACE_MS, intentOps, MAX_PLAYERS, nightWire, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
   type ClientMsg, type Hello, type MapDelta, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot,
 } from "../shared/protocol"
 import { addHuman, createWoods, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import { makeWorld, type WoodsWorld } from "../shared/world"
 
 /** What a seat has already been sent, so a snapshot carries only what changed (the socket is reliable and ordered). */
-type Sent = { found: number; names: string; trail: number; tapes: Set<number>; markers: number; heard: Map<number, { serial: number; len: number }> }
-const fresh = (): Sent => ({ found: -1, names: "", trail: 0, tapes: new Set(), markers: -1, heard: new Map() })
+type Sent = { found: number; names: string; trail: number; tapes: Set<number>; markers: number; clues: number; heard: Map<number, { serial: number; len: number }>; seed: number; night: number }
+const fresh = (seed = NaN): Sent => ({ found: -1, names: "", trail: 0, tapes: new Set(), markers: -1, clues: -1, heard: new Map(), seed, night: -1 })
 
 const HOLD_TICKS = 9
 
@@ -24,6 +24,7 @@ function mapDelta(m: MapKnowledge, sent: Sent, reset: boolean): MapDelta | null 
   if (gone.length) d.gone = gone
   sent.tapes = known
   if (m.markers.length !== sent.markers) { sent.markers = m.markers.length; d.markers = m.markers.slice() }
+  if (m.clues.length !== sent.clues) { sent.clues = m.clues.length; d.clues = m.clues.slice() }
   const heard: NonNullable<MapDelta["heard"]> = []
   for (const h of m.heard) {
     const was = sent.heard.get(h.from)
@@ -37,7 +38,7 @@ function mapDelta(m: MapKnowledge, sent: Sent, reset: boolean): MapDelta | null 
   for (const from of unheard) sent.heard.delete(from)
   if (heard.length) d.heard = heard
   if (unheard.length) d.unheard = unheard
-  return reset || d.trail.length || d.tapes || d.gone || d.markers || d.heard || d.unheard ? d : null
+  return reset || d.trail.length || d.tapes || d.gone || d.markers || d.clues || d.heard || d.unheard ? d : null
 }
 
 /** Room seed from its code, so each room's bots and flicker differ while the forest stays the printed one. */
@@ -53,7 +54,11 @@ function codeSeed(code: string): number {
  */
 export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, WoodsEvent, PlayerRow[], ServerMsg> {
   readonly world: WoodsWorld
-  readonly state: WoodsState
+  /** The night being played; `again` replaces it with the next once one has ended. */
+  state: WoodsState
+  /** Nights this room has played (the next night's seed). */
+  private nights = 0
+  private readonly seed: number
   private readonly pids = new Map<string, number>()
   private readonly names = new Map<number, string>()
   private readonly away = new Set<number>()
@@ -69,7 +74,8 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   constructor(code: string, clock: () => number = Date.now, world: WoodsWorld = makeWorld(), build = BUILD) {
     super({ code, build, title: "Woods", maxPlayers: MAX_PLAYERS, snapEvery: SNAP_EVERY, inputs: intentOps, clock, graceMs: GRACE_MS, idleKickMs: 20 * 60_000, idleWarnMs: 30_000 })
     this.world = world
-    this.state = createWoods(world, TEAM, codeSeed(code), [])
+    this.seed = codeSeed(code)
+    this.state = createWoods(world, TEAM, this.seed, [])
   }
 
   /** People holding a seat, connected or within their grace window. */
@@ -133,7 +139,18 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     a.aim = intent.yaw
     return moved
   }
+  /** The next night: a new layout from the room's seed, everyone back at camp with fresh torches and clean maps. */
+  private again() {
+    const n = this.state.night
+    if (n.phase !== "won" && n.phase !== "lost") return
+    this.nights++
+    this.state = createWoods(this.world, 0, (this.seed + Math.imul(this.nights, 7919)) >>> 0, [])
+    for (const [, pid] of [...this.pids].sort((a, b) => a[1] - b[1])) addHuman(this.state, this.world, pid, this.names.get(pid) ?? `Hiker ${pid}`)
+    this.fillBots()
+    this.last.clear()
+  }
   protected handle(id: string, msg: ClientMsg) {
+    if (msg.type === "again") { if (this.pids.has(id)) this.again(); return }
     const pid = this.pids.get(id), p = this.state.players.find((q) => q.id === pid)
     if (msg.type !== "name" || pid === undefined || !p) return
     this.names.set(pid, msg.name)
@@ -167,18 +184,21 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   /** Without `ents` (a join or a reconnect) the snapshot carries everything again. */
   protected snapshot(id: string, ents?: PlayerRow[]): ServerMsg {
     const pid = this.pids.get(id) ?? -1
-    if (!ents) { this.sent.set(id, fresh()); this.away.delete(pid) }
-    const sent = this.sent.get(id) ?? fresh()
-    this.sent.set(id, sent)
-    const s = this.state, me = s.players.find((p) => p.id === pid)
+    const s = this.state
+    // A join, a reconnect or a new night sends everything again.
+    const reset = !ents || this.sent.get(id)?.seed !== s.night.seed
+    if (reset) { this.sent.set(id, fresh(s.night.seed)); this.away.delete(pid) }
+    const sent = this.sent.get(id)!
+    const me = s.players.find((p) => p.id === pid)
     const snap: Snapshot = { type: "s", t: Math.round(s.t * 1000) / 1000, ack: this.acks.get(pid) ?? -1, me: pid, p: ents ?? this.entities() }
     if (me) snap.you = [me.x, me.z, me.vx, me.vz, me.mapRaise].map((v) => Math.round(v * 1e5) / 1e5)
     const names = s.players.map((p) => `${p.id}:${p.name}`).join("|")
     if (names !== sent.names) { sent.names = names; snap.names = Object.fromEntries(s.players.map((p) => [p.id, p.name])) }
     if (s.rev.found !== sent.found) { sent.found = s.rev.found; snap.found = s.found }
-    if (!ents) { snap.tapes = s.tapes.map(tapeRow); snap.distant = { ...s.distant, rng: { ...s.distant.rng }, recent: [...s.distant.recent] } }
+    if (reset) { snap.tapes = s.tapes.map(tapeRow); snap.distant = { ...s.distant, rng: { ...s.distant.rng }, recent: [...s.distant.recent] } }
+    if (s.night.rev !== sent.night) { sent.night = s.night.rev; snap.night = nightWire(s.night) }
     if (me) {
-      const map = mapDelta(me.map, sent, !ents)
+      const map = mapDelta(me.map, sent, reset)
       if (map) snap.map = map
     }
     this.bytes.set(id, (this.bytes.get(id) ?? 0) + JSON.stringify(snap).length)

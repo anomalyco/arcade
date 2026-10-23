@@ -24,6 +24,10 @@
       #subs div { transition: opacity 0.5s; text-align: center; }
       #subs b { font-weight: 600; color: #f2c96b; margin-right: 0.4em; }
       #subs .far { font-style: italic; color: #cfc7b2; }
+      /* The search's next step in plain words (NIGHT.md): small, top left, never a timer. */
+      #goal { position: fixed; top: 38px; left: 14px; max-width: min(30em, 60vw); pointer-events: none; font: italic 14px/1.4 Georgia, serif; color: #efe6cc; text-shadow: 0 1px 4px #000, 0 0 10px #000; opacity: 0; transition: opacity 0.8s; z-index: 4; }
+      #goal.on { opacity: 0.9; }
+      #goal b { display: block; font: 600 10px system-ui, sans-serif; letter-spacing: 0.25em; color: #f2c96b; font-style: normal; margin-bottom: 2px; }
       #room { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 12px; text-align: right; line-height: 1.6; opacity: 0.7; text-shadow: 0 1px 3px #000; }
       #room .away { opacity: 0.45; }
       #tuning { position: fixed; left: 50%; top: 46px; transform: translateX(-50%); pointer-events: none; font-size: 13px; color: #efe6cc; text-shadow: 0 1px 4px #000; z-index: 4; }
@@ -43,6 +47,7 @@
     <div id="toast"></div>
     <div id="objective" aria-live="polite"><div class="kicker"></div><div class="rule"></div><div class="task"></div></div>
     <div id="subs" aria-live="polite"></div>
+    <div id="goal" aria-live="polite"><b>FIND BARBARA</b><span></span></div>
     <div id="room"></div>
     <div id="tuning" hidden></div>
     <script type="module" src="/src/main.ts"></script>

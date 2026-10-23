@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test"
 import { VOICE_LINES } from "../shared/lines.gen"
 import { BOT_ID, createWoods, FEEL, stepWoods, type PlayerInput, type WoodsState } from "../shared/sim"
-import { CAST, createVoices, openingLines, stepVoices, voiceRoles, type VoiceEvent, type Walker } from "../shared/voices"
+import { CAST, createVoices, lineOf as findLine, openingLines, stepVoices, voiceRoles, type VoiceEvent, type Walker } from "../shared/voices"
 import { makeWorld } from "../shared/world"
 
 const world = makeWorld()
 const walk = (t: number): PlayerInput => ({ yaw: t * 0.05, pitch: 0, light: true, tie: false, map: false, mx: 0.3 * Math.sin(t * 0.03), mz: -0.6, sprint: false })
-const lineOf = (id: string) => VOICE_LINES.find((l) => l.id === id)!
+const lineOf = (id: string) => findLine(id)!
+/** The night's key moments: a clue's reaction, dawn, the cassette, the extra searcher (NIGHT.md). */
+const NIGHT_KEYS = ["car", "page", "badge", "cassette", "strip", "dawn", "daylight", "tape-tower", "extra"]
 
 function run(seconds: number, feel = FEEL, humans = [{ id: 0, name: "You" }]): { state: WoodsState; lines: VoiceEvent[] } {
   const state = createWoods(world, 3, world.params.seed, humans)
@@ -55,9 +57,9 @@ test("sparse: one voice at a time, a few lines a minute at most, long silences",
 
 test("chatter 0 leaves only key moments, and people's own searchers only speak at key moments", () => {
   const quiet = run(600, { ...FEEL, chatter: 0 }).lines.map((l) => lineOf(l.line).pool)
-  for (const pool of quiet) expect(["clue", "coming", "sighting", "sightreply"]).toContain(pool)
+  for (const pool of quiet) expect(["clue", "coming", "sighting", "sightreply", ...NIGHT_KEYS]).toContain(pool)
   const { lines } = run(900)
-  for (const l of lines.filter((l) => l.by === 0)) expect(["clue", "sighting", "sightreply"]).toContain(lineOf(l.line).pool)
+  for (const l of lines.filter((l) => l.by === 0)) expect(["clue", "sighting", "sightreply", ...NIGHT_KEYS]).toContain(lineOf(l.line).pool)
 })
 
 test("a find: the finder says so and another searcher answers; with player barks off, a person's find is silent", () => {
@@ -70,12 +72,12 @@ test("a find: the finder says so and another searcher answers; with player barks
     const out: VoiceEvent[] = []
     for (let i = 0; i < 300; i++) {
       const t = 50 + i / 30
-      out.push(...stepVoices(vs, world, walkers, i === 0 ? [{ kind: "marker-found", by, x: 0, z: 0 }] : [], t, 1 / 30, { chatter: 0, voicePeople }, BOT_ID))
+      out.push(...stepVoices(vs, world, walkers, i === 0 ? [{ kind: "clue-found", by, x: 0, z: 0, what: "badge" }] : [], t, 1 / 30, { chatter: 0, voicePeople }, BOT_ID))
     }
     return out.map((e) => `${e.cast}:${lineOf(e.line).pool}`)
   }
-  expect(say(BOT_ID, 1)[0]).toBe("walt:clue")
-  expect(say(0, 1)[0]).toBe("owen:clue")
+  expect(say(BOT_ID, 1)[0]).toBe("walt:badge")
+  expect(say(0, 1)[0]).toBe("owen:badge")
   expect(say(0, 1)[1]).toBe("walt:coming")
   expect(say(0, 0)).toEqual([])
 })

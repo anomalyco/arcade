@@ -11,6 +11,7 @@ import { createGameShell, createShellQuality } from "@arcade/kit/shell"
 import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { answerCall, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
 import { VOICE_LINES } from "../shared/lines.gen"
+import { CLUE_NAMES, dawnShare, leadText, nextStep } from "../shared/night"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
 import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
@@ -23,6 +24,8 @@ import { FriendsView } from "./friends-view"
 import { HeldMap, heldMapControls } from "./held-map"
 import { PaperMap } from "./map"
 import { OnlineSession, SoloSession, type Session } from "./session"
+import { NightHud } from "./night-hud"
+import { DawnSky, nightTapes, NightView } from "./night-view"
 import { StoryHud } from "./story"
 import { WorldView } from "./world-view"
 import { createLakeEditor } from "@arcade/kit/water/lake-editor"
@@ -42,6 +45,10 @@ const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", 
 const OWN = 0
 const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG"])
+/** Solo nights played in this browser: the next night's layout (`?night=` replays one). */
+const NIGHT_KEY = "barbara.night"
+/** A solo night's seed from its number (rooms seed theirs from the room code the same way). */
+const nightSeed = (base: number, night: number) => (base + Math.imul(night, 7919)) >>> 0
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -54,7 +61,7 @@ async function main() {
   const audio = new WoodsAudio()
   const story = new StoryHud(audio)
   // Filled in once they exist; the shell reads them from its first frame.
-  const live: { panel: LabPanel | null; session: Session | null; qualityChanged: () => void; editing: () => boolean } = { panel: null, session: null, qualityChanged: () => {}, editing: () => false }
+  const live: { panel: LabPanel | null; session: Session | null; qualityChanged: () => void; editing: () => boolean; endCard: () => boolean } = { panel: null, session: null, qualityChanged: () => {}, editing: () => false, endCard: () => false }
   // Auto starts at High and steps down on slow frames only (frame time alone: the renderer's GPU reading counts CPU
   // encoding and queue waits, which demoted capable GPUs). Saved per game; `?quality=` pins a mode for automation.
   const quality = createShellQuality({ game: "barbara", tiers: FOREST_QUALITY, params, onChange: () => live.qualityChanged() })
@@ -65,7 +72,7 @@ async function main() {
     channels: ["master", "effects", "ambience", "voice"], quality,
     sections: [{ id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] }],
     // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
-    pointerLock: canvas, blocked: () => (live.panel?.visible ?? false) || live.editing(), keysBlocked: () => live.panel?.hasFocus() ?? false,
+    pointerLock: canvas, blocked: () => (live.panel?.visible ?? false) || live.editing() || live.endCard(), keysBlocked: () => live.panel?.hasFocus() ?? false,
     loading: smoke ? false : { gpu: 1, world: 4, frame: 1 }, controls: controlsHtml,
     lobby: {
       friends: true,
@@ -116,8 +123,14 @@ async function main() {
   const map = new PaperMap(document.body)
   const held = new HeldMap(renderer, import.meta.env.BASE_URL, undefined, !smoke)
   const fp = new FrameParts()
+  const nightView = new NightView(renderer)
+  const dawn = new DawnSky()
 
-  let session: Session = online ? new OnlineSession(world, roomCode, shell.lobby!.playName) : new SoloSession(world, settings)
+  // Solo: this browser's next night, or the one `?night=N` names (the end card's "Night N"; the same N is the same night).
+  // `night` counts from 0.
+  const pinned = params.get("night")
+  let night = pinned !== null && Number.isFinite(Number(pinned)) ? Math.max(1, Math.floor(Number(pinned))) - 1 : Number(localStorage.getItem(NIGHT_KEY)) || 0
+  let session: Session = online ? new OnlineSession(world, roomCode, shell.lobby!.playName) : new SoloSession(world, settings, nightSeed(world.params.seed, night))
   live.session = session
   const useWorld = (w: WoodsWorld, rebuild = true) => {
     world = w
@@ -173,7 +186,7 @@ async function main() {
   audio.bindControls(panel)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()
-  panel.setView({ order: ["Water", "Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices"] })
+  panel.setView({ order: ["Water", "Walking", "Search", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices"] })
   attachLabPanelControl(panel)
   shell.settings.subscribe(() => { syncSound(); settings.reduceMotion = shell.settings.reduceMotion; panel.sync() })
   let regenAt = 0, worldKey = `${settings.trunkDensity}`
@@ -185,6 +198,8 @@ async function main() {
   window.addEventListener("keydown", (e) => {
     if (isEditableEventTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
     if (!locked()) return
+    // Tab brings the end card back once a night is over.
+    if (e.code === "Tab") { e.preventDefault(); if (endCard.canShow(session.view.night)) endCard.show(); return }
     if (MOVE_KEYS.has(e.code)) { keys.add(e.code); e.preventDefault() }
   })
   window.addEventListener("keyup", (e) => { keys.delete(e.code); if (isMetaKey(e.code)) release() })
@@ -211,11 +226,32 @@ async function main() {
   controlsHud()
   onKeyLayoutChange(controlsHud)
 
+  const goal = document.getElementById("goal")!, goalText = goal.querySelector("span")!
+  let goalAt = 0
   let toastUntil = 0
   const say = (text: string, seconds = 3.5) => { toast.textContent = text; toast.style.opacity = "1"; toastUntil = performance.now() + seconds * 1000 }
   if (online) say(`Room ${roomCode}: your friends start at camp too.`, 6)
 
   const nameOf = (id: number) => session.view.players.find((p) => p.id === id)?.name ?? "Someone"
+
+  /** The next night: a room starts it for everyone; solo, the next layout from camp. */
+  function nextNight() {
+    if (session instanceof OnlineSession) session.again()
+    else {
+      night++
+      if (pinned === null) localStorage.setItem(NIGHT_KEY, String(night))
+      session = new SoloSession(world, settings, nightSeed(world.params.seed, night))
+      live.session = session
+      camera.yaw = world.camp.spawn.yaw; camera.pitch = -0.05; camera.resetWalk()
+    }
+    story.again()
+  }
+  const endCard = new NightHud({
+    again: () => { nextNight(); shell.flow.resume() },
+    resume: () => shell.flow.resume(),
+    release: () => { if (document.pointerLockElement) document.exitPointerLock(); release(); shell.flow.changed() },
+  })
+  live.endCard = () => endCard.visible
   // Your torch: in the right hand, low, a quarter metre ahead of the eye (the look's Hand settings).
   const handFrom = (eye: readonly number[], yaw: number, d: readonly number[]): [number, number, number] => {
     const s = view.forest.settings, rx = Math.cos(yaw), rz = -Math.sin(yaw)
@@ -339,9 +375,9 @@ async function main() {
         const yaw = camera.yaw + off, x = me.x - Math.sin(yaw) * d, z = me.z - Math.cos(yaw) * d
         const h = world.params.half - 8
         if (Math.abs(x) > h || Math.abs(z) > h || isDeepWater(world, x, z) || trunkBetween(world, me.x, me.z, x, z, 0.3)) continue
-        // A signal: the brightest backdrop a friend makes, held about ten seconds ("found" lifts the beam while its timer is over 14).
+        // A signal: the brightest backdrop a friend makes, held about ten seconds ("found" lifts the beam while its timer is over 8).
         Object.assign(bot, { x, z, vx: 0, vz: 0, light: true })
-        brain.mode = "found"; brain.timer = 24
+        brain.mode = "found"; brain.timer = 18
         return true
       }
       return false
@@ -371,7 +407,7 @@ async function main() {
       regenAt = 0
       const pos = { x: session.self.x, z: session.self.z }
       useWorld(makeWorld({ trunkDensity: settings.trunkDensity }))
-      const solo = new SoloSession(world, settings)
+      const solo = new SoloSession(world, settings, nightSeed(world.params.seed, night))
       solo.teleport(pos.x, pos.z)
       session = solo
       live.session = session
@@ -406,12 +442,26 @@ async function main() {
         const mine = "by" in e && e.by === meId
         if (e.kind === "tape-tied") audio.play("pack.close", e.x, e.z, mine ? 1 : 0.6)
         if (e.kind === "tape-removed") audio.play("pack.open", e.x, e.z, mine ? 1 : 0.6)
-        if (e.kind === "marker-found" && mine) {
-          audio.play("ui.ping")
-          const n = session.self.map.markers.length
-          say(n >= world.markers.length ? `Survey marker #${e.marker}. That's all ${n} on your map. Head back to camp — the mess hall light is on.` : `Survey marker #${e.marker} — pencilled onto your map. ${n} of ${world.markers.length}.`, 6)
+        if (e.kind === "marker-found" && mine) say(`Survey marker #${e.marker}, pencilled onto your map.`, 3)
+        // A clue: everyone hears who found what; only the finder reads what it says (it goes on their map alone).
+        if (e.kind === "clue-found") {
+          const clue = state.night.layout.clues[e.clue]
+          if (mine && clue) { audio.play("ui.ping"); say(`You found ${CLUE_NAMES[e.what]}. ${leadText(clue)} It's on your map.`, 9) }
+          else say(`${nameOf(e.by)} found ${CLUE_NAMES[e.what]}. Ask them where it points.`, 5)
         }
-        if (e.kind === "marker-found" && !mine) say(`${nameOf(e.by)} found something. Look for their beam.`, 4)
+        if (e.kind === "spare-taken" && mine) { audio.play("pack.open"); say("A spare battery, in your pocket. It goes in when your torch dies.", 4) }
+        if (e.kind === "torch" && mine) {
+          if (e.state === "low") say("Your torch is starting to dim.", 3)
+          if (e.state === "swap") { audio.play("pack.open"); say("Fumbling the spare battery in…", 3) }
+          if (e.state === "fresh") { audio.play("flashlight.click"); say("Fresh battery.", 2) }
+          if (e.state === "dead") say(session.self.spare ? "Your torch died." : "Your torch is dead. Stay close to someone with a light, or find a spare.", 5)
+        }
+        // The tape's job, taught once as the search starts.
+        if (e.kind === "night" && e.phase === "search") say("Tie tape on trunks where you've searched (hold E). The debrief maps the ground your tape covered.", 8)
+        if (e.kind === "night" && (e.phase === "won" || e.phase === "lost")) {
+          endCard.ended(e.debrief, e.phase === "won")
+          if (!online && pinned === null) localStorage.setItem(NIGHT_KEY, String(night + 1))
+        }
         if (e.kind === "maps-compared" && (e.a === meId || e.b === meId)) {
           audio.play("ui.tick")
           say(`Compared maps with ${nameOf(e.a === meId ? e.b : e.a)}: their path and finds are on yours now.`, 4)
@@ -453,7 +503,11 @@ async function main() {
 
     fp.begin()
     lakeEditor?.draw(fp, state.t)
-    view.draw(fp, world, state, state.t, camera.eye, settings)
+    // The extra searcher's strip on the ridge is drawn as a tape like the team's own.
+    const strip = nightTapes(state.night, world)
+    view.draw(fp, world, strip.length ? { ...state, tapes: [...state.tapes, ...strip] } : state, state.t, camera.eye, settings)
+    nightView.draw(fp, state.night, world)
+    dawn.apply(view.forest.settings, dawnShare(state.night, state.t))
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
     const beams = friends.frame(fp, world, state, meId, dt, (q) => beamLevel(q, time, settings), (q) => {
       const d = Math.hypot(q.x - at.x, q.z - at.z)
@@ -497,6 +551,15 @@ async function main() {
     // Online, not before the room has seated you (until then you'd be nobody, at the room's t 0).
     if (playing && !lakeLab && (!online || meId >= 0)) story.begin(world, state, meId, at.x, at.z, camera.yaw)
     if (playing || (shell.flow.started && panel.visible)) story.frame(dt, state, world)
+    // What to do next, from your own map and what you've heard (never a timer).
+    if (now >= goalAt) {
+      goalAt = now + 250
+      goal.classList.toggle("on", playing && story.started && p.mapRaise < 0.5)
+      const text = nextStep(state.night, p.map.clues, nameOf)
+      if (goalText.textContent !== text) goalText.textContent = text
+    }
+    endCard.label = online ? `Room ${roomCode}` : `Night ${night + 1}`
+    endCard.frame(state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
@@ -509,13 +572,15 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor,
+      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard,
+      /** Automation: the night (phase, clock, finds, the layout) and the next one. */
+      get night() { return session.view.night }, nextNight,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
       get net() {
         const s = session
-        return { online: s.online, me: s.me, status: s.status(), walkers: s.view.players.length, roster: s.roster(), tapes: s.view.tapes.map((t) => t.tree), found: s.view.found, bytesIn: s instanceof OnlineSession ? s.bytesIn : 0, kbps: debug.kbps, self: { x: s.self.x, z: s.self.z }, heard: s.self.map.heard.map((h) => h.from), markers: s.self.map.markers }
+        return { online: s.online, me: s.me, status: s.status(), walkers: s.view.players.length, roster: s.roster(), tapes: s.view.tapes.map((t) => t.tree), found: s.view.found, bytesIn: s instanceof OnlineSession ? s.bytesIn : 0, kbps: debug.kbps, self: { x: s.self.x, z: s.self.z }, heard: s.self.map.heard.map((h) => h.from), markers: s.self.map.markers, clues: s.self.map.clues, night: s.view.night.phase }
       },
       /** Automation: stand at (x, z) looking along yaw/pitch (solo); in a room only the look changes. */
       setPose(x: number, z: number, yaw: number, pitch = 0) { if (session instanceof SoloSession) session.teleport(x, z); camera.yaw = yaw; camera.pitch = pitch; camera.resetWalk(); view.forest.resetExposure() },

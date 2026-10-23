@@ -26,8 +26,9 @@ function night(minutes: number, feel = { ...FEEL, creature: true }) {
   const input: PlayerInput = { yaw: line.yaw, pitch: 0, light: true, tie: false, map: false, mx: 0, mz: 0 }
   const seen: CreatureEvent[] = []
   for (let i = 0; i < minutes * 60 * 60; i++) {
-    Object.assign(you, { x: line.x, z: line.z, vx: 0, vz: 0 })
-    Object.assign(bot, { x: line.bx, z: line.bz, vx: 0, vz: 0 })
+    // Fresh batteries throughout: the night's torches would otherwise die at 8 min (NIGHT.md).
+    Object.assign(you, { x: line.x, z: line.z, vx: 0, vz: 0, charge: 1 })
+    Object.assign(bot, { x: line.bx, z: line.bz, vx: 0, vz: 0, charge: 1 })
     brain.mode = "found"; brain.timer = 24
     stepWoods(state, world, new Map([[0, input]]), 1 / 60, feel)
     for (const e of state.events) if (e.kind === "creature") seen.push(e)

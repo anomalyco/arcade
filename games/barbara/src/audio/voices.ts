@@ -4,9 +4,17 @@ import { treesNear, type Tree, type WoodsWorld } from "../../shared/world"
 import type { Listener } from "./soundscape"
 import { distanceCutoff, forestImpulse } from "./soundscape"
 import { indoorsAt } from "./space"
-import { VOICE_FILES } from "./voice-files"
+import { NIGHT_VOICE_FILES } from "./night-voice-files"
+import { VOICE_FILES, type VoiceFile } from "./voice-files"
 
 const SPEED_OF_SOUND = 343
+/** A line's file and its folder under `audio/`: the searchers' lines, or the night's (`NIGHT.md`). */
+const fileOf = (id: string): { file: VoiceFile; dir: string } | undefined => {
+  const v = VOICE_FILES[id]
+  if (v) return { file: v, dir: "voice" }
+  const n = NIGHT_VOICE_FILES[id]
+  return n ? { file: n, dir: "night" } : undefined
+}
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
 /** The searchers' voices, bound to the LabPanel (Backquote) › Voices. */
@@ -59,9 +67,8 @@ export function voiceHeard(world: WoodsWorld, e: Pick<VoiceEvent, "x" | "y" | "z
   const treeGain = Math.max(0.35, 0.965 ** (trees * tree))
   const cutoff = clamp(Math.min(distanceCutoff(d), 12000 / (1 + 0.12 * trees * tree)), 300, 16000)
   const gain = voiceGain(d, settings.voiceFalloff) * treeGain * settings.voiceLevel
-  const file = VOICE_FILES[e.line]
   // Momentary-max loudness at your ears, roughly (the file's class level, distance and trunks, not the low-pass).
-  const lufs = (file?.loudness ?? -24) + 20 * Math.log10(gain + 1e-6)
+  const lufs = (fileOf(e.line)?.file.loudness ?? -24) + 20 * Math.log10(gain + 1e-6)
   return { distance: d, trees, gain, cutoff, lufs, delay: d / SPEED_OF_SOUND }
 }
 
@@ -115,11 +122,11 @@ export class VoiceBus {
   buffer(id: string): Promise<AudioBuffer | null> {
     const have = this.buffers.get(id)
     if (have) { this.used.set(id, ++this.tick); return Promise.resolve(have) }
-    const file = VOICE_FILES[id]
-    if (!file) return Promise.resolve(null)
+    const found = fileOf(id)
+    if (!found) return Promise.resolve(null)
     let p = this.pending.get(id)
     if (!p) {
-      p = this.fetcher(`${this.baseUrl}voice/${file.file}`)
+      p = this.fetcher(`${this.baseUrl}${found.dir}/${found.file.file}`)
         .then((bytes) => this.ctx.decodeAudioData(bytes))
         .then((buf) => { this.buffers.set(id, buf); this.used.set(id, ++this.tick); this.evict(); return buf as AudioBuffer | null })
         .catch((e) => { console.warn("woods voice:", id, e); return null })
@@ -208,7 +215,7 @@ export class VoiceBus {
     // Someone out there moving through the brush as they call: under about half the lines from searchers past your
     // friends' footstep range, through the same distance and trunks, starting just before the words.
     const brush = this.buffers.get(BRUSH_IDS[(e.seq & 0x7fffffff) % 3]!)
-    if (brush && offset === 0 && h.distance > 14 && h.distance < 140 && ((e.seq * 0.37) % 1 + 1) % 1 < 0.55) {
+    if (brush && e.cast !== "barbara" && offset === 0 && h.distance > 14 && h.distance < 140 && ((e.seq * 0.37) % 1 + 1) % 1 < 0.55) {
       const bs = ctx.createBufferSource()
       bs.buffer = brush
       const bg = ctx.createGain()
@@ -219,7 +226,7 @@ export class VoiceBus {
       sources.push(bs)
       nodes.push(bs, bg)
     }
-    const loud = VOICE_FILES[e.line]?.loudness ?? -24
+    const loud = fileOf(e.line)?.file.loudness ?? -24
     if (loud >= -18 && h.distance > 50 && s.voiceReverb > 0) {
       // The far side of the valley answers a shout, late and dull.
       const echo = ctx.createDelay(2)
