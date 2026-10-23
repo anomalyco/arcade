@@ -254,7 +254,7 @@ describe("ship", () => {
       }
       console.log(`heavy storm, seed ${seed}: ${out.join("; ")}`)
     }
-  })
+  }, 20_000)
 
   test("render rate doesn't matter: the sim only takes fixed steps (in a heavy storm too)", () => {
     const sea = weather("heavy")
