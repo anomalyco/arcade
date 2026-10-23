@@ -1,4 +1,5 @@
-import { CLUE_KINDS, CLUE_NAMES, leadText, watchMinutes, type Debrief, type NightState } from "../shared/night"
+import { CLUE_KINDS, CLUE_NAMES, evidenceText, leadText, watchMinutes, type Debrief, type NightState } from "../shared/night"
+import { SUSPECT_NAMES } from "../shared/verdict"
 import type { WoodsState } from "../shared/sim"
 import type { WoodsWorld } from "../shared/world"
 
@@ -21,6 +22,7 @@ const STYLE = `
 #night tr.miss td { color: #8d8676; }
 #night td.who { color: #c9c0a8; white-space: nowrap; }
 #night .lead { font: italic 13px Georgia, serif; color: #b9b19c; max-width: 30em; }
+#night .lead b { font-weight: normal; color: #e3c7a0; }
 #night .row { display: flex; gap: 10px; flex-wrap: wrap; }
 #night button { font: 600 14px system-ui, sans-serif; padding: 10px 18px; border-radius: 10px; border: 1px solid rgba(239,230,204,0.2); background: rgba(255,255,255,0.06); color: #efe6cc; cursor: pointer; }
 #night button.go { background: #f2c96b; color: #17130a; border-color: #f2c96b; }
@@ -33,6 +35,8 @@ const STYLE = `
 `
 
 const COLORS = ["#2c5fb8", "#c0392b", "#1e8449", "#8e44ad", "#d35400", "#117a8b", "#7d6608", "#5d6d7e", "#b03a7a", "#2e4053"]
+/** "A", "A and B", "A, B and C". */
+const list = (names: readonly string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`)
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
 
 /** "4:12 AM" from minutes after midnight. */
@@ -110,16 +114,23 @@ export class NightHud {
     const n = s.night
     const name = (id: number) => s.players.find((p) => p.id === id)?.name ?? this.debrief?.walkers.find((w) => w.id === id)?.name ?? "Someone"
     const end = watchMinutes(n, s.t)
-    const [title, line] = n.reason === "strip"
-      ? ["OVER HERE", "Somebody called you up to the ridge. Only the tape: one strip, tied the way Walt ties it, and nobody there. Barbara is still out there."]
-      : n.reason === "dark"
-        ? ["DARK", "Every torch is dead. You sit it out together and wait for the light. Barbara is still out there."]
-        : ["DAWN", "The search is called off until it's light. Barbara is still out there."]
+    const v = n.verdict, culprit = SUSPECT_NAMES[n.layout.verdict.culprit]
+    const takenNames = v.gone.map((g) => name(g.id))
+    const wrong = v.struck.length ? `You named ${v.struck.map((x) => SUSPECT_NAMES[x]).join(", then ")} first, and it wasn't. ` : ""
+    const lost = takenNames.length ? `It took ${list(takenNames)}. ` : ""
+    const [title, line] = n.reason === "named"
+      ? [`IT WAS ${culprit.toUpperCase()}`, `${wrong}${lost}You named it on the county radio, and the sky came up grey over the ridge. Barbara is still out there.`]
+      : n.reason === "taken"
+        ? ["TAKEN", `${wrong}It took every one of you before the light came. It was ${culprit}.`]
+        : n.reason === "dark"
+          ? ["DARK", `Every torch is dead. You sit it out together and wait for the light. ${lost}It was ${culprit}. Barbara is still out there.`]
+          : ["DAWN", `The search is called off until it's light. ${wrong}${lost}It was ${culprit}. Barbara is still out there.`]
     const rows = CLUE_KINDS.map((kind, i) => {
       const f = n.finds.find((x) => x.clue === i)
       const clue = n.layout.clues[i]!
       if (!f) return `<tr class="miss"><td class="n">${i + 1}</td><td>${esc(cap(CLUE_NAMES[kind]))}</td><td class="who">not found</td></tr>`
-      return `<tr><td class="n">${i + 1}</td><td>${esc(cap(CLUE_NAMES[kind]))}<div class="lead">${esc(leadText(clue))}</div></td><td class="who">${esc(name(f.by))} · ${clockText(watchMinutes(n, f.at))}</td></tr>`
+      const ev = evidenceText(n.layout, i)
+      return `<tr><td class="n">${i + 1}</td><td>${esc(cap(CLUE_NAMES[kind]))}<div class="lead">${esc(leadText(clue))}${ev ? ` <b>${esc(ev)}</b>` : ""}</div></td><td class="who">${esc(name(f.by))} · ${clockText(watchMinutes(n, f.at))}</td></tr>`
     }).join("")
     const searched = n.end > n.start ? span(n.end - n.start) : ""
     const kicker = [this.label, clockText(end), searched && `searched ${searched}`].filter(Boolean).join(" · ")
@@ -134,7 +145,7 @@ export class NightHud {
     const tied = (id: number) => tapes.filter((k) => k[2] === id).length
     const legend = walkers.map((w, i) => `<div><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(w.name)}${w.bot ? "" : " (player)"} · ${Math.round(walked(w.trail))} m · ${tied(w.id)} tapes</div>`).join("")
     const cover = coverage(world, tapes)
-    this.el.innerHTML = `<div class="card"><div class="kicker">Debrief · ${esc(kicker)}</div><h1>${title}</h1><div class="debrief"><canvas width="1040" height="1040"></canvas><div class="legend">${legend || "<div>No paths recorded.</div>"}<div class="meta">Pink is ground your tape marked as searched: ${tapes.length} tapes, about ${cover.all} m² (${Math.round((cover.near / (Math.PI * COVER_AROUND * COVER_AROUND)) * 100)}% of the woods within ${COVER_AROUND} m of camp). Numbers are the clues in order; red ones were found, with the bearings they gave.</div></div></div><div style="height:16px"></div>${buttons(true)}</div>`
+    this.el.innerHTML = `<div class="card"><div class="kicker">Debrief · ${esc(kicker)}</div><h1>${title}</h1><div class="debrief"><canvas width="1040" height="1040"></canvas><div class="legend">${legend || "<div>No paths recorded.</div>"}<div class="meta">Pink is ground your tape marked as searched: ${tapes.length} tapes, about ${cover.all} m² (${Math.round((cover.near / (Math.PI * COVER_AROUND * COVER_AROUND)) * 100)}% of the woods within ${COVER_AROUND} m of camp). Numbers are the clues in order; red ones were found, with the bearings they gave.${n.verdict.gone.length ? " Black crosses: where the taken were standing." : ""}</div></div></div><div style="height:16px"></div>${buttons(true)}</div>`
     drawDebrief(this.el.querySelector("canvas")!, world, n, walkers, tapes)
   }
 }
@@ -193,6 +204,9 @@ function drawDebrief(canvas: HTMLCanvasElement, world: WoodsWorld, n: NightState
   g.fill()
   g.fillStyle = "rgba(230,40,135,0.9)"
   for (const tp of tapes) { const [px, pz] = at(tp[0]!, tp[1]!); g.fillRect(px - 3, pz - 3, 6, 6) }
+  // Where each taken searcher was standing: a black cross.
+  g.strokeStyle = "#111"; g.lineWidth = 3
+  for (const t of n.verdict.gone) { const [px, pz] = at(t.x, t.z); g.beginPath(); g.moveTo(px - 7, pz - 7); g.lineTo(px + 7, pz + 7); g.moveTo(px + 7, pz - 7); g.lineTo(px - 7, pz + 7); g.stroke() }
   // Everyone's path.
   walkers.forEach((w, i) => {
     g.strokeStyle = COLORS[i % COLORS.length]!; g.globalAlpha = w.bot ? 0.65 : 0.95; g.lineWidth = w.bot ? 2.5 : 4; g.lineJoin = g.lineCap = "round"

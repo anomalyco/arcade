@@ -5,6 +5,7 @@ import {
   decodeClient, encodeServer, flareRow, GRACE_MS, intentOps, MAX_PLAYERS, nightWire, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
   type ClientMsg, type Hello, type MapDelta, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot,
 } from "../shared/protocol"
+import { castVote } from "../shared/verdict"
 import { addHuman, createWoods, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import { makeWorld, type WoodsWorld } from "../shared/world"
 
@@ -234,6 +235,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   protected handle(id: string, msg: ClientMsg) {
     if (msg.type === "again") { if (this.pids.has(id)) this.again(); return }
     const pid = this.pids.get(id), p = this.state.players.find((q) => q.id === pid)
+    if (msg.type === "vote") { if (p && castVote(this.state.night, p, msg.suspect, this.state.t)) this.dirty = true; return }
     if (msg.type !== "name" || pid === undefined || !p) return
     this.names.set(pid, msg.name)
     p.name = msg.name

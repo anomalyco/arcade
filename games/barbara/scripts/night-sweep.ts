@@ -30,7 +30,7 @@ for (let seed = first; seed < first + nights; seed++) {
   const minutes = (n.end - n.start) / 60
   rows.push({ won: n.phase === "won", minutes })
   const charge = state.players.filter((p) => p.bot).map((p) => p.charge.toFixed(2) + (p.spare ? "+" : "")).join(" ")
-  console.log(`seed ${seed} calls ${n.calls} ${n.phase.padEnd(4)} ${n.reason.padEnd(5)} ${minutes.toFixed(1).padStart(5)} min  finds ${n.finds.map((f) => `${f.clue}@${((f.at - n.start) / 60).toFixed(1)}`).join(" ")}  spares ${spares}  bots ${charge}`)
+  console.log(`seed ${seed} calls ${n.calls} ${n.phase.padEnd(4)} ${n.reason.padEnd(5)} ${n.layout.verdict.culprit.padEnd(6)} struck [${n.verdict.struck.join(",")}] gone ${n.verdict.gone.length} ${minutes.toFixed(1).padStart(5)} min  finds ${n.finds.map((f) => `${f.clue}@${((f.at - n.start) / 60).toFixed(1)}`).join(" ")}  spares ${spares}  bots ${charge}`)
 }
 const won = rows.filter((r) => r.won).map((r) => r.minutes).sort((a, b) => a - b)
 console.log(`won ${won.length}/${rows.length}, median ${won.length ? won[won.length >> 1]!.toFixed(1) : "-"} min`)

@@ -15,7 +15,7 @@
 ## Voices
 
 - The searchers' lines in `audio/voice/` were generated with ElevenLabs Eleven v4 text-to-speech on Kit's account under the ElevenLabs commercial licence (Anomaly), with premade voices (Bill, Matilda, Callum, Chris, Sarah, Will), then trimmed, levelled by how loud each line is said and encoded to Ogg Opus by `scripts/audio/voices.ts`. Each file's directed text, voice, request id and loudness are in `src/audio/voice-files.ts`.
-- The night's lines in `audio/night/` (each searcher's reaction to a clue, dawn, Barbara's cassette and the extra searcher's call) were made the same way by `scripts/audio/night-voices.ts`, with the same premade voices and Bella (premade) for Barbara; her tape also gets a band-limit, wow and tape hiss in that script. Each file's directed text, voice, request id and loudness are in `src/audio/night-voice-files.ts`.
+- The night's lines in `audio/night/` (each searcher's reaction to a clue, dawn, Barbara's cassette, the extra searcher's call and each searcher's cry when taken) were made the same way by `scripts/audio/night-voices.ts`, with the same premade voices and Bella (premade) for Barbara; her tape also gets a band-limit, wow and tape hiss in that script. Each file's directed text, voice, request id and loudness are in `src/audio/night-voice-files.ts`.
 - Barbara K. Nakamura and the case are Alan's (https://vaprdev.github.io/nakamura-case-file/).
 
 ## Map

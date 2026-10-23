@@ -4,14 +4,17 @@ import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { ForestLookSettings } from "@arcade/kit/forest/settings"
 import { CLUE, type Clue, type NightLayout, type NightState } from "../shared/night"
 import { TAPE_HEIGHT, type Tape } from "../shared/sim"
-import type { WoodsWorld } from "../shared/world"
+import { EVIDENCE } from "../shared/verdict"
+import { terrainHeight, type WoodsWorld } from "../shared/world"
 
 /**
  * The night's things in the world (NIGHT.md): Barbara's car in the lot with the driver's door open and a donut box on the
  * seat, the appointment-book page tied to a trunk with orange tape, her ID badge in the creek mud, the tape recorder,
  * and the spare torch batteries (three on the mess-hall table, one or two in the woods) until someone takes them. Small
  * greybox models in world coordinates, rebuilt when the night or the spares change. The extra searcher's strip on the
- * ridge is a real tape (`tapes`, drawn by `TapeView` like the team's own). `DawnSky` greys the sky towards the end.
+ * ridge is a real tape (`tapes`, drawn by `TapeView` like the team's own). The verdict's evidence lies with its clue
+ * (`evidence`), the county radio stands at the foot of the tower, and a taken searcher's torch lies lit where they
+ * stood. `DawnSky` greys the sky towards the end.
  */
 
 const FLOATS = 11
@@ -115,6 +118,97 @@ function battery(m: Mesh, x: number, y: number, z: number, yaw: number) {
   move(m, from, x, y + 0.017, z)
 }
 
+const MUD: Rgb = [0.035, 0.028, 0.02]
+const SILK: Rgb = [0.62, 0.62, 0.6]
+const SCORE: Rgb = [0.55, 0.42, 0.3]
+
+/** The county radio bolted to the foot of the mast: a steel box on a post, the handset on its hook, a green lamp. */
+function radio(m: Mesh, x: number, y: number, z: number, yaw: number) {
+  const from = m.length
+  m.prism(0, 0, 0.04, 0.04, 0, 0.95, 8, [0.3, 0.3, 0.3], MAT.shiny)
+  m.bevelBox(-0.22, 0.95, -0.14, 0.22, 1.42, 0.14, 0.02, [0.32, 0.34, 0.3], [0.36, 0.38, 0.34], MAT.shiny)
+  m.box(-0.16, 1.05, 0.14, 0.02, 1.33, 0.17, [0.02, 0.02, 0.02], MAT.shiny)
+  m.box(0.08, 1.3, 0.14, 0.12, 1.34, 0.16, [0.2, 1, 0.3], MAT.glow)
+  m.box(0.06, 1.05, 0.14, 0.18, 1.2, 0.15, [0.08, 0.08, 0.08])
+  turn(m, from, "y", yaw)
+  move(m, from, x, y, z)
+}
+
+/** A torch dropped in the leaves, lit, lying along `yaw`. */
+function droppedTorch(m: Mesh, x: number, y: number, z: number, yaw: number) {
+  const from = m.length
+  m.prism(0, 0, 0.022, 0.022, -0.12, 0.06, 10, [0.08, 0.08, 0.09], MAT.shiny)
+  m.prism(0, 0, 0.032, 0.03, 0.06, 0.12, 10, [0.15, 0.15, 0.16], MAT.shiny)
+  m.prism(0, 0, 0.028, 0.028, 0.12, 0.122, 10, [1, 0.95, 0.8], MAT.glow)
+  turn(m, from, "x", -Math.PI / 2)
+  turn(m, from, "y", yaw)
+  move(m, from, x, y + 0.03, z)
+}
+
+/**
+ * The evidence by each clue (`verdict.ts`), in world coordinates: scrapes on the car roof or its aerial snapped, a
+ * second band of orange tape far up the page's trunk, grey thread round it, bark scored overhead, scratches across
+ * the badge, big prints or a ring of holes in the mud. The cassette's is a sound, so it has none.
+ */
+function evidence(m: Mesh, layout: NightLayout, world: WoodsWorld) {
+  const ground = (x: number, z: number) => terrainHeight(world.terrain, x, z)
+  for (const i of layout.verdict.evidence) {
+    const e = EVIDENCE[i]!, c = layout.clues[e.clue]!
+    const tree = c.tree >= 0 ? world.trees[c.tree] : undefined
+    const face = Math.atan2(c.fx, -c.fz)
+    switch (e.id) {
+      case "roof": {
+        for (let k = 0; k < 4; k++) {
+          const from = m.length
+          m.box(-0.5 + k * 0.28, 1.384, -0.7, -0.48 + k * 0.28, 1.388, 0.9, SCORE)
+          turn(m, from, "y", 0.25)
+          turn(m, from, "y", -face)
+          move(m, from, c.x, c.y, c.z)
+        }
+        break
+      }
+      case "aerial": {
+        const from = m.length
+        m.prism(0.6, 2.2, 0.006, 0.006, 0.86, 0.98, 5, [0.6, 0.6, 0.62], MAT.shiny)
+        turn(m, from, "y", -face)
+        move(m, from, c.x, c.y, c.z)
+        break
+      }
+      case "high":
+        if (tree) m.prism(tree.x, tree.z, tree.radius * 0.8 + 0.018, tree.radius * 0.8 + 0.018, c.y + 3.15, c.y + 3.19, 16, OTHER_TAPE, MAT.tape, 0, false)
+        break
+      case "thread":
+        if (tree) for (let k = 0; k < 5; k++) m.prism(tree.x, tree.z, tree.radius + 0.022, tree.radius + 0.022, c.y + 1.2 + k * 0.045, c.y + 1.204 + k * 0.045, 16, SILK, MAT.lit, 0, false)
+        break
+      case "bark":
+        if (tree) {
+          const nx = c.x - tree.x, nz = c.z - tree.z, l = Math.hypot(nx, nz) || 1
+          for (let k = 0; k < 4; k++) {
+            const a = Math.atan2(nz / l, nx / l) + (k - 1.5) * 0.12, r = tree.radius + 0.01
+            m.yawBox(tree.x + Math.cos(a) * r, tree.z + Math.sin(a) * r, 0.02, 0.01, c.y + 2.5 + k * 0.05, c.y + 3.5 + k * 0.05, -a, SCORE)
+          }
+        }
+        break
+      case "scratch":
+        for (let k = 0; k < 4; k++) m.yawBox(c.x - 0.03 + k * 0.016, c.z - 0.042, 0.002, 0.03, c.y + 0.0185, c.y + 0.0195, -face + 0.4, [0.2, 0.2, 0.2])
+        break
+      case "feet":
+        for (let k = -2; k <= 2; k++) {
+          if (k === 0) continue
+          const x = c.x + c.fz * 0.25 * (k % 2) + c.fx * k * 1.9, z = c.z - c.fx * 0.25 * (k % 2) + c.fz * k * 1.9
+          m.yawBox(x, z, 0.16, 0.44, ground(x, z) + 0.004, ground(x, z) + 0.012, -face, MUD)
+        }
+        break
+      case "pins":
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2, x = c.x + Math.cos(a) * 0.9, z = c.z + Math.sin(a) * 0.9
+          m.prism(x, z, 0.03, 0.03, ground(x, z) + 0.002, ground(x, z) + 0.008, 6, [0.01, 0.008, 0.006])
+        }
+        break
+    }
+  }
+}
+
 const BUILD: Record<Exclude<Clue["kind"], "strip">, (m: Mesh) => void> = { car, page, badge, cassette: recorder }
 
 export class NightView {
@@ -142,17 +236,24 @@ export class NightView {
       turn(m, from, "y", -Math.atan2(c.fx, -c.fz))
       move(m, from, c.x, c.y, c.z)
     }
+    evidence(m, layout, world)
+    const r = layout.radio
+    radio(m, r.x, r.y, r.z, Math.atan2(layout.ridge.x - r.x, layout.ridge.z - r.z) + Math.PI)
     this.clueModel = this.slot(this.clueModel, m)
   }
 
   /** Every clue where it lies (found or not), and the spares nobody has taken. */
   draw(fp: FrameParts, n: NightState, world: WoodsWorld): void {
     if (n.seed !== this.seed) { this.seed = n.seed; this.build(n.layout, world); this.spareKey = "" }
-    const key = `${n.seed}:${n.taken.join(",")}`
+    const key = `${n.seed}:${n.taken.join(",")}:${n.verdict.gone.length}`
     if (key !== this.spareKey) {
       this.spareKey = key
       const m = new Mesh()
       for (const s of n.layout.spares) if (!n.taken.includes(s.id)) battery(m, s.x, s.y, s.z, s.id * 1.7)
+      for (const g of n.verdict.gone) {
+        const fx = -Math.sin(g.yaw), fz = -Math.cos(g.yaw), x = g.x + fx * 0.5, z = g.z + fz * 0.5
+        droppedTorch(m, x, terrainHeight(world.terrain, x, z), z, g.yaw + Math.PI)
+      }
       // An empty mesh still needs a slot, so a later spare can fill it.
       if (!m.length) m.box(0, -50, 0, 0.001, -49.999, 0.001, [0, 0, 0])
       this.spareModel = this.slot(this.spareModel, m)

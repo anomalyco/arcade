@@ -8,7 +8,7 @@ const world = makeWorld()
 const walk = (t: number): PlayerInput => ({ yaw: t * 0.05, pitch: 0, light: true, tie: false, map: false, mx: 0.3 * Math.sin(t * 0.03), mz: -0.6, sprint: false })
 const lineOf = (id: string) => findLine(id)!
 /** The night's key moments: a clue's reaction, dawn, the cassette, the extra searcher (NIGHT.md). */
-const NIGHT_KEYS = ["car", "page", "badge", "cassette", "strip", "dawn", "daylight", "tape-tower", "extra"]
+const NIGHT_KEYS = ["car", "page", "badge", "cassette", "strip", "dawn", "daylight", "tape-tower", "extra", "taken"]
 
 function run(seconds: number, feel = FEEL, humans = [{ id: 0, name: "You" }]): { state: WoodsState; lines: VoiceEvent[] } {
   const state = createWoods(world, 3, world.params.seed, humans)

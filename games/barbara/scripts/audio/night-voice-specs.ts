@@ -1,7 +1,7 @@
 // The night's lines for `night-voices.ts` (NIGHT.md): each searcher's reaction to finding each clue, the dawn lines,
-// Barbara's voice on the cassette, and the extra searcher's call from the ridge (STORY.md key moment 5). Same shape
-// as `voice-specs.ts`: the words a subtitle shows, the directed text Eleven v4 reads (square-bracket directions, never
-// spoken), its pool and how loud.
+// Barbara's voice on the cassette, the extra searcher's call from the ridge (STORY.md key moment 5), and each
+// searcher's cry when they're taken (`verdict.ts`). Same shape as `voice-specs.ts`: the words a subtitle shows, the
+// directed text Eleven v4 reads (square-bracket directions, never spoken), its pool and how loud.
 import type { Loudness, Pool, Voice } from "../../shared/voices"
 
 export type NightLineSpec = { id: string; cast: Voice; pool: Pool; loud: Loudness; text: string; direct: string }
@@ -17,6 +17,8 @@ export const voiceIdOf = (v: Voice) => VOICE_IDS[v]
 
 const CALL = "[calling out loudly across the dark woods to someone forty metres away]"
 const SHAKEN = "[quiet, close, shaken, almost a whisper, in a dark forest at night]"
+/** Taken (`verdict.ts`): one cry, cut off. No words that say what happened. */
+const TAKEN = "[a sudden terrified cry in the dark woods, cut off abruptly mid-word]"
 const TAPE = "[quietly, close to a small tape recorder, a little out of breath]"
 
 type Row = [Pool, Loudness, string, string?]
@@ -36,6 +38,7 @@ export const NIGHT_LINES: readonly NightLineSpec[] = [
     ["badge", "call", "Over here! It's her badge. Lanyard's snapped."],
     ["cassette", "call", "Tape recorder! There's still a tape in it!"],
     ["strip", "talk", "That's my knot. That's how I tie it. I never tied this one."],
+    ["taken", "shout", "Hey! Hey, what's—", TAKEN],
     ["extra", "shout", "Over here! Over here!", "[shouting from far off across the dark woods, urgent, as if he has found something]"],
     ["dawn", "call", "Sky's getting light. Sheriff'll be up the road by seven."],
     ["daylight", "shout", "That's daylight! Everybody back to the cars!", "[shouting hoarsely across the woods, tired]"],
@@ -46,6 +49,7 @@ export const NIGHT_LINES: readonly NightLineSpec[] = [
     ["badge", "talk", "Oh God. That's her badge. That's her work badge."],
     ["cassette", "call", "A tape recorder! It's hers, she always had one!"],
     ["strip", "quiet", "Who called? Somebody called us up here."],
+    ["taken", "shout", "No! No, no—", TAKEN],
     ["dawn", "talk", "No. No, not yet. Keep going.", "[quietly insistent, holding back tears]"],
   ]),
   ...lines("gary", [
@@ -54,6 +58,7 @@ export const NIGHT_LINES: readonly NightLineSpec[] = [
     ["badge", "call", "Badge! In the mud here!"],
     ["cassette", "call", "Recorder! Somebody dropped a recorder!"],
     ["strip", "quiet", "Nobody of ours has been up here. Nobody."],
+    ["taken", "shout", "What is that— no!", TAKEN],
     ["dawn", "talk", "That's dawn coming.", "[dry, muttering to himself]"],
   ]),
   ...lines("dale", [
@@ -62,6 +67,7 @@ export const NIGHT_LINES: readonly NightLineSpec[] = [
     ["badge", "call", "That's a Northstar badge! That's one of ours!"],
     ["cassette", "call", "Tape recorder! Should I... should I play it?"],
     ["strip", "quiet", "It's just tape. But somebody said over here. I heard it."],
+    ["taken", "shout", "Get off! Get—", TAKEN],
   ]),
   ...lines("tess", [
     ["car", "call", "The driver's door is open! It wasn't this afternoon!"],
@@ -69,6 +75,7 @@ export const NIGHT_LINES: readonly NightLineSpec[] = [
     ["badge", "call", "It's her badge! Executive Systems. It's hers!"],
     ["cassette", "call", "It's her recorder! She dictates everything!"],
     ["strip", "quiet", "One strip. Tied like Walt ties it. Walt was with us."],
+    ["taken", "shout", "Wait! Wai—", TAKEN],
   ]),
   ...lines("owen", [
     ["car", "call", "Hey! The car! The door's open!"],
@@ -76,6 +83,7 @@ export const NIGHT_LINES: readonly NightLineSpec[] = [
     ["badge", "call", "I found an ID! Barbara Nakamura!"],
     ["cassette", "call", "There's a tape recorder over here!"],
     ["strip", "quiet", "It's only tape. Then who was calling?"],
+    ["taken", "shout", "Guys? Guy—", TAKEN],
   ]),
   // The cassette, rewound and played: about eleven seconds of wind and Barbara saying she was going up to the radio tower.
   ...lines("barbara", [
