@@ -46,6 +46,13 @@ export type VolumeLightShader = {
    * the march can shadow a lamp's light in the air (a torch's shafts past trunks). Needs `depth`.
    */
   spotShadows?: boolean
+  /**
+   * The march also writes `@location(1)` (r16float): how much light, in the slot's units, may have left this pixel since
+   * last frame by moving on its own (a swinging torch's beam). The accumulate pass drops that share of the history, so
+   * it can't trail behind. It is weighed against the history, not this frame's noisy sample, so the dropout doesn't
+   * pick dark samples over bright ones. Needs `history`.
+   */
+  reactive?: boolean
 }
 
 /** Volume-slot bindings of the spot shadow maps (`VolumeLightShader.spotShadows`). */
@@ -167,11 +174,15 @@ ${fullscreen}
 }
 `
 
-/** Temporal accumulation at the volume's own resolution. */
-export const volumeAccumulateShader = /* wgsl */ `
+/**
+ * Temporal accumulation at the volume's own resolution. With `reactive` the light the march says moved away (binding 5)
+ * floors the response by its share of the history: as much as is there, the history goes.
+ */
+export const volumeAccumulateWgsl = (reactive = false) => /* wgsl */ `
 @group(0) @binding(0) var curTex: texture_2d<f32>;
 @group(0) @binding(1) var histTex: texture_2d<f32>;
 @group(0) @binding(2) var histSamp: sampler;
+${reactive ? "@group(0) @binding(5) var reactTex: texture_2d<f32>;" : ""}
 ${volumeFrameWgsl}
 ${fullscreen}
 @fragment fn fs(o: VO) -> @location(0) vec4f {
@@ -196,11 +207,13 @@ ${fullscreen}
   let inside = pc.w > 0.0 && all(puv >= vec2f(0.0)) && all(puv <= vec2f(1.0));
   let motion = length((puv - uv) * vec2f(size));
   let hist = textureSampleLevel(histTex, histSamp, puv, 0.0);
+  ${reactive ? `let moved = textureLoad(reactTex, px, 0).r;
+  let react = clamp(2.0 * moved / (max(dot(hist.rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0) + moved + 1e-6), 0.0, 1.0);` : "let react = 0.0;"}
   if (V.motion.x >= 1.0) {
     // The box spans the per-pixel jitter noise, so the history may average it; the pad lets a moving beam fade, not snap.
     let pad = (mx - mn) * 0.25;
     let prev = clamp(hist, mn - pad, mx + pad);
-    let a = select(1.0, mix(V.params.x, 1.0, clamp(motion / 2.0, 0.0, 1.0)), inside && V.params.y > 0.5);
+    let a = max(select(1.0, mix(V.params.x, 1.0, clamp(motion / 2.0, 0.0, 1.0)), inside && V.params.y > 0.5), react);
     return mix(prev, cur, a);
   }
   // Kept in motion: a luminance-compressed blend (rgb / (1 + luma); alpha stays linear) against a box that goes from
@@ -223,12 +236,13 @@ ${fullscreen}
   let k = clamp(motion / 2.0, 0.0, 1.0);
   let pad = (cmx - cmn) * 0.25;
   let prev = clamp(volumeCompress(hist), mix(cmn - pad, mean - sigma * 1.25, k), mix(cmx + pad, mean + sigma * 1.25, k));
-  let a = select(1.0, mix(V.params.x, V.motion.x, k), inside && V.params.y > 0.5);
+  let a = max(select(1.0, mix(V.params.x, V.motion.x, k), inside && V.params.y > 0.5), react);
   return volumeExpand(mix(prev, volumeCompress(cur), a));
 }
 fn volumeCompress(c: vec4f) -> vec4f { return vec4f(c.rgb / (1.0 + max(dot(c.rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0)), c.a); }
 fn volumeExpand(c: vec4f) -> vec4f { return vec4f(c.rgb / max(1.0 - max(dot(c.rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0), 1e-4), c.a); }
 `
+export const volumeAccumulateShader = volumeAccumulateWgsl()
 
 /** Joint bilateral 4-tap upsample guided by the scene depth: 10 % apart in view distance is another surface. */
 export const volumeUpsampleShader = /* wgsl */ `
@@ -344,6 +358,8 @@ export class VolumeSlot {
   private readonly hasFilter: boolean
   private readonly hasLowDepth: boolean
   private readonly usesSpotShadows: boolean
+  private readonly usesReactive: boolean
+  private react: GPUTexture | null = null
   private boundSpot: GPUTextureView | null = null
   private boundSpotUniform: GPUBuffer | null = null
   private pipes: VolumePipes | null = null
@@ -379,6 +395,7 @@ export class VolumeSlot {
     this.hasFilter = !!shader.filter
     this.hasLowDepth = !!shader.lowDepth
     this.usesSpotShadows = !!shader.spotShadows && this.usesDepth
+    this.usesReactive = !!shader.reactive && this.usesHistory
     // A transmittance slot's empty texels keep the scene (a = 1).
     this.clearAlpha = shader.transmittance ? 1 : 0
     const entries: GPUBindGroupLayoutEntry[] = [
@@ -434,6 +451,7 @@ export class VolumeSlot {
           { binding: 2, visibility: S.FRAGMENT, sampler: {} },
           { binding: 3, visibility: S.FRAGMENT, texture: { sampleType: "depth", multisampled: true } },
           { binding: 4, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+          ...(this.usesReactive ? [{ binding: 5, visibility: S.FRAGMENT, texture: {} }] : []),
         ],
       })
     }
@@ -459,18 +477,18 @@ export class VolumeSlot {
     if (this.pipes) return this.pipes
     const d = this.device
     const { shader, shared, index } = this
-    const fullscreen = (module: GPUShaderModule, label: string, layout: GPUBindGroupLayout, format: GPUTextureFormat, blend?: GPUBlendState) =>
+    const fullscreen = (module: GPUShaderModule, label: string, layout: GPUBindGroupLayout, format: GPUTextureFormat, blend?: GPUBlendState, extra: GPUColorTargetState[] = []) =>
       d.createRenderPipeline({
         label: `volume ${index} ${label}`,
         layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
         vertex: { module, entryPoint: "vs" },
-        fragment: { module, entryPoint: "fs", targets: [{ format, blend }] },
+        fragment: { module, entryPoint: "fs", targets: [{ format, blend }, ...extra] },
         primitive: { topology: "triangle-list" },
       })
     const lowDepth = this.lowDepthLayout ? fullscreen(shared.compile(volumeLowDepthShader, "volume low depth"), "low depth", this.lowDepthLayout, "r32float") : null
-    const march = fullscreen(shared.compile(shader.code, `volume light ${index}`), "march", this.marchLayout, shared.format)
+    const march = fullscreen(shared.compile(shader.code, `volume light ${index}`), "march", this.marchLayout, shared.format, undefined, this.usesReactive ? [{ format: "r16float" }] : [])
     const filter = shader.filter ? fullscreen(shared.compile(shader.filter, `volume ${index} filter`), "filter", this.filterLayout!, shared.format) : null
-    const accumulate = this.accumulateLayout ? fullscreen(shared.compile(volumeAccumulateShader, "volume accumulate"), "accumulate", this.accumulateLayout, shared.format) : null
+    const accumulate = this.accumulateLayout ? fullscreen(shared.compile(volumeAccumulateWgsl(this.usesReactive), "volume accumulate"), "accumulate", this.accumulateLayout, shared.format) : null
     const comp = shared.compile(this.usesDepth ? volumeUpsampleShader : volumeBilinearShader, this.usesDepth ? "volume upsample" : "volume composite")
     const composite = fullscreen(comp, "composite", this.compositeLayout, shared.format, shader.transmittance ? transmit : shader.composite === "multiply" ? multiplyKeepAlpha : additiveKeepAlpha)
     return (this.pipes = { lowDepth, march, filter, accumulate, composite })
@@ -494,6 +512,8 @@ export class VolumeSlot {
       this.lowDepthTex?.destroy()
       this.lowDepthTex = this.hasLowDepth ? d.createTexture({ label: "volume low depth", size: [w, h], format: "r32float", usage }) : null
       this.hist = this.usesHistory ? [0, 1].map(() => d.createTexture({ label: "volume history", size: [w, h], format: this.shared.format, usage })) : []
+      this.react?.destroy()
+      this.react = this.usesReactive ? d.createTexture({ label: "volume reactive", size: [w, h], format: "r16float", usage }) : null
       this.histValid = false
     }
     const depth = view?.depthView ?? null
@@ -564,6 +584,7 @@ export class VolumeSlot {
             { binding: 2, resource: sh.sampler },
             { binding: 3, resource: depth! },
             { binding: 4, resource: { buffer: this.frameBuf! } },
+            ...(this.react ? [{ binding: 5, resource: this.react.createView() }] : []),
           ],
         }),
       )
@@ -639,7 +660,10 @@ export class VolumeSlot {
       lp.draw(3)
       lp.end()
     }
-    const march = enc.beginRenderPass({ colorAttachments: [{ view: this.tex!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: this.clearAlpha } }] })
+    const march = enc.beginRenderPass({ colorAttachments: [
+      { view: this.tex!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: this.clearAlpha } },
+      ...(this.react ? [{ view: this.react.createView(), loadOp: "clear" as const, storeOp: "store" as const, clearValue: { r: 0, g: 0, b: 0, a: 0 } }] : []),
+    ] })
     scissor(march, w, h)
     march.setPipeline(pipes.march)
     march.setBindGroup(0, this.marchGroup!)
@@ -678,6 +702,7 @@ export class VolumeSlot {
     this.tex?.destroy()
     this.filtered?.destroy()
     this.lowDepthTex?.destroy()
+    this.react?.destroy()
     for (const t of this.hist) t.destroy()
     this.frameBuf?.destroy()
     this.paramsBuf?.destroy()
