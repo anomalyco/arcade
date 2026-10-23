@@ -24,7 +24,8 @@ import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistanc
 import { toBoundary } from "./boundary-view"
 import { WoodsAudio } from "./audio"
 import { WoodsCamera } from "./camera"
-import { CAMERA_LOOKS, CameraLook, savedCameraLook, stageCameraLab, type CameraLookId } from "./camera-look"
+import { CAMERA_FEEL_CONTROLS, CameraFeel } from "./camera-feel"
+import { CAMERA_LOOKS, CameraLook, PLAYABLE_LOOKS, savedCameraLook, stageCameraLab, type CameraLookId } from "./camera-look"
 import { CreatureView } from "./creature-view"
 import { SpiderSignsView } from "./spider-signs-view"
 import { SpiderView } from "./spider-view"
@@ -32,6 +33,7 @@ import { FEEL_CONTROLS } from "./feel-controls"
 import { FlareView } from "./flare-view"
 import { FriendsView } from "./friends-view"
 import { HeldMap, heldMapControls } from "./held-map"
+import { Juice } from "./juice"
 import { arrangeControl, LOOKS_SECTION, SECTIONS } from "./knobs"
 import { applyLook, lookBase, LOOK_IDS, LOOKS, type LookId } from "./looks"
 import { PaperMap } from "./map"
@@ -58,8 +60,19 @@ const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", 
 const OWN = 0
 /** Road flares in your pocket: the controls line offers Q only while you have one. */
 let pocketFlares = 1
-const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare", { hold: true })] : []), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+/** A camera look with a motor zoom (Hi8): the controls line offers the right mouse button. */
+let zoomPrompt = false
+const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare", { hold: true })] : []), ...(zoomPrompt ? [keyPromptHtml("Mouse2", "Zoom", { hold: true })] : []), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG", "KeyQ"])
+/** `axis` turned by the hand's swing: `pitch` up and `yaw` right (radians, small), about the view's own axes. */
+function swayAxis(axis: [number, number, number], yaw: number, pitch: number, turn: number): [number, number, number] {
+  if (pitch === 0 && turn === 0) return axis
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw)
+  const ux = -axis[1] * rz, uy = axis[0] * rz - axis[2] * rx, uz = axis[1] * rx
+  const x = axis[0] + ux * pitch + rx * turn, y = axis[1] + uy * pitch, z = axis[2] + uz * pitch + rz * turn
+  const l = Math.hypot(x, y, z) || 1
+  return [x / l, y / l, z / l]
+}
 /** Solo nights played in this browser: the next night's layout (`?night=` replays one). */
 const NIGHT_KEY = "barbara.night"
 /** Beam ids for dropped torches (`DROPPED` + the taken walker's id). */
@@ -92,8 +105,8 @@ async function main() {
     channels: ["master", "effects", "ambience", "voice"], quality,
     sections: [
       { id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] },
-      // The camera looks (body cam, NightShot, phone, VHS) one click from the Escape menu; the Lab keeps their knobs.
-      { id: "camera", title: "Camera", rows: [{ kind: "choice", id: "cameraLook", label: "Camera look", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })),
+      // The playable camera looks one click from the Escape menu; the Lab keeps their knobs and the Lab-only ones.
+      { id: "camera", title: "Camera", rows: [{ kind: "choice", id: "cameraLook", label: "Camera look", options: PLAYABLE_LOOKS.map((value) => ({ value, label: CAMERA_LOOKS[value].label })),
         get: () => live.cameraLook?.settings.look ?? "eyes", set: (v) => { live.cameraLook?.apply(v as CameraLookId); localStorage.setItem(CAMERA_LOOK_KEY, v); live.panel?.sync() } }] },
     ],
     // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
@@ -191,6 +204,10 @@ async function main() {
   let lakeEditor: ReturnType<typeof createLakeEditor> | undefined
   const camera = new WoodsCamera(canvas, () => lakeEditor?.state.mode === "edit", settings, active)
   camera.fov = 70; camera.near = 0.08; camera.far = 300; camera.flashlight = true
+  // Camera feel and the small things (breath, kicked leaves): presentation on top of the shared walk.
+  const feel = new CameraFeel()
+  camera.feel = feel
+  const juice = new Juice()
   const spawn = world.camp.spawn
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
@@ -240,6 +257,8 @@ async function main() {
   const savedLook = savedCameraLook(localStorage.getItem(CAMERA_LOOK_KEY), params, smoke || Boolean(navigator.webdriver))
   if (savedLook) cameraLook.apply(savedLook)
   cameraLook.onLook = () => shell.settings.changed()
+  cameraLook.onClick = () => audio.foley("ir.click")
+  panel.addControls(feel.settings as unknown as Record<string, number | boolean>, CAMERA_FEEL_CONTROLS)
   audio.bindControls(panel)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()
@@ -300,6 +319,10 @@ async function main() {
     if (MOVE_KEYS.has(e.code)) { keys.add(e.code); e.preventDefault() }
   })
   window.addEventListener("keyup", (e) => { keys.delete(e.code); if (isMetaKey(e.code)) release() })
+  // The right mouse button holds a camcorder's motor zoom (looks with one).
+  canvas.addEventListener("mousedown", (e) => { if (e.button === 2 && locked()) keys.add("Mouse2") })
+  window.addEventListener("mouseup", (e) => { if (e.button === 2) keys.delete("Mouse2") })
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault())
   window.addEventListener("blur", release)
   document.addEventListener("visibilitychange", () => { if (document.hidden) release() })
   // With the Lab panel open the shell's cards stay hidden, so you can tune while looking at the woods; a click on them
@@ -359,14 +382,28 @@ async function main() {
   /** The beam trails the view by the hand's lag (s). */
   const lagged: [number, number, number] = [0, 0, -1]
   let laggedReady = false
+  /** Rain on the ground (the storm's, last frame): grass goes wet and dirt to mud. */
+  let groundWet = 0
   const surfaceAt = (x: number, z: number): FootSurface => {
     if (dockAt(world, x, z)) return "wood"
-    if (lakeDistance(world.lake, x, z) < 1.02) return "puddle"
-    if (Math.hypot(x - world.camp.x, z - world.camp.z) < world.camp.radius * 0.7) return "dirt"
-    return trailDistance(world.trail, x, z).d < 1.6 ? "dirt" : "grass"
+    // Cabin floors, porches and steps.
+    if (world.buildings.some((b) => (b.kind === "cabin" || b.kind === "mess-hall") && x > b.rect[0] - 0.9 && x < b.rect[2] + 0.9 && z > b.rect[1] - 0.9 && z < b.rect[3] + 0.9)) return "wood"
+    const shore = lakeDistance(world.lake, x, z)
+    if (shore < 1.02) return "puddle"
+    if (shore < 1.12) return "mud"
+    // The gravel lot at the head of the old path, where her car is.
+    if (Math.hypot(x - world.camp.x - 14, z - world.camp.z + 26) < 7) return "gravel"
+    const wet = groundWet > 0.35
+    if (Math.hypot(x - world.camp.x, z - world.camp.z) < world.camp.radius * 0.7) return wet ? "mud" : "dirt"
+    if (trailDistance(world.trail, x, z).d < 1.6) return wet ? "mud" : "dirt"
+    return wet ? "wet-grass" : "grass"
   }
+  /** The forest floor: leaf litter under the grass (out past camp's lawn, off the path). */
+  const litterAt = (x: number, z: number, surface: FootSurface) => (surface === "grass" || surface === "wet-grass") && Math.hypot(x - world.camp.x, z - world.camp.z) > world.camp.radius
 
   let acc = 0, last = performance.now(), time = 0, frames = 0, paused = false, prevLight = camera.flashlight, ownLevel = 1
+  /** The view's clock: it freezes a beat on a hit-stop (the creature, being taken); the creature is drawn on it. */
+  let viewTime = 0, prevRaise = 0, raising = 0, wasTying = false, wasTaken = false
   /** `dark`: player ids whose torches aren't drawn (captures that count lights; presentation only). */
   const debug = { beams: 0, kbps: 0, dark: [] as number[] }
   let stepping = false, smokeTarget: GPUTexture | null = null
@@ -500,7 +537,7 @@ async function main() {
         if (e) session.inject(e)
       } else {
         const plan = planCreature(world, state.players.map((p) => (p.id === session.me ? { ...p, yaw: camera.yaw, pitch: camera.pitch } : p)), settings, { seed: (time * 1000) | 0 }, SIGNAL_HOLD_SECONDS, true)
-        if (plan) { e = { kind: "creature", at: state.t, x0: plan.x0, z0: plan.z0, x1: plan.x1, z1: plan.z1, dur: plan.dur, seed: plan.seed, seq: -1 }; creatures.start(e, time); audio.event(e) }
+        if (plan) { e = { kind: "creature", at: state.t, x0: plan.x0, z0: plan.z0, x1: plan.x1, z1: plan.z1, dur: plan.dur, seed: plan.seed, seq: -1 }; creatures.start(e, viewTime); audio.event(e) }
       }
       if (e) { creature.last = e; return e }
       if (session instanceof SoloSession && !creature.stageAt && creature.stage()) { creature.stageAt = time + 1.2; say("A friend's light, far ahead…", 2); return null }
@@ -578,16 +615,35 @@ async function main() {
     session.frame(dt, alpha)
     const state = session.view, meId = session.me
     const at = session.drawn(alpha)
-    const vp = camera.place(at.x, at.z, standHeight(world, at.x, at.z) + EYE_HEIGHT, dt, width / height, at.y)
-    if (playing) audio.steps(camera.walk.events, surfaceAt(at.x, at.z), camera.walk.time, settings.footsteps)
+    const vdt = feel.stopped(dt, settings.reduceMotion)
+    viewTime += vdt
+    camera.feelInput.walkSpeed = settings.walkSpeed
+    camera.feelInput.bobScale = cameraLook.settings.bob
+    camera.lensScale = cameraLook.fovScale
+    camera.sensitivity = 0.002 * cameraLook.fovScale
+    const vp = camera.place(at.x, at.z, standHeight(world, at.x, at.z) + EYE_HEIGHT, vdt, width / height, at.y)
+    const underfoot = surfaceAt(at.x, at.z), litter = litterAt(at.x, at.z, underfoot)
+    if (playing) {
+      audio.steps(camera.walk.events, underfoot, camera.walk.time, settings.footsteps)
+      if (litter) audio.leaves(camera.walk.events, camera.walk.time, settings.footsteps)
+    }
     roster(now)
     {
       for (const e of session.drain()) {
-        if (e.kind === "creature") { creatures.start(e, time, state.t - e.at); audio.event(e); continue }
+        if (e.kind === "creature") {
+          creatures.start(e, viewTime, state.t - e.at); audio.event(e)
+          // Your heart and a startle if it crossed in front of you: where it runs from you, and whether you were facing it.
+          const mx = (e.x0 + e.x1) / 2 - at.x, mz = (e.z0 + e.z1) / 2 - at.z
+          const off = Math.atan2(-mx, -mz) - camera.yaw
+          feel.creature(Math.hypot(mx, mz), Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < 0.7)
+          continue
+        }
         audio.event(e)
         if (e.kind === "distant") cameraLook.event(e)
+        if (e.kind === "distant" && (UNCANNY_SOUNDS as readonly string[]).includes(e.sound)) feel.dread(0.35)
+        if (e.kind === "flare-struck" && e.by === meId) feel.kick(0.06, 0.15)
         const mine = "by" in e && e.by === meId
-        if (e.kind === "tape-tied") audio.play("pack.close", e.x, e.z, mine ? 1 : 0.6)
+        if (e.kind === "tape-tied") { audio.play("pack.close", e.x, e.z, mine ? 0.5 : 0.6); if (mine) audio.foley("tape.tear") }
         if (e.kind === "tape-removed") audio.play("pack.open", e.x, e.z, mine ? 1 : 0.6)
         if (e.kind === "marker-found" && mine) say(`Survey marker #${e.marker}, pencilled onto your map.`, 3)
         // A clue: everyone hears who found what; only the finder reads what it says (it goes on their map alone).
@@ -626,6 +682,18 @@ async function main() {
     const p = session.self
     // The first time you come up to the boundary fence, say what it is (the fence and its signs carry it after that).
     if (playing && !boundarySaid && toBoundary(world, p.x, p.z) < 12) { boundarySaid = true; say("A rusted wire fence and POSTED signs: the state forest ends here. Barbara's somewhere inside it.", 6) }
+    // Paper as the map comes up or goes back, tape pulled off the roll as you start tying, and being taken.
+    if (playing) {
+      const dr = p.mapRaise - prevRaise, dir = dr > 1e-4 ? 1 : dr < -1e-4 ? -1 : 0
+      if (dir !== 0 && dir !== raising) audio.foley(dir > 0 ? "paper.up" : "paper.down", 1, 0.2)
+      if (dir !== 0) raising = dir
+      const tying = !!p.tie && keys.has("KeyE")
+      if (tying && !wasTying) audio.foley("tape.pull", 1, 0.15)
+      wasTying = tying
+    }
+    prevRaise = p.mapRaise
+    if (!!p.capture && !wasTaken) feel.taken()
+    wasTaken = !!p.capture
     // The held map and compass (Map style: Held): its hands follow the raise; while up, your torch is the one in its
     // right glove, aimed at the sheet, on its low setting.
     held.tier = quality.tier
@@ -647,6 +715,8 @@ async function main() {
     for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! + (axis[i]! - lagged[i]!) * k
     const al = Math.hypot(lagged[0], lagged[1], lagged[2]) || 1
     let ownAxis: [number, number, number] = [lagged[0] / al, lagged[1] / al, lagged[2] / al]
+    // The torch swings on in the hand when you stop or start (camera feel).
+    ownAxis = swayAxis(ownAxis, camera.yaw, feel.hand.pitch, feel.hand.yaw)
     // The hand stays where it is when a body camera hangs the view lower.
     let ownOrigin = handFrom([camera.eye[0], camera.eye[1] - camera.mount.height, camera.eye[2]], camera.yaw, lookDir)
     if (heldTorch) {
@@ -685,6 +755,9 @@ async function main() {
     const lit = flares.update(state, world, meId, session.roomTime(), dt, camera.eye, { yaw: camera.yaw, pitch: camera.pitch }, settings, view.forest.settings, quality.tier === "low" ? 1 : quality.tier === "balanced" ? 2 : 3)
     place.scene.push(...lit.scene)
     place.fog.push(...lit.fog)
+    // Your breath and kicked leaves, in the same particle pool, lit by your torch.
+    const torchLight = juice.frame({ dt, pool: flares.pool, eye: camera.eye, yaw: camera.yaw, vx: camera.body.vx, vz: camera.body.vy, walkSpeed: settings.walkSpeed, ground: standHeight(world, at.x, at.z), steps: camera.walk.events, litter, torch: level > 0 ? { pos: ownOrigin, dir: ownAxis, level: ownLevel } : null, settings: feel.settings, playing })
+    if (torchLight.length) lit.particles = { ...lit.particles, lights: [...lit.particles.lights, ...torchLight] }
     flares.draw(fp, state, world)
     if (session.self.flares !== pocketFlares) { pocketFlares = session.self.flares; controlsHud() }
     // Every torch is a photometric beam: the forest renderer lights, shadows and scatters it (your own gets the
@@ -693,7 +766,9 @@ async function main() {
     debug.beams = beams.length
     if (torchTrace && level > 0) torchTrace.push({ origin: [...ownOrigin], aim: [...axis], axis: [...ownAxis], eye: [...camera.eye], vp: [...vp] })
     const spiderBatches = spider.frame(session.spider, dt)
-    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place, spiderEyes: spider.eyes() })
+    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place, spiderEyes: spider.eyes(), mapRaise: p.mapRaise, feelBlur: feel.settings.blur, reduced: settings.reduceMotion, zoomHeld: playing && keys.has("Mouse2") })
+    if (cameraLook.settings.zoom !== zoomPrompt) { zoomPrompt = cameraLook.settings.zoom; controlsHud() }
+    audio.body(feel.fear < 0.15 ? 0 : Math.min(1, (feel.fear - 0.15) / 0.85), cameraLook.zooming)
     if (trace) {
       const at = performance.now()
       for (const q of state.players) {
@@ -710,6 +785,8 @@ async function main() {
     // Scheduled strikes follow the sim clock round camp, so a room on the same Look sees the same ones.
     const sf = storm.frame({ dt, eye: camera.eye, yaw: camera.yaw, groundY: standHeight(world, at.x, at.z), forestWind: view.forest.settings.wind, shared: { time: state.t, anchor: [world.camp.x, world.camp.z] } })
     audio.storm(sf)
+    feel.storm(sf.thunder, sf.clock)
+    groundWet = sf.rain
     view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: [...creatures.frame(world, time), ...spiderBatches], flares: lit, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
@@ -768,7 +845,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm,
+      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, feel, juice, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm,
       /** Automation: name what took her, as if at the radio (`verdict.ts`). */
       vote: (s: (typeof SUSPECTS)[number]) => session.vote(s),
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */
@@ -804,6 +881,8 @@ async function main() {
       },
       /** Automation: hold or release a game key (KeyE, KeyG) without pointer lock. */
       hold(code: string, down: boolean) { if (down) keys.add(code); else keys.delete(code) },
+      /** Automation: a tap of Space (jump). */
+      jump() { jumpPressed = true },
       /** Automation: step the sim and draw `ms` later on a synthetic clock even without pointer lock. */
       step(ms: number) { const was = forcePlay; forcePlay = true; stepping = true; try { frame(last + ms) } finally { forcePlay = was; stepping = false } },
       /** Automation: play without pointer lock (the camera then takes no keyboard input; drive it with setPose). */

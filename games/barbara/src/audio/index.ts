@@ -10,6 +10,7 @@ import type { VoiceEvent } from "../../shared/voices"
 import type { ThunderEvent } from "@arcade/kit/weather/storm"
 import { groundHeight, type WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
+import { FOLEY, FOLEY_CONTROLS, Foley, type FoleyKind, type FoleySettings } from "./foley"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
 import { Soundscape, type FlareSound, type Listener, type SoundLayer } from "./soundscape"
 import { BRUSH_IDS, VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
@@ -28,8 +29,10 @@ export class WoodsMix {
   readonly scapeOut: GainNode
   readonly voices: VoiceBus
   readonly limiter: DynamicsCompressorNode
+  /** Your own small sounds (leaves, map paper, tape, heartbeat, camera), with the footsteps on the effects level. */
+  readonly foley: Foley
 
-  constructor(readonly ctx: BaseAudioContext, sound: SoundSettings, baseUrl: string, world: () => WoodsWorld, voice: VoiceSettings = VOICE, fetcher?: (url: string) => Promise<ArrayBuffer>) {
+  constructor(readonly ctx: BaseAudioContext, sound: SoundSettings, baseUrl: string, world: () => WoodsWorld, voice: VoiceSettings = VOICE, fetcher?: (url: string) => Promise<ArrayBuffer>, foley: FoleySettings = FOLEY) {
     this.limiter = ctx.createDynamicsCompressor()
     this.limiter.threshold.value = -6
     this.limiter.knee.value = 0
@@ -45,6 +48,7 @@ export class WoodsMix {
     this.feetOut.connect(this.limiter)
     this.scapeOut.connect(this.limiter)
     this.feet = new Footsteps(ctx, this.feetOut)
+    this.foley = new Foley(ctx, this.feetOut, foley)
     this.scape = new Soundscape(ctx, this.scapeOut, sound, baseUrl, world)
     this.voices = new VoiceBus(ctx, this.limiter, voice, baseUrl, world, fetcher)
   }
@@ -92,6 +96,7 @@ export class WoodsAudio {
   readonly bank = new SoundBank("barbara", WOODS_SFX, { unlockOnGesture: false })
   readonly sound: SoundSettings = { ...SOUND }
   readonly voice: VoiceSettings = { ...VOICE }
+  readonly foleySettings: FoleySettings = { ...FOLEY }
   /** Each line as it reaches you (after its travel), for subtitles: whether you'd hear it, from how far. */
   onLine: ((e: VoiceEvent, heard: ReturnType<typeof voiceHeard>) => void) | null = null
   /** Lab-only: audition one distant sound, solo one layer. */
@@ -149,7 +154,7 @@ export class WoodsAudio {
     if (!this.begun || !this.running()) return null
     const ctx = this.bank.runtime.ctx!
     if (!this.mix) {
-      this.mix = new WoodsMix(ctx, this.sound, this.baseUrl, () => this.world!, this.voice)
+      this.mix = new WoodsMix(ctx, this.sound, this.baseUrl, () => this.world!, this.voice, undefined, this.foleySettings)
       void this.mix.voices.preload(this.wantVoices)
       this.mix.scape.solo = LAYERS[this.lab.solo] ?? null
     }
@@ -172,6 +177,7 @@ export class WoodsAudio {
     this.thunder.length = 0
     this.mix?.scape.stopAll()
     this.mix?.voices.stopAll()
+    this.mix?.foley.stop()
     if (this.running()) this.bank.runtime.suspend()
   }
 
@@ -185,6 +191,7 @@ export class WoodsAudio {
     ]
     panel.addControls(this.lab, controls)
     panel.addControls(this.voice, VOICE_CONTROLS)
+    panel.addControls(this.foleySettings, FOLEY_CONTROLS)
   }
 
   /**
@@ -329,6 +336,25 @@ export class WoodsAudio {
   spider(at: { x: number; z: number } | null, steps: readonly { x: number; y: number; z: number }[]): void {
     this.spiderFrame.at = at ? [at.x, at.z] : null
     if (this.live || this.tape) for (const s of steps) this.spiderFrame.steps.push([s.x, s.y, s.z, this.spiderTake++ % 4])
+  }
+
+  /** One of your own small sounds now (`gain` ×, `pan` −1…1). */
+  foley(kind: FoleyKind, gain = 1, pan = 0): void {
+    if (this.live && this.mix && this.running()) this.mix.foley.play(kind, gain, pan)
+  }
+
+  /** Dry leaves under each step contact, on the walk clock like the footsteps. */
+  leaves(events: readonly FootEvent[], walkTime: number, gain = 1): void {
+    if (!this.live || !this.mix || !this.running()) return
+    const now = this.mix.ctx.currentTime
+    for (const e of events) if (e.kind === "step") this.mix.foley.play("leaves", e.gain * gain, e.pan, now + e.time - walkTime)
+  }
+
+  /** Your heartbeat this frame (0 silent … 1 pounding) and whether a camera's zoom motor runs. */
+  body(heart: number, zooming: boolean): void {
+    if (!this.live || !this.mix || !this.running()) return
+    this.mix.foley.heart(heart)
+    this.mix.foley.zoom(zooming)
   }
 
   play(id: (typeof WOODS_SFX)[number], x?: number, z?: number, gain = 1): void {

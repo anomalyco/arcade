@@ -13,6 +13,8 @@ import { bodycamStamp, layoutText, phoneTimecode, textWidth, vhsStamp } from "./
  * pass their `FirstPerson` offer it.
  */
 export type CameraFilterMode = "today" | "iphone" | "vhs" | "crt" | "bodycam"
+/** `hi8` draws a camcorder viewfinder over VHS; `trail` a trail camera's strip over the phone sensor. */
+export type CameraStamp = "auto" | "hi8" | "trail"
 type Family = "phone" | "vhs" | "crt" | "body"
 const familyOf = (mode: CameraFilterMode): Family | null =>
   mode === "iphone" ? "phone" : mode === "vhs" ? "vhs" : mode === "crt" ? "crt" : mode === "bodycam" ? "body" : null
@@ -66,6 +68,10 @@ export const CAMERA_FILTER_DEFAULTS = {
   vhsVignette: 0.6,
   vhsRoll: 0.4,
   vhsYear: 1987,
+  /** A camcorder's auto iris: the picture pumps brighter in the dark and clamps down when a light swings in. */
+  vhsIris: 0,
+  /** Burned-in text: each mode's own, a Hi8 viewfinder (REC, battery, zoom) or a trail camera's data strip. */
+  stamp: "auto" as CameraStamp,
   crtPreset: "tv" as CrtPreset,
   /** 0 aperture grille, 1 slot mask, 2 shadow mask. */
   crtMask: 2 as number,
@@ -187,6 +193,8 @@ export function cameraFilterControls(options: CameraFilterControlOptions = {}): 
     range("vhsInterlace", "Interlace", 0, 1, 0.01, "×", vhs, "Tape"),
     range("vhsRoll", "Hum bar", 0, 1, 0.01, "×", vhs, "Tape"),
     range("vhsYear", "Stamp year (0 today)", 0, 2026, 1, "", vhs, "Tape"),
+    range("vhsIris", "Auto iris pumping", 0, 1, 0.01, "×", vhs, "Signal"),
+    { ...key("stamp"), label: "Burned-in text", group, type: "select", options: [{ value: "auto", label: "The camera's own" }, { value: "hi8", label: "Hi8 viewfinder" }, { value: "trail", label: "Trail camera" }], visible: stamped },
   ]
 }
 
@@ -551,6 +559,11 @@ fn rgb(c: vec3f) -> vec3f {
   }
   iq *= 0.25;
   yw *= 0.25;
+  // Auto iris: the metered exposure (the state pass) opens up in the dark and slams shut on a light, overshooting.
+  let iris = exp2(clamp(textureLoad(state, vec2i(0, 0), 0).x, -1.5, 1.8) * u.p1.x * k);
+  y *= iris;
+  yw *= iris;
+  iq *= iris;
   // Camcorder aperture correction rings a halo beside edges; highlights smear sideways.
   y += (y - 0.5 * (s0 + s4)) * u.v2.w * k * 1.2;
   let bl = u.v2.x * k;
@@ -730,6 +743,15 @@ export class CameraFilter implements FinalPass {
   fade = 0
   /** Additional camera movement (phone shake and body rig), for authored cameras and reduced motion. */
   motion = 1
+  /** When the recording starts by the stamps' clock (ms since 1970); null is now. A game's story date. */
+  epoch: number | null = null
+  /** Hi8 viewfinder: zoom position 0 wide … 1 tele (its bar shows for a while after it changes) and battery 0…1. */
+  zoom = 0
+  battery = 1
+  /** Multiplies `settings.strength` for this frame (a game easing the look off while you read a map), leaving the knob alone. */
+  strengthScale = 1
+  private zoomShownUntil = -1
+  private lastZoom = 0
   private targets: Targets | null = null
   private state: [GPUTexture, GPUTexture] | null = null
   private stateViews: [GPUTextureView, GPUTextureView] | null = null
@@ -796,10 +818,12 @@ export class CameraFilter implements FinalPass {
     if (!mode) return
     this.ensure(mode)
     const sensor = mode === "phone" || mode === "body"
+    // The state pass meters exposure for the sensor modes, and for VHS when its iris pumps.
+    const metered = sensor || (mode === "vhs" && s.vhsIris > 0)
     const time = frame[19]!
     const dt = time - this.lastTime
     const continuous = this.valid && s.mode === this.lastMode && dt >= 0 && dt < 0.25
-    if (s.mode !== this.lastMode) { this.recordStart = time; this.stampEpoch = Date.now() }
+    if (s.mode !== this.lastMode) { this.recordStart = time; this.stampEpoch = this.epoch ?? Date.now() }
     if (continuous && dt > 0) {
       const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
       const k = 1 - Math.exp(-dt / 0.04)
@@ -833,9 +857,9 @@ export class CameraFilter implements FinalPass {
       pass.draw(3)
       pass.end()
     }
-    if (sensor && !hold) small(this.stateViews![write], this.pipes.state!)
+    if (metered && !hold) small(this.stateViews![write], this.pipes.state!)
     // Held frame: carry the state forward untouched.
-    else if (sensor) encoder.copyTextureToTexture({ texture: this.state![read] }, { texture: this.state![write] }, [2, 1])
+    else if (metered) encoder.copyTextureToTexture({ texture: this.state![read] }, { texture: this.state![write] }, [2, 1])
     if (!hold && mode !== "vhs") small(this.localView!, this.pipes.local!)
     const main = encoder.beginRenderPass({
       colorAttachments: [
@@ -956,10 +980,8 @@ export class CameraFilter implements FinalPass {
       { format: this.format, blend: { color: { srcFactor: "constant", dstFactor: "zero" }, alpha: { srcFactor: "one", dstFactor: "zero" } } },
       { format: this.format },
     ]
-    if (mode === "phone" || mode === "body") {
-      pipe("state", CAMERA_FILTER_WGSL.state, "fs_state", this.stateLayout!, [{ format: "rgba32float" }])
-      pipe("phone", CAMERA_FILTER_WGSL.phone, "fs_phone", this.mainLayout, targets)
-    }
+    if (mode === "phone" || mode === "body" || mode === "vhs") pipe("state", CAMERA_FILTER_WGSL.state, "fs_state", this.stateLayout!, [{ format: "rgba32float" }])
+    if (mode === "phone" || mode === "body") pipe("phone", CAMERA_FILTER_WGSL.phone, "fs_phone", this.mainLayout, targets)
     if (mode !== "vhs") pipe("local", CAMERA_FILTER_WGSL.state, "fs_local", this.stateLayout!, [{ format: "rgba16float" }])
     if (mode === "vhs") pipe("vhs", CAMERA_FILTER_WGSL.vhs, "fs_vhs", this.mainLayout, targets)
     else if (mode === "crt") pipe("crt", CAMERA_FILTER_WGSL.crt, "fs_crt", this.mainLayout, targets)
@@ -993,7 +1015,14 @@ export class CameraFilter implements FinalPass {
     let stamp: { time: string; date: string } | null = null
     let body: { time: string; unit: string } | null = null
     let code = ""
-    if (mode === "body") {
+    const style = mode === "vhs" && this.settings.stamp === "hi8" ? "hi8" : mode === "phone" && this.settings.stamp === "trail" ? "trail" : null
+    const clock = new Date(this.stampEpoch + (time - this.recordStart) * 1000)
+    if (this.zoom !== this.lastZoom) { this.lastZoom = this.zoom; this.zoomShownUntil = time + 2 }
+    if (style) {
+      h = style === "hi8" ? 240 : 540
+      w = Math.max(320, Math.round((h * width) / height))
+      key = `${style} ${w} ${Math.floor(clock.getTime() / 1000)} ${Math.floor(time * 2) % 2} ${time < this.zoomShownUntil ? Math.round(this.zoom * 20) : -1} ${Math.ceil(this.battery * 4)}`
+    } else if (mode === "body") {
       h = 540
       w = Math.round((540 * width) / height)
       body = bodycamStamp(new Date(this.stampEpoch + (time - this.recordStart) * 1000), this.seed)
@@ -1017,7 +1046,9 @@ export class CameraFilter implements FinalPass {
     const ctx = this.canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
     if (!ctx) return
     ctx.clearRect(0, 0, w, h)
-    if (body) {
+    if (style === "hi8") this.paintViewfinder(ctx, w, h, time, clock)
+    else if (style === "trail") paintTrailStrip(ctx, w, h, clock, this.seed, Math.floor((time - this.recordStart) * 3))
+    else if (body) {
       // Burned-in like the real units: plain bold capitals, white with a dark edge, top right. No brand.
       ctx.font = `700 ${Math.round(h * 0.034)}px ui-monospace, SFMono-Regular, Menlo, monospace`
       ctx.textAlign = "right"
@@ -1067,8 +1098,41 @@ export class CameraFilter implements FinalPass {
     this.device.queue.copyExternalImageToTexture({ source: this.canvas }, { texture: this.overlayTex, premultipliedAlpha: true }, [w, h])
   }
 
+  /** A Hi8 camcorder's viewfinder: REC and its blinking dot, tape counter, battery, the zoom bar while zooming, the date. */
+  private paintViewfinder(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, w: number, h: number, time: number, clock: Date) {
+    const scale = 2
+    const draw = (text: string, x: number, y: number, color = "#f4f4ec") => {
+      ctx.fillStyle = "rgba(0,0,0,0.85)"
+      layoutText(text, x + 1, y + 1, scale, (rx, ry, rw, rh) => ctx.fillRect(rx, ry, rw, rh))
+      ctx.fillStyle = color
+      layoutText(text, x, y, scale, (rx, ry, rw, rh) => ctx.fillRect(rx, ry, rw, rh))
+    }
+    const top = Math.round(h * 0.08), left = Math.round(w * 0.08), right = Math.round(w * 0.92)
+    if (Math.floor(time * 2) % 2 === 0) draw("●", left, top, "#ff3a2a")
+    draw("REC", left + 7 * scale, top)
+    draw("SP", left, top + 10 * scale)
+    const counter = phoneTimecode(time - this.recordStart).slice(1)
+    draw(counter, right - textWidth(counter, scale), top + 10 * scale)
+    // Battery: a cell outline and up to four segments, the last one blinking when low.
+    const bw = 15 * scale, bh = 7 * scale, bx = right - bw - 2 * scale, by = top
+    const box = (x: number, y: number, bw2: number, bh2: number, color: string) => { ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(x + 1, y + 1, bw2, bh2); ctx.fillStyle = color; ctx.fillRect(x, y, bw2, bh2) }
+    box(bx, by, bw, scale, "#f4f4ec"); box(bx, by + bh - scale, bw, scale, "#f4f4ec"); box(bx, by, scale, bh, "#f4f4ec"); box(bx + bw - scale, by, scale, bh, "#f4f4ec"); box(bx + bw, by + 2 * scale, 2 * scale, 3 * scale, "#f4f4ec")
+    const cells = Math.ceil(Math.max(0, Math.min(1, this.battery)) * 4)
+    for (let i = 0; i < cells; i++) if (cells > 1 || Math.floor(time * 2) % 2 === 0) box(bx + 2 * scale + i * 3 * scale, by + 2 * scale, 2 * scale, 3 * scale, "#f4f4ec")
+    // Zoom: W and T with a bar between and a marker at the lens's position.
+    if (time < this.zoomShownUntil) {
+      const zy = Math.round(h * 0.29), zx = left, len = 40 * scale
+      draw("W", zx, zy); draw("T", zx + 6 * scale + len + 2 * scale, zy)
+      box(zx + 7 * scale, zy + 3 * scale, len, scale, "#f4f4ec")
+      box(zx + 7 * scale + Math.round(this.zoom * (len - 2 * scale)), zy + scale, 2 * scale, 5 * scale, "#f4f4ec")
+    }
+    const stamp = vhsStamp(clock, this.settings.vhsYear)
+    draw(stamp.time, right - textWidth(stamp.time, scale), Math.round(h * 0.79))
+    draw(stamp.date, right - textWidth(stamp.date, scale), Math.round(h * 0.87))
+  }
+
   private pack(mode: Family, frame: Float32Array, time: number, dt: number, hold: boolean, reset: boolean, width: number, height: number) {
-    const s = this.settings, k = Math.max(0, Math.min(1, s.strength)), u = this.data
+    const s = this.settings, k = Math.max(0, Math.min(1, s.strength * this.strengthScale)), u = this.data
     const seed = this.seed
     const body = mode === "body"
     const wave = (a: number, b: number, c: number, o: number) => Math.sin(time * a + o) * 0.6 + Math.sin(time * b + o * 1.7) * 0.3 + Math.sin(time * c + o * 2.3) * 0.1
@@ -1076,9 +1140,9 @@ export class CameraFilter implements FinalPass {
     const amp = 4 * shake * (height / 1080)
     const crop = mode === "phone" && s.phoneVertical ? Math.min(1, (height * 9) / 16 / width) : 1
     const x0 = 0.5 - crop / 2, x1 = 0.5 + crop / 2
-    // Phone timer: top centre of the (cropped) frame. Body camera: the whole frame.
+    // Phone timer: top centre of the (cropped) frame. Body camera and trail camera: the whole frame.
     const ph = 0.042, pw = (ph * height * (320 / 72)) / width
-    const rect = body ? [0, 0, 1, 1] : [0.5 - pw / 2, 0.035, 0.5 + pw / 2, 0.035 + ph]
+    const rect = body || s.stamp === "trail" ? [0, 0, 1, 1] : [0.5 - pw / 2, 0.035, 0.5 + pw / 2, 0.035 + ph]
     // A perspective viewProj's second row is the view's up axis scaled by 1/tan(fov/2).
     const tanHalf = 1 / Math.max(1e-6, Math.hypot(frame[1]!, frame[5]!, frame[9]!))
     const fps = body ? 30 : Number(s.phoneFps) || 30
@@ -1090,7 +1154,7 @@ export class CameraFilter implements FinalPass {
       amp * wave(1.9, 3.7, 7.3, seed % 7), amp * wave(1.6, 3.1, 6.7, (seed % 11) + 3), 0.0025 * shake * wave(1.3, 2.9, 5.3, (seed % 5) + 1), s.overlay ? 1 : 0,
       ...rect,
       ...(body ? [0.3, s.bodySharpen, s.bodyNoise, 0.4] : [s.phoneHdr, s.phoneSharpen, s.phoneNoise, s.phoneDenoise]),
-      ...(body ? [s.bodyExposure, 0.35, 0, rolling] : [s.phoneExposure, s.phoneWhiteBalance, s.phoneFocus, rolling]),
+      ...(body ? [s.bodyExposure, 0.35, 0, rolling] : mode === "vhs" ? [s.vhsIris, 0, 0, rolling] : [s.phoneExposure, s.phoneWhiteBalance, s.phoneFocus, rolling]),
       ...(body ? [s.bodyMotionBlur, s.bodyCompression, 0, 1 + 0.01 * k] : [s.phoneMotionBlur, s.phoneCompression, s.phoneFlare, 1 + 0.035 * k]),
       x0, x1, 1 / (2 * fps), 0.012 * rolling * k,
       s.vhsSoftness, s.vhsChroma, s.vhsNoise, s.vhsDropouts,
@@ -1104,6 +1168,24 @@ export class CameraFilter implements FinalPass {
       s.bodyVignette, 0, 0, 0,
     ])
   }
+}
+
+/** A trail camera's data strip along the bottom: make, the moon, temperature, date, time and the picture's number. */
+function paintTrailStrip(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, w: number, h: number, clock: Date, seed: number, shot: number) {
+  const bar = Math.round(h * 0.055)
+  ctx.fillStyle = "rgba(0,0,0,0.92)"
+  ctx.fillRect(0, h - bar, w, bar)
+  ctx.font = `700 ${Math.round(bar * 0.62)}px ui-monospace, SFMono-Regular, Menlo, monospace`
+  ctx.textBaseline = "middle"
+  ctx.fillStyle = "#e8e8e8"
+  const two = (n: number) => String(n).padStart(2, "0")
+  const y = h - bar / 2
+  ctx.textAlign = "left"
+  ctx.fillText(`TRAIL CAM ${two((seed % 7) + 1)}`, bar * 0.5, y)
+  ctx.textAlign = "center"
+  ctx.fillText(`◐  ${31 + (seed % 5)}°F  ${two(clock.getMonth() + 1)}/${two(clock.getDate())}/${clock.getFullYear()}  ${two(clock.getHours())}:${two(clock.getMinutes())}:${two(clock.getSeconds())}`, w / 2, y)
+  ctx.textAlign = "right"
+  ctx.fillText(String(shot + 1).padStart(4, "0"), w - bar * 0.5, y)
 }
 
 /**

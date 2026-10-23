@@ -38,6 +38,8 @@ export const CAMERA_ARTIFACT_DEFAULTS = {
   condensationAmount: 0.45,
   infrared: false,
   infraredBloom: 0.7,
+  /** Infrared's colour: 0 a camcorder's NightShot green, 1 a body camera's grey. */
+  infraredTint: 0,
 }
 export type CameraArtifactSettings = typeof CAMERA_ARTIFACT_DEFAULTS
 
@@ -79,6 +81,7 @@ export function cameraArtifactControls(options: { group?: string; prefix?: strin
     range("condensationAmount", "Crept in", "condensation"),
     toggle("infrared", "Infrared monochrome"),
     range("infraredBloom", "IR blooming", "infrared"),
+    range("infraredTint", "IR green … grey", "infrared"),
   ]
 }
 
@@ -95,7 +98,7 @@ struct U {
   fa: array<vec4f, 4>,  // lens x y px, spot x y px
   fb: array<vec4f, 4>,  // lens radius px, spot radius px, hz, duty
   fc: array<vec4f, 4>,  // phase, level, -, -
-  pad: vec4f,
+  pad: vec4f, // infrared tint (0 green, 1 grey), -, -, -
 }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var src: texture_2d<f32>;
@@ -302,7 +305,8 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
   if (ir > 0.0) {
     let y = lum(c) * 1.5 + max(lum(wide) - 0.04, 0.0) * 5.0 * u.k.y;
     let ys = clamp((toSrgb(vec3f(y)).x - 0.08) / 0.84, 0.0, 1.0);
-    let mono = mix(vec3f(0.34, 0.8, 0.32) * ys, vec3f(0.86, 1.0, 0.82), smoothstep(0.7, 1.0, ys) * 0.8);
+    let tint = mix(vec3f(0.34, 0.8, 0.32), vec3f(0.62, 0.64, 0.66), u.pad.x);
+    let mono = mix(tint * ys, mix(vec3f(0.86, 1.0, 0.82), vec3f(0.95, 0.96, 0.97), u.pad.x), smoothstep(0.7, 1.0, ys) * 0.8);
     c = mix(c, toLin(mono), ir);
   }
 
@@ -562,6 +566,7 @@ export class CameraArtifacts implements FinalPass {
       nf, s.condensationAmount, 1 / 32, pump,
       s.gainSmear, s.infraredBloom, index, index % fps === 0 ? 1 : 0,
     ], 0)
+    u[92] = s.infraredTint
   }
 
   private resize(width: number, height: number) {

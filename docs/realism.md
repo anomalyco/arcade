@@ -521,6 +521,20 @@ first build.
     make it feel realer?"
   - Pitfalls: flare needs sources projected from the torches, not a bright-pixel threshold, or every lit trunk ghosts;
     the PWM band is subtle at a few hundred hertz, so its depth is a knob.
+- **Recorded footage and turn blur (BARBARA).** Body cam reworked as an Axon-style chest cam (120° lens, slight
+  barrel, timestamp and unit id, grey IR with an IR lamp and relay click when the torch is off); VHS gains iris
+  pumping (`vhsIris`, a state pass) and a dated stamp from the story's epoch (`CameraFilter.epoch`); Hi8 (the VHS mode
+  with `stamp: "hi8"`: REC, SP, counter, battery, W–T zoom held on the right mouse button); trail cam (phone mode at
+  3 fps with a data strip, Lab only, not in `PLAYABLE_LOOKS`). `CameraBlur` smears along the view's rotation only, so
+  walking stays sharp and only whip turns blur; it goes first in the chain so stamps stay sharp.
+  - Where: `packages/kit/gpu/post/camera-blur.ts`, `camcorder.ts` (`stamp`, `zoom`, `battery`, `vhsIris`),
+    `camera-artifacts.ts` (`infraredTint`); BARBARA `src/camera-look.ts`, `src/camera-feel.ts`.
+  - Cost: blur is one full-screen pass, a single tap until a turn passes its threshold, then nine; not timed apart from
+    the looks (each look stays under a millisecond on `mini`).
+  - Kit: "can I see if a bodycam style could work, or a better VHS, or other recorded idea, or more screenshake and
+    movement and motion blur". Stills and the feel clip: gallery `barbara-camera-2026-10-22/`.
+  - Pitfalls: blur must scale to 0 with reduced motion and while the map is up; a depthless blur that also
+    reprojects translation smears the near trunks when walking.
 - **Restrained walking camera.** Contacts come from actual displacement with critically damped presentation
   (`packages/kit/client/walk.ts`, `walk-camera.ts`). Night Shift, Lot. Woods research: 0.5–1.5 cm translation and
   0.1–0.35° roll tied to contacts, no idle sine.
