@@ -8,7 +8,7 @@ import type { ShellRow, ShellSettings } from "./settings"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const QUALITY: readonly [QualityMode, string][] = [["auto", "Auto"], ["high", "High"], ["balanced", "Balanced"], ["low", "Low"]]
-const TIER: Record<QualityTier, string> = { high: "High", balanced: "Balanced", low: "Low" }
+const TIER: Record<QualityTier, string> = { ultra: "Ultra", high: "High", balanced: "Balanced", low: "Low" }
 const SPEAKER = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9h4l5-4v14l-5-4H4z"/><path class="as-wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9.5a3.5 3.5 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10"/><path class="as-cross" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9l5 6M21 9l-5 6"/></svg>`
 
 export type ShellViewOptions = {
@@ -101,7 +101,10 @@ export class ShellView {
       if (flow.overlay !== blocked) {
         blocked = flow.overlay
         this.render()
-      } else if (!this.overlay.hidden) this.fade()
+      } else if (!this.overlay.hidden) {
+        this.syncQuality()
+        this.fade()
+      }
       this.raf = requestAnimationFrame(tick)
     }
     this.raf = requestAnimationFrame(tick)
@@ -161,8 +164,7 @@ export class ShellView {
       if (label) label.textContent = s.muted ? "Muted" : "Mute"
     }
     this.root.dataset.muted = String(s.muted || s.volumes.volumeMaster <= 0)
-    const note = this.card.querySelector<HTMLElement>("[data-note=quality]")
-    if (note && s.quality) note.textContent = s.quality.mode === "auto" ? `Auto is using ${TIER[s.quality.tier]}` : ""
+    this.syncQuality()
     for (const section of s.sections)
       for (const row of section.rows) {
         const el = this.card.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-row="${section.id}.${row.id}"]`)
@@ -197,6 +199,17 @@ export class ShellView {
     const message = l ? `<p class="as-message" data-lobby-message hidden></p>` : ""
     const refused = this.flow.lockRefused ? `<p class="as-message">Click again to take the mouse.</p>` : ""
     return `${this.cornerHtml()}${top}<div class="as-slot-host"></div>${name}${body}${message}${refused}${this.footHtml()}`
+  }
+
+  private syncQuality(): void {
+    const note = this.card.querySelector<HTMLElement>("[data-note=quality]")
+    const q = this.settings.quality
+    if (!note || !q) return
+    const scale = q.resolutionScale ?? 1
+    const text = q.mode === "auto" || q.mode !== q.tier || scale < 1
+      ? `${q.mode === "auto" ? "Auto" : TIER[q.mode]}: ${TIER[q.tier]}${scale < 1 ? ` · ${Math.round(scale * 100)}% resolution` : ""}`
+      : ""
+    if (note.textContent !== text) note.textContent = text
   }
 
   private roomHtml(): string {
@@ -239,7 +252,7 @@ export class ShellView {
     const sound = s.channels.length > 0
     const mute = `<div class="as-field"><span></span><button class="as-btn as-mute" data-act="mute" aria-pressed="false"><span class="as-mute-label">Mute</span>${this.o.muteKey === false ? "" : keyCapHtml("KeyM")}</button></div>`
     const quality = s.quality
-      ? `<div class="as-head">Graphics</div><div class="as-field"><span>Quality</span><div class="as-seg">${QUALITY.map(([m, label]) => `<button data-act="quality" data-mode="${m}" aria-pressed="${s.quality!.mode === m}">${label}</button>`).join("")}</div></div><div class="as-note" data-note="quality"></div>`
+      ? `<div class="as-head">Graphics</div><div class="as-field"><span>Quality</span><div class="as-seg">${(s.quality.modes ?? QUALITY.map(([m]) => m)).map((m) => `<button data-act="quality" data-mode="${m}" aria-pressed="${s.quality!.mode === m}">${m === "auto" ? "Auto" : TIER[m]}</button>`).join("")}</div></div><div class="as-note" data-note="quality" role="status"></div>`
       : ""
     const sections = s.sections.map((sec) => `<div class="as-head">${esc(sec.title)}</div>${sec.rows.map((r) => this.rowHtml(sec.id, r)).join("")}`).join("")
     const controls = `<div class="as-head">Controls</div><label class="as-field"><span>Reduce camera motion</span><input type="checkbox" data-act="reduce-motion"${s.reduceMotion ? " checked" : ""} /><i></i></label><div class="as-field"><span>Key labels</span><div class="as-seg as-seg2">${KEY_LABEL_OPTIONS.map((k) => `<button data-act="key-labels" data-mode="${k.value}" aria-pressed="${s.keyLabels === k.value}">${esc(k.label)}</button>`).join("")}</div></div>`
@@ -416,7 +429,7 @@ export const SHELL_CSS = `
 .arcade-shell .as-field > .as-seg, .arcade-shell .as-field > .as-mute { grid-column: 2 / -1; }
 .arcade-shell .as-mute { justify-self: start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; font-weight: 500; }
 .arcade-shell .as-mute[aria-pressed=true] { color: var(--shell-accent-ink); background: var(--shell-accent); border-color: var(--shell-accent); }
-.arcade-shell .as-seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--shell-edge); border-radius: 10px; overflow: hidden; }
+.arcade-shell .as-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--shell-edge); border-radius: 10px; overflow: hidden; }
 .arcade-shell .as-seg2 { grid-template-columns: 1fr 1fr; }
 .arcade-shell .as-seg button { font: 500 13px var(--shell-font); color: var(--shell-ink); background: transparent; border: 0; padding: 7px 4px; cursor: pointer; }
 .arcade-shell .as-seg button + button { border-left: 1px solid var(--shell-edge); }

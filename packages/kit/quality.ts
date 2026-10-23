@@ -1,9 +1,11 @@
 import type { LabControl } from "./lab-panel"
 
-export type QualityTier = "low" | "balanced" | "high"
+export type StandardQualityTier = "low" | "balanced" | "high"
+export type QualityTier = StandardQualityTier | "ultra"
 export type QualityMode = "auto" | QualityTier
 
-export const QUALITY_TIERS: readonly QualityTier[] = ["low", "balanced", "high"] as const
+/** Standard tiers/modes. Opt-in games expose Ultra through their profile table. */
+export const QUALITY_TIERS: readonly StandardQualityTier[] = ["low", "balanced", "high"] as const
 export const QUALITY_MODES: readonly QualityMode[] = ["auto", "high", "balanced", "low"] as const
 
 /** What the controller itself needs from a tier: how many pixels it may draw. Games add their own tier contents. */
@@ -16,8 +18,8 @@ export interface QualityScaling {
   readonly minScale: number
 }
 
-/** A game's three tiers: resolution plus whatever passes it scales (shadows, bloom, volumetrics…). */
-export type QualityTiers<P extends QualityScaling = QualityScaling> = Readonly<Record<QualityTier, P>>
+/** Three required tiers and an optional, explicitly selected Ultra tier. Auto never selects Ultra. */
+export type QualityTiers<P extends QualityScaling = QualityScaling> = Readonly<Record<StandardQualityTier, P> & { ultra?: P }>
 
 /** Outbreak's tiers (the controller's default). */
 export interface QualityProfile extends QualityScaling {
@@ -37,7 +39,7 @@ export interface QualityProfile extends QualityScaling {
   readonly minPropLod: number
 }
 
-export const QUALITY_PROFILES: Readonly<Record<QualityTier, QualityProfile>> = {
+export const QUALITY_PROFILES: Readonly<Record<StandardQualityTier, QualityProfile>> = {
   high: {
     tier: "high",
     label: "High (Retina 2.0×)",
@@ -102,12 +104,12 @@ export const qualityControls: LabControl[] = [
 ]
 
 export function resolveQualityMode(value: unknown): QualityMode {
-  if (value === "auto" || value === "high" || value === "balanced" || value === "low") {
+  if (value === "auto" || value === "ultra" || value === "high" || value === "balanced" || value === "low") {
     return value
   }
   if (typeof value === "string") {
     const norm = value.trim().toLowerCase()
-    if (norm === "auto" || norm === "high" || norm === "balanced" || norm === "low") {
+    if (norm === "auto" || norm === "ultra" || norm === "high" || norm === "balanced" || norm === "low") {
       return norm
     }
     if (norm === "2" || norm === "2.0" || norm === "2x") return "high"
@@ -132,7 +134,7 @@ export function loadSavedQualityMode(
   try {
     const raw = storage.getItem(key)
     if (!raw) return null
-    if (raw === "auto" || raw === "high" || raw === "balanced" || raw === "low") return raw
+    if (raw === "auto" || raw === "ultra" || raw === "high" || raw === "balanced" || raw === "low") return raw
   } catch {}
   return null
 }
@@ -170,6 +172,8 @@ export interface QualityState<P extends QualityScaling = QualityProfile> {
 
 export interface AdaptiveQualityOptions<P extends QualityScaling = QualityProfile> {
   mode?: QualityMode
+  /** Ultra may shed resolution/tier on slow frames. False only for an explicit automation pin. */
+  adaptUltra?: boolean
   /** The game's tiers; Outbreak's `QUALITY_PROFILES` when omitted. */
   profiles?: QualityTiers<P>
   targetFps?: number
@@ -241,6 +245,8 @@ export function selectStartupTier(frameMedianMs: number, gpuMedianMs: number, bu
  *   missing, so the window also counts missed frames. Stepping back up needs `recoverWindows` comfortable windows, and
  *   that wait doubles each time a step up is undone within a few seconds, so it never oscillates.
  * - Manual override (`high` / `balanced` / `low`): locks `activeTier` and `resolutionScale = 1` for deterministic rendering.
+ * - Ultra is opt-in through `profiles.ultra`. Slow frames may step it down; recovery stops at High after it leaves
+ *   Ultra. Selecting Ultra again restores it. Automation can pin it with `adaptUltra: false`.
  */
 export class AdaptiveQualityController<P extends QualityScaling = QualityProfile> {
   readonly profiles: QualityTiers<P>
@@ -255,6 +261,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
   private readonly recoverWindows: number
   private readonly cpuWindows: number
   private readonly stepDown: QualityStepDown
+  private readonly adaptUltra: boolean
 
   private seenFrames = 0
   private startupResolved = false
@@ -276,7 +283,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
 
   constructor(options: AdaptiveQualityOptions<P> = {}) {
     this.profiles = options.profiles ?? (QUALITY_PROFILES as unknown as QualityTiers<P>)
-    this.mode = options.mode ?? "auto"
+    this.mode = this.supportedMode(options.mode ?? "auto")
     this.activeTier = this.mode === "auto" ? "high" : this.mode
     this.startupResolved = this.mode !== "auto"
     this.targetFps = options.targetFps ?? 60
@@ -287,6 +294,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     this.recoverWindows = options.recoverWindows ?? 3
     this.cpuWindows = options.cpuWindows ?? 3
     this.stepDown = options.stepDown ?? "headroom"
+    this.adaptUltra = options.adaptUltra ?? true
     this.upgradeWindows = this.recoverWindows
   }
 
@@ -299,7 +307,11 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
   }
 
   getProfile(): P {
-    return this.profiles[this.activeTier]
+    return this.profiles[this.activeTier] ?? this.profiles.high
+  }
+
+  private supportedMode(mode: QualityMode): QualityMode {
+    return mode === "ultra" && !this.profiles.ultra ? "high" : mode
   }
 
   getResolutionScale(): number {
@@ -307,7 +319,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
   }
 
   setMode(nextMode: QualityMode): boolean {
-    const resolved = resolveQualityMode(nextMode)
+    const resolved = this.supportedMode(resolveQualityMode(nextMode))
     const prevTier = this.activeTier
     const prevScale = this.resolutionScale
     this.mode = resolved
@@ -343,8 +355,8 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
 
   effectivePixelRatio(devicePixelRatio = 1): number {
     const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
-    const base = Math.min(dpr, this.profiles[this.activeTier].dprCap)
-    if (this.mode !== "auto") return base
+    const base = Math.min(dpr, this.getProfile().dprCap)
+    if (!this.adaptive) return base
     return roundPixelRatio(base * this.resolutionScale)
   }
 
@@ -375,7 +387,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
       this.lastGpuMs = this.lastGpuMs > 0 ? this.lastGpuMs + (validGpu - this.lastGpuMs) * 0.2 : validGpu
     }
 
-    if (this.mode !== "auto") {
+    if (!this.adaptive) {
       return false
     }
 
@@ -442,11 +454,11 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     if (medGpu > 0) this.lastGpuMs = medGpu
     this.lastMissedShare = missedShare
 
-    const minScale = this.profiles[this.activeTier].minScale
+    const minScale = this.getProfile().minScale
     const slow = missedShare >= 0.12 || medFrame > budget * 1.25
     // Shed pixels when the GPU is a real part of slow frames (or telemetry is unavailable), or has no headroom left.
     const gpuShare = medGpu === 0 || medGpu > budget * 0.5
-    const headroom = this.stepDown === "headroom"
+    const headroom = this.mode === "auto" && this.stepDown === "headroom"
     const overloaded = (slow && gpuShare) || (headroom && medGpu > budget * 0.9)
     const severelyOverloaded = (medFrame > budget * 1.65 && gpuShare) || (headroom && medGpu > budget * 1.45)
     const cpuBound = !overloaded && (slow || hitches >= 3)
@@ -476,7 +488,8 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     this.cpuBoundWindows = 0
 
     const comfortable = missedShare < 0.05 && medFrame < budget * 1.06 && (medGpu === 0 || medGpu < budget * 0.55)
-    if (comfortable && (this.resolutionScale < 1 - 1e-3 || this.activeTier !== "high")) {
+    const belowHigh = this.activeTier === "low" || this.activeTier === "balanced"
+    if (comfortable && (this.resolutionScale < 1 - 1e-3 || belowHigh)) {
       if (++this.okWindows >= this.upgradeWindows) {
         this.okWindows = 0
         if (this.resolutionScale < 1 - 1e-3) {
@@ -485,7 +498,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
           this.adaptations++
           return true
         }
-        if (this.activeTier !== "high" && (medGpu === 0 || medGpu < budget * 0.38)) {
+        if (belowHigh && (medGpu === 0 || medGpu < budget * 0.38)) {
           this.activeTier = this.activeTier === "low" ? "balanced" : "high"
           this.resolutionScale = 0.85
           this.lastUpgradeAt = nowMs
@@ -500,6 +513,10 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     return false
   }
 
+  private get adaptive(): boolean {
+    return this.mode === "auto" || (this.mode === "ultra" && this.adaptUltra)
+  }
+
   /** A step down soon after a step up means the step up did not fit: wait twice as long before the next one. */
   private noteDowngrade(nowMs: number): void {
     if (nowMs - this.lastUpgradeAt < this.adaptWindowMs * 6) this.upgradeWindows = Math.min(this.upgradeWindows * 2, 48)
@@ -509,17 +526,17 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
   /** One tier down, starting no sharper than the pixel ratio already reached so the step never adds pixels. */
   private dropTier(): boolean {
     if (this.activeTier === "low") return false
-    const from = this.profiles[this.activeTier]
+    const from = this.getProfile()
     const reached = from.dprCap * this.resolutionScale
-    this.activeTier = this.activeTier === "high" ? "balanced" : "low"
-    const to = this.profiles[this.activeTier]
+    this.activeTier = this.activeTier === "ultra" ? "high" : this.activeTier === "high" ? "balanced" : "low"
+    const to = this.getProfile()
     this.resolutionScale = Math.max(to.minScale, Math.min(1, Math.round((reached / to.dprCap) * 20) / 20))
     this.adaptations++
     return true
   }
 
   state(devicePixelRatio = 1): QualityState<P> {
-    const profile = this.profiles[this.activeTier]
+    const profile = this.getProfile()
     return {
       mode: this.mode,
       activeTier: this.activeTier,

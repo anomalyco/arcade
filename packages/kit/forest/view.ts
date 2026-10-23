@@ -386,7 +386,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     lights.update(frameLights, [])
 
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).
-    spots.settings.count = smoke || s.torchShadows === "off" ? 0 : quality.tier === "high" ? 2 : 1
+    spots.settings.count = smoke || s.torchShadows === "off" ? 0 : quality.tier === "high" || quality.tier === "ultra" ? 2 : 1
     if (physicalMoon) spots.settings.count++
     // A live strike shades the forest through the canopy's own shadow, rendered once from its direction.
     const flashShadow = !smoke && !!st?.bolt && st.flashDir[1] > 0.02

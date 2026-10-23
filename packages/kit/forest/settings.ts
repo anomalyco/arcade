@@ -290,7 +290,8 @@ export interface ForestQuality extends QualityScaling {
   readonly bloomLevels: number
 }
 
-export const FOREST_QUALITY: QualityTiers<ForestQuality> = {
+export const FOREST_QUALITY: QualityTiers<ForestQuality> & { readonly ultra: ForestQuality } = {
+  ultra: { tier: "ultra", label: "Ultra", dprCap: 2, minScale: 0.75, textureSize: 1024, shadowSize: 2048, foliageShadows: true, fogSamples: 12, mistSteps: 12, near: 60, far: 180, fernNear: 22, scatter: 1, bloomLevels: 5 },
   high: { tier: "high", label: "High", dprCap: 1.5, minScale: 0.7, textureSize: 1024, shadowSize: 2048, foliageShadows: true, fogSamples: 8, mistSteps: 8, near: 35, far: 140, fernNear: 14, scatter: 1, bloomLevels: 5 },
   balanced: { tier: "balanced", label: "Balanced", dprCap: 1.25, minScale: 0.65, textureSize: 1024, shadowSize: 1024, foliageShadows: true, fogSamples: 6, mistSteps: 6, near: 28, far: 120, fernNear: 10, scatter: 0.8, bloomLevels: 5 },
   low: { tier: "low", label: "Low", dprCap: 1, minScale: 0.6, textureSize: 512, shadowSize: 512, foliageShadows: false, fogSamples: 4, mistSteps: 4, near: 20, far: 90, fernNear: 7, scatter: 0.5, bloomLevels: 4 },
