@@ -725,8 +725,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - CIWS: 75 rps, 1,100 m/s, ~1.6 km, 1.6 dmg/round on jets (5 m sphere), heat 2.6 s. Rounds passing within 3 m of a
   missile, bomb, SAM or shell shoot it down. SAM: 8 cells (each reloads 3 s, starting 2 s after a launch), seeker 9°
   cone / 5.8 km / 2.2 s lock, PN (N 4, 30 g from 380 m/s), 15 m fuse, 110→50 damage; a flare burst fools it by a fixed
-  coin per missile and burst (35%). 5-inch: one round per 1.5 s, 800 m/s with drag (~8.4 km flat), 16 m proximity
-  burst on jets (75→25), 35 hp on a carrier (a fire), near misses within 14 m 28→6 hp; HUD splash marker
+  coin per missile and burst (35%). 5-inch (a steady threat, not the ship-killer): one round per 2.5 s, 800 m/s with drag
+  (~6 km flat), 10 m proximity burst on jets (45→12), 12 hp on a carrier (too light for a fire), near misses within
+  14 m 10→2 hp; HUD splash marker
   (`predictImpact`, the world's own steps). Friendly fire off everywhere; kills credit the gunner (`KillWeapon`
   `ciws`/`sam`/`shell` in kill feed and stats).
 - Authority: CIWS rounds are shooter-authoritative (`TurretRounds`): the client reports `thits` (jets), `tshiphits`

@@ -118,22 +118,23 @@ export const GUNNERY = {
   gun: {
     yawRate: 0.65,
     pitchRate: 0.5,
-    /** One round every `interval` s, `muzzle` m/s, quadratic drag (1/m), life (s): ≈ 8.4 km flat. */
-    interval: 1.5,
+    /** One round every `interval` s, `muzzle` m/s, quadratic drag (1/m), life (s): ≈ 6 km flat. Balanced to be a steady
+     *  threat, not the ship-killer: sustained direct hits take a carrier down in ~3.5 min, a near burst wounds a jet. */
+    interval: 2.5,
     muzzle: 800,
     drag: 0.00004,
-    life: 12.5,
+    life: 8.5,
     /** Proximity fuse on enemy jets (m), armed after `arm` s; damage `damage` at the centre to `edge` at the radius. */
-    fuse: 16,
+    fuse: 10,
     arm: 0.4,
-    damage: 75,
-    edge: 25,
+    damage: 45,
+    edge: 12,
     /** Direct hit on a carrier (hp of shared/fleet.ts's 1,000; a fire where it lands); a burst in the water within `near`
      *  m of the hull: `nearMax` at the hull down to `nearMin` at `near` (no fire). */
-    shipDamage: 35,
+    shipDamage: 12,
     near: 14,
-    nearMax: 28,
-    nearMin: 6,
+    nearMax: 10,
+    nearMin: 2,
   },
   /** Gunners tell the room their aim this often (s) while it moves. */
   aimEvery: 0.1,

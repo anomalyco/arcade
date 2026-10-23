@@ -506,15 +506,15 @@ describe("SAM", () => {
 })
 
 describe("5-inch gun", () => {
-  test("shells fly ~800 m/s under drag and gravity, out to ~8 km flat", () => {
+  test("shells fly ~800 m/s under drag and gravity, out to ~6 km flat", () => {
     const p = { x: 0, y: 30, z: 0, vx: 0, vy: 0, vz: -GUNNERY.gun.muzzle }
     let t = 0
     while (t < GUNNERY.gun.life) {
       shellStep(p, DT)
       t += DT
     }
-    expect(-p.z).toBeGreaterThan(7500)
-    expect(-p.z).toBeLessThan(9500)
+    expect(-p.z).toBeGreaterThan(5500)
+    expect(-p.z).toBeLessThan(7000)
     expect(p.y).toBeLessThan(-200)
   })
 
@@ -524,7 +524,7 @@ describe("5-inch gun", () => {
     world.man(7, 0, SHIP.id!, GUN)
     const pos: Vec3 = [0, 0, 0]
     const dir: Vec3 = [0, 0, 0]
-    muzzleWorld(SHIP, GUN, -0.3, 0.06, pos, dir)
+    muzzleWorld(SHIP, GUN, -0.3, 0.02, pos, dir)
     const v: Vec3 = [dir[0] * GUNNERY.gun.muzzle, dir[1] * GUNNERY.gun.muzzle, dir[2] * GUNNERY.gun.muzzle]
     const pred = predictImpact(pos[0], pos[1], pos[2], v[0], v[1], v[2], 0, { sea, arch: null })
     expect(pred.kind).toBe("sea")
@@ -568,14 +568,15 @@ describe("5-inch gun", () => {
     expect(near.amount!).toBeLessThan(GUNNERY.gun.nearMax)
     expect(near.amount!).toBeGreaterThan(GUNNERY.gun.nearMin)
     expect(shipHitOf("ciws", 0).w).toBe("gun")
-    // Through the fleet: a direct shell is 3.5% and starts a fire; a near miss is less and doesn't.
+    // Through the fleet: a direct shell is GUNNERY.gun.shipDamage, too light to start a fire or close the deck (fleet's
+    // 20 hp shell threshold); a near miss is less.
     const fleet = new Fleet()
     fleet.add(2, 1)
     const d = shipHitOf("shell", 0)
-    expect(fleet.hit({ ship: 2, by: 7, team: 0, w: d.w, x: 0, y: 26, z: 20, near: d.near, n: d.n, amount: d.amount }, 1)).toBe(35)
-    expect(fleet.hulls.get(2)!.fires).toHaveLength(1)
+    expect(fleet.hit({ ship: 2, by: 7, team: 0, w: d.w, x: 0, y: 26, z: 20, near: d.near, n: d.n, amount: d.amount }, 1)).toBe(GUNNERY.gun.shipDamage)
+    expect(fleet.hulls.get(2)!.fires).toHaveLength(0)
     expect(fleet.hit({ ship: 2, by: 7, team: 0, w: near.w, x: 0, y: 0, z: -173, near: near.near, n: near.n, amount: near.amount }, 2)).toBeCloseTo(near.amount!, 6)
-    expect(fleet.hulls.get(2)!.fires).toHaveLength(1)
+    expect(fleet.hulls.get(2)!.fires).toHaveLength(0)
     // Friendly fire is off.
     expect(fleet.hit({ ship: 2, by: 7, team: 1, w: d.w, x: 0, y: 26, z: 20, near: 0, amount: d.amount }, 3)).toBe(0)
   })
@@ -585,7 +586,8 @@ describe("5-inch gun", () => {
       const world = new GunneryWorld(AIR, false)
       world.fire({ owner: 7, seq: 1, kind: "shell", ship: 1, mount: GUN, t: 0, x: 0, y: 1000, z: 0, vx: 0, vy: 0, vz: -800, target: -1 }, 0)
       world.authority = true
-      const j = jet(100, team, 8, 1000, -1200)
+      // Beside the shell's path where it has dropped ~11 m under gravity: inside the fuse.
+      const j = jet(100, team, 4, 989, -1200)
       const hurt: GunneryEvent[] = []
       for (let t = DT; t < 3; t += DT) {
         world.step(t, { jets: [j] })
@@ -758,7 +760,7 @@ describe("the room", () => {
     const m = WEAPON_MOUNTS[GUN]!
     const pos: Vec3 = [0, 0, 0]
     const dir: Vec3 = [0, 0, 0]
-    muzzleWorld(ship, GUN, m.restYaw, 0.05, pos, dir)
+    muzzleWorld(ship, GUN, m.restYaw, 0.02, pos, dir)
     const v = GUNNERY.gun.muzzle
     say(a, { type: "gfire", g: packGunFire({ owner: a.id, seq: 0, kind: "shell", ship: 1, mount: GUN, t: seaT(), x: pos[0], y: pos[1], z: pos[2], vx: dir[0] * v, vy: dir[1] * v, vz: dir[2] * v, target: -1 }) })
     expect(b.last("gfire")!.id).toBe(a.id)
