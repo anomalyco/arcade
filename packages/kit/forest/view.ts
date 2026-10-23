@@ -271,6 +271,15 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   // Sky openness round the eye (the field map's red, 24 m disc), eased: under the canopy the airglow lighting the mist
   // is blocked as much as it is for surfaces, so the mist dims with it instead of glowing behind black trunks.
   let openAround = -1
+  // Each other torch's axis and lens last frame, for how far its beam swept (FogLamp.motion).
+  const torchesBefore = new Map<number, { dir: Vec3; pos: Vec3 }>()
+  const beamSweep = (t: { id: number; pos: Vec3; dir: Vec3 }, reach: number) => {
+    const was = torchesBefore.get(t.id)
+    torchesBefore.set(t.id, { dir: [...t.dir], pos: [...t.pos] })
+    if (!was) return 0
+    const c = (was.dir[0] * t.dir[0] + was.dir[1] * t.dir[1] + was.dir[2] * t.dir[2]) / (Math.hypot(...was.dir) * Math.hypot(...t.dir) || 1)
+    return Math.acos(Math.max(-1, Math.min(1, c))) + Math.hypot(t.pos[0] - was.pos[0], t.pos[1] - was.pos[1], t.pos[2] - was.pos[2]) / Math.max(reach * 0.25, 1)
+  }
   const opennessAt = (eye: Vec3) => {
     const n = build.fieldSize, reach = world.half + 50, texel = (2 * reach) / n
     let sum = 0, count = 0
@@ -386,7 +395,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     for (const t of f.torches) {
       if (!t.on) continue
       const id = lights.indexOf(1000 + t.id)
-      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
+      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, motion: t === local || debug.beamMotion === false ? 0 : beamSweep(t, s.torchReach), uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
     }
     for (const [i, l] of build.campLights.entries()) {
       const k = l.kind === "bulb" ? s.stringLights : s.windows
