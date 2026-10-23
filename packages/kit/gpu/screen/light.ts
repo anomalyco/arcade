@@ -129,18 +129,21 @@ export function screenSceneLight(display: ScreenEmitter, at: ScreenPlacement, op
 
 /**
  * For baked lighting: the live scale of a light's baked bounce. A lightmap baker that baked a screen's indirect light
- * at `reference` (average emitted radiance, scene units) multiplies that light's baked contribution by `scale()` each
- * frame, so the room's bounce follows the picture as its direct light does. `id` is the `SceneLight.id` it baked.
+ * in white at `reference` (average emitted radiance, scene units) multiplies that light's baked contribution by
+ * `scale()` and tints it by `color()` each frame, so the room's bounce follows the picture as its direct light does.
+ * Like `screenSceneLight`, the scale is the brightest channel and the colour is relative to it, so
+ * `scale() × color()` is the emission per channel: a blue picture throws its blue at full strength, not dimmed to its
+ * luminance. `id` is the `SceneLight.id` it baked.
  */
 export type LiveBounceSource = { readonly id: number; scale(): number; color(): readonly [number, number, number] }
 
 export function screenBounceSource(display: ScreenEmitter, id: number, reference = 1): LiveBounceSource {
-  const lum = (c: readonly number[]) => 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!
+  const peak = (e: readonly number[]) => Math.max(e[0]!, e[1]!, e[2]!, 0)
   return {
     id,
-    scale: () => (lum(display.emission()) * display.settings.light) / Math.max(reference, 1e-6),
+    scale: () => (peak(display.emission()) * display.settings.light) / Math.max(reference, 1e-6),
     color: () => {
-      const e = display.emission(), m = Math.max(e[0], e[1], e[2], 1e-6)
+      const e = display.emission(), m = Math.max(peak(e), 1e-6)
       return [e[0] / m, e[1] / m, e[2] / m]
     },
   }

@@ -178,6 +178,17 @@ describe("screen light", () => {
     expect(bounce.scale()).toBeCloseTo(2, 6)
   })
 
+  test("a cool picture lights in its own colour at full strength, in direct light and baked bounce alike", () => {
+    // The sea show's average: dark navy to steel blue, its luminance a third of its blue.
+    const sea: [number, number, number] = [0.011, 0.145, 0.39]
+    const direct = screenSceneLight(emitter(sea), at)!
+    const bounce = screenBounceSource(emitter(sea), 4, 1)
+    for (let c = 0; c < 3; c++) {
+      expect(direct.color[c]! * direct.power * 5 / 0.12).toBeCloseTo(sea[c]!, 6)
+      expect(bounce.color()[c]! * bounce.scale()).toBeCloseTo(sea[c]!, 6)
+    }
+  })
+
   test("half floats decode", () => {
     expect(halfToFloat(0x3c00)).toBe(1)
     expect(halfToFloat(0x3800)).toBe(0.5)

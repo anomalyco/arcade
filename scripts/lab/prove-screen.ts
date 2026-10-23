@@ -81,8 +81,9 @@ try {
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
   await page.goto(`http://127.0.0.1:${addr.port}/arcade/lab/?bench#world`)
   await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 60000 })
-  // The bench's own preset camera (`SCREEN_CAMERA`): off to one side, the set, the rug and the chair in view.
-  const benchCam = { yaw: 0.95, pitch: 0.24, dist: 2.6, target: [16.15 - 19 - 0.3, 0.86, 9.85 - 21] }
+  // The bench's own preset camera (`SCREEN_CAMERA`): the room's front corner, the set on the right third, the chair
+  // three-quarter on at left.
+  const benchCam = { yaw: 0.663, pitch: 0.24, dist: 4.5, target: [15.69 - 19, 0.9, 9.277 - 21] }
   // A hand's breadth from the glass: about six pixels a scanline and a triad at 1280×800.
   const macroCam = { yaw: 0.04, pitch: 0.03, dist: 0.24, target: [16.15 - 19 + 0.05, 1.29, 8.83 - 21] }
 
