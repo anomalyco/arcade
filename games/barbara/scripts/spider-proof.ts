@@ -5,8 +5,9 @@
 // light to cross); at 13 s it drums the leaves. Records the frames on a synthetic 30 fps clock and what the ears got,
 // rendered offline through the game's own mix (clip.mp4), plus the still where it crosses your line of sight (cross.png,
 // cross-crop.png), and
-// spider.json: how many footfalls and drums were heard, and the crickets' level before and while it's near (a second
-// offline render with the insects layer alone).
+// spider.json: how many footfalls and drums were heard, and the crickets' level before and while it's near, and against
+// the same tape with the spider taken out (offline renders with the insects layer alone). `--dark`: your torch off, so a
+// beat inside 38 m doesn't drive it off (for the crickets' hush).
 import { $ } from "bun"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
@@ -20,6 +21,7 @@ const spot = Number(arg("--spot", "0"))
 const AT = Number(arg("--at", "41"))
 /** `--pitch`: your view and torch pitch (rad); about 0.09 puts the beam on its body at 30 m, so it flees. */
 const PITCH = Number(arg("--pitch", "0.02"))
+const DARK = process.argv.includes("--dark")
 const SECONDS = Number(arg("--seconds", "15")), FPS = 30, BEAT = 5, DRUM = 13
 mkdirSync(out, { recursive: true })
 const frames = join(process.env.TMPDIR ?? "/tmp", `woods-spider-frames-${process.pid}`)
@@ -48,7 +50,7 @@ type Woods = {
   spider: { pose: { body: [number, number, number] } | null; steps: unknown[] }
   spiderLab: { beat(distance?: number, x0?: number, z0?: number, x1?: number, z1?: number): unknown; drum(): unknown }
   view: { forest: { stats(): { exposure: number } } }
-  audio: { tape: TapeFrame[] | null; renderTape(tape: readonly TapeFrame[], world: unknown, seconds: number, opts?: { solo?: string }): Promise<AudioBuffer> }
+  audio: { tape: TapeFrame[] | null; renderTape(tape: readonly TapeFrame[], world: unknown, seconds: number, opts?: { solo?: string; voices?: boolean; footsteps?: boolean }): Promise<AudioBuffer> }
 }
 declare const woods: Woods
 
@@ -92,7 +94,7 @@ if (process.argv.includes("--signs")) {
   process.exit(0)
 }
 
-const staged = await page.evaluate(({ spot, AT, PITCH }) => {
+const staged = await page.evaluate(({ spot, AT, PITCH, DARK }) => {
   // Only the woods: every overlay (the shell, the HUD, the story's card and subtitles) hidden.
   for (const el of document.body.querySelectorAll<HTMLElement>("*")) if (!(el instanceof HTMLCanvasElement) && !el.querySelector("canvas")) el.style.visibility = "hidden"
   woods.paused = true
@@ -114,7 +116,7 @@ const staged = await page.evaluate(({ spot, AT, PITCH }) => {
     if (!clear(x, z, mx - fz * 4, mz + fx * 4, 0.3, 0.6) || !clear(x, z, mx + fz * 10, mz - fx * 10, 0.3, 0.6)) continue
     if (++found < spot) continue
     woods.setPose(x, z, yaw, PITCH)
-    woods.camera.flashlight = true
+    woods.camera.flashlight = !DARK
     const me = woods.state.players[0]!
     // The friends wait well behind you, so their beams don't light the view.
     for (const b of woods.state.brains) {
@@ -124,7 +126,7 @@ const staged = await page.evaluate(({ spot, AT, PITCH }) => {
     return { you: [x, z], yaw }
   }
   return null
-}, { spot, AT, PITCH })
+}, { spot, AT, PITCH, DARK })
 if (!staged) throw new Error("no spot with a clear line ahead")
 const [yx, yz] = staged.you as [number, number]
 const ux = -Math.sin(staged.yaw), uz = -Math.cos(staged.yaw)
@@ -147,7 +149,8 @@ for (let f = 0; f < total; f++) {
   if (f % 5 === 4) await page.evaluate(() => new Promise((r) => setTimeout(r, 0)))
 }
 const exposure = await page.evaluate(() => woods.view.forest.stats().exposure)
-const tape = await page.evaluate(() => { const t = woods.audio.tape!; woods.audio.tape = null; return t })
+const full = await page.evaluate(() => { const t = woods.audio.tape!; woods.audio.tape = null; return t })
+const tape = full
 
 // The still where its body is nearest your line of sight.
 const side = (p: [number, number, number]) => Math.abs((p[0] - yx) * -uz + (p[2] - yz) * ux)
@@ -159,8 +162,8 @@ const cw = Math.round(W / 2.2), ch = Math.round(H / 2.2), ox = Math.round(W / 2 
 await $`ffmpeg -v error -y -i ${join(out, "cross.png")} -vf crop=${cw}:${ch}:${ox}:${oy},scale=${cw * 2}:${ch * 2}:flags=lanczos ${join(out, "cross-crop.png")}`
 
 // The ears, offline through the game's own mix: everything, then the crickets alone.
-const render = (solo: string | null) => page.evaluate(async ({ tape, secs, solo }) => {
-  const buf = await woods.audio.renderTape(tape, (woods as unknown as { world: unknown }).world, secs, solo ? { solo } : {})
+const render = (solo: string | null, tape: TapeFrame[] = full) => page.evaluate(async ({ tape, secs, solo }) => {
+  const buf = await woods.audio.renderTape(tape, (woods as unknown as { world: unknown }).world, secs, solo ? { solo, voices: false, footsteps: false } : {})
   const n = buf.length, chn = buf.numberOfChannels, data = Array.from({ length: chn }, (_, c) => buf.getChannelData(c))
   const rms = (a: number, b: number) => { let s = 0, k = 0; for (let i = Math.floor(a * buf.sampleRate); i < Math.min(n, b * buf.sampleRate); i++) for (const d of data) { s += d[i]! * d[i]!; k++ } return Math.sqrt(s / Math.max(1, k)) }
   const pcm = new Int16Array(n * chn)
@@ -178,7 +181,9 @@ const wavOf = (b64: string, file: string) => {
   h.writeUInt32LE(48000 * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(pcm.length, 40)
   writeFileSync(file, Buffer.concat([h, pcm]))
 }
-const all = await render(null), insects = await render("insects")
+// The same tape with the spider taken out, for the crickets' level without it (the bed's own swells cancel). A soloed
+// render still plays voices and your feet, so those are off for it.
+const all = await render(null), insects = await render("insects"), without = await render("insects", full.map(({ spider: _, ...f }) => f))
 const wav = join(out, "clip.wav")
 wavOf(all.b64, wav)
 await $`ffmpeg -v error -y -framerate ${FPS} -i ${join(frames, "%04d.png")} -i ${wav} -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 160k -shortest ${join(out, "clip.mp4")}`
@@ -191,7 +196,11 @@ const report = {
   staged, path, exposure, crossFrame: best.f, crossSeconds: +(best.f / FPS).toFixed(2), crossDistance: +Math.hypot(best.body![0] - yx, best.body![2] - yz).toFixed(1),
   fledAt: (() => { const d = drawn.find((x) => x.mode === "flee"); return d ? +(d.f / FPS).toFixed(2) : null })(),
   footfalls: steps.length, nearestFootfall: steps.length ? +Math.min(...steps.map((s) => Math.hypot(s[0]! - yx, s[2]! - yz))).toFixed(1) : null, drums: drums.length,
-  cricketsNearVsBeforeDb: db(insects.near, insects.before), cricketsDbBySecond: insects.series, mixNearVsBeforeDb: db(all.near, all.before), errors,
+  spiderDistanceBySecond: Array.from({ length: Math.floor(SECONDS) }, (_, i) => {
+    const f = full.filter((x) => x.t >= i && x.t < i + 1 && x.spider?.at)
+    return f.length ? +Math.min(...f.map((x) => Math.hypot(x.spider!.at![0]! - x.l.x, x.spider!.at![1]! - x.l.z))).toFixed(1) : null
+  }),
+  cricketsNearVsBeforeDb: db(insects.near, insects.before), cricketsHushDb: db(insects.near, without.near), cricketsHushBySecond: insects.series.map((v, i) => +(v - without.series[i]!).toFixed(1)), cricketsDbBySecond: insects.series, mixNearVsBeforeDb: db(all.near, all.before), errors,
 }
 writeFileSync(join(out, "spider.json"), JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report))

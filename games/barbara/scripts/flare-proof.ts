@@ -88,7 +88,7 @@ await page.addStyleTag({ content: "body * { visibility: hidden !important } #vie
 await page.evaluate(({ x, z, yaw }) => {
   woods.paused = true
   woods.autoplay = true
-  Object.assign(woods.settings, { botCount: 0, creature: false, distantRate: 0, chatter: 0 })
+  Object.assign(woods.settings, { botCount: 0, creature: "off", distantRate: 0, chatter: 0 })
   woods.camera.flashlight = false
   woods.setPose(x, z, yaw, -0.06)
 }, at)

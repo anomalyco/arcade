@@ -152,10 +152,10 @@ async function main() {
   const spiderSigns = new SpiderSignsView(renderer)
   /** The night's web and bundles, placed again for a new night, a new woods or the spider switched on or off. */
   let signs: { key: string; signs: SpiderSigns | null } = { key: "", signs: null }
-  const signsFor = (seed: number) => {
-    const on = online || hasSpider(settings.creature)
-    const key = `${seed}:${world.params.seed}:${world.trees.length}:${on}`
-    if (key !== signs.key) signs = { key, signs: on ? placeSpiderSigns(world, seed) : null }
+  const signsFor = (seed: number, culprit: string) => {
+    const on = online || hasSpider(settings.creature), person = culprit === "spider"
+    const key = `${seed}:${world.params.seed}:${world.trees.length}:${on}:${person}`
+    if (key !== signs.key) signs = { key, signs: on ? placeSpiderSigns(world, seed, person) : null }
     return signs.signs
   }
   if (params.get("smooth") === "0") friends.smooth = false
@@ -661,7 +661,7 @@ async function main() {
     const strip = nightTapes(state.night, world)
     view.draw(fp, world, strip.length ? { ...state, tapes: [...state.tapes, ...strip] } : state, state.t, camera.eye, settings)
     nightView.draw(fp, state.night, world)
-    spiderSigns.draw(fp, signsFor(state.night.seed), world)
+    spiderSigns.draw(fp, signsFor(state.night.seed, state.night.layout.verdict.culprit), world)
     dawn.apply(view.forest.settings, dawnShare(state.night, state.t))
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
     friends.readingLevel = held.settings.readingLevel
@@ -777,7 +777,7 @@ async function main() {
       looks: { pick: pickLook, get current() { return lookState.look }, ids: LOOK_IDS },
       trigger,
       /** Automation: tonight's web and bundles (`shared/spider-signs.ts`), or null without the spider. */
-      get spiderSigns() { return signsFor(session.view.night.seed) },
+      get spiderSigns() { return signsFor(session.view.night.seed, session.view.night.layout.verdict.culprit) },
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */

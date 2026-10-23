@@ -169,4 +169,8 @@ test("its signs: a web across the trail between two trunks, and bundles high in 
   expect(a.bundles.some((x) => x.size === "person")).toBe(true)
   for (const x of a.bundles) expect(x.y - x.length / 2 - standHeight(world, x.x, x.z)).toBeGreaterThan(3)
   expect(placeSpiderSigns(world, 78)).not.toEqual(a)
+  // A night the spider didn't take her: the web and smaller bundles, no person-sized one.
+  const other = placeSpiderSigns(world, 77, false)
+  expect(other.webs).toEqual(a.webs)
+  expect(other.bundles.some((x) => x.size === "person")).toBe(false)
 })

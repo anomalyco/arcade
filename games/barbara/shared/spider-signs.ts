@@ -91,13 +91,13 @@ function webOnTrail(world: WoodsWorld, rng: { seed: number }): SpiderWeb | null 
   return null
 }
 
-function bundlesNear(world: WoodsWorld, rng: { seed: number }, x: number, z: number): SilkBundle[] {
+function bundlesNear(world: WoodsWorld, rng: { seed: number }, x: number, z: number, person: boolean): SilkBundle[] {
   const tall = treesNear(world, x, z, BUNDLE_RANGE[1]).filter((t) => {
     const d = Math.sqrt((t.x - x) ** 2 + (t.z - z) ** 2)
     return t.height >= 14 && d >= BUNDLE_RANGE[0] && t.species !== "snag"
   })
   const out: SilkBundle[] = []
-  const sizes: SilkBundle["size"][] = ["person", "deer", "small"]
+  const sizes: SilkBundle["size"][] = [person ? "person" : "small", "deer", "small"]
   for (const size of sizes) {
     const t = pick(rng, tall.filter((c) => !out.some((b) => b.tree === c.id)))
     if (!t) break
@@ -113,10 +113,14 @@ function bundlesNear(world: WoodsWorld, rng: { seed: number }, x: number, z: num
   return out
 }
 
-/** The night's signs of the spider (the same for a world and seed on every machine). */
-export function placeSpiderSigns(world: WoodsWorld, seed: number): SpiderSigns {
+/**
+ * The night's signs of the spider (the same for a world and seed on every machine). The bundle the length of a person
+ * hangs only when `person` (the night's verdict names the spider, `shared/verdict.ts`): the web and the smaller bundles
+ * are there whatever took her, since the spider is in the woods either way.
+ */
+export function placeSpiderSigns(world: WoodsWorld, seed: number, person = true): SpiderSigns {
   const rng = { seed: (seed ^ 0x51c5) * 2654435761 | 0 }
   const web = webOnTrail(world, rng)
   const at = web ?? { x: world.trail.points[world.trail.points.length - 1]![0], z: world.trail.points[world.trail.points.length - 1]![1] }
-  return { webs: web ? [web] : [], bundles: bundlesNear(world, rng, at.x, at.z) }
+  return { webs: web ? [web] : [], bundles: bundlesNear(world, rng, at.x, at.z, person) }
 }

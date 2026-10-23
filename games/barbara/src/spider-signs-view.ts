@@ -12,10 +12,10 @@ import type { SilkBundle, SpiderSigns, SpiderWeb } from "../shared/spider-signs"
  */
 
 type V = [number, number, number]
-/** Old silk, grimy: it catches a torch as a grey glint, never a white line (sRGB, about 6% linear). */
-const SILK: Rgb = [0.3, 0.29, 0.27]
-/** The wrapping, dirtier still: a dull grey-brown under a torch, not a white pod (about 4%). */
-const WRAP: Rgb = [0.25, 0.23, 0.2]
+/** Old silk, grimy (linear albedo, like every mesh colour): a grey glint in a torch, not a white line. */
+const SILK: Rgb = [0.15, 0.145, 0.135]
+/** The wrapping, dirtier still, bark and needles caught in it: a dull grey-brown under a torch, not a white pod. */
+const WRAP: Rgb = [0.11, 0.1, 0.085]
 /** The team's flagging tape (`tape-view.ts`). */
 const PINK: Rgb = [1, 0.2, 0.58]
 /** Strand radius (m): a giant's silk, thick as string, so a lit thread is a thread at a few metres. */
