@@ -106,7 +106,7 @@ export const PUDDLE_AT = [17.4, 20.4] as const
 export const INTERIOR_LIGHT = [15.0, 11.0] as const
 export const INTERIOR_ACTOR_AT = [13.2, 9.7] as const
 /** Where the baked-GI preset looks from: inside the room viewing the table lamp, rug, bookcase, actor, ceiling, and CRT workbench. */
-export const BAKED_GI_CAMERA = { target: [-4.15, 1.14, -11.45] as const, yaw: -0.06, pitch: 0.14, dist: 3.05 } as const
+export const BAKED_GI_CAMERA = { target: [-4.72, 1.42, -11.15] as const, yaw: -0.52, pitch: -0.01, dist: 4.35 } as const
 /** `SceneLight.id`s of the screen bench's lights. */
 export const SCREEN_LIGHT_ID = { screen: 20, tube: 21, bulb: 22, tvLed: 23, deckLed: 24, deckActivity: 25 } as const
 /** Reference emission (`display.emission()`) at which the `screen` (`id = 20`) area panel is baked in Cycles. */

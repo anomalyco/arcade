@@ -216,10 +216,10 @@ dynamic objects (`MAT.actor` or unlightmapped meshes inside the room box) sample
   1. Export a `BakeSceneSpec` JSON from the engine's packed mesh and physical `SceneLight`s via
      `extractBakeSceneSpec({ packed24, bounds, lightmapBounds, probes, lights })` and `canonicalBakeSceneJson(spec)`.
   2. Run `Blender --background --factory-startup --python scripts/bake-room.py -- --scene <scene.json> --out <data.ts>`:
-     it unwraps receiver triangles with `bpy.ops.uv.lightmap_pack(PREF_BOX_DIV=48, PREF_MARGIN_DIV=0.08)`, bakes each
-     light in Cycles, and writes `rgb9e5ufloat` texels, L1 SH probes, per-triangle `uv2Tris`, Blender version and the
-     input scene's SHA-256 hash (`assertBakedLightmapFresh(meta, currentSpec)` fails checks if geometry or light specs
-     drift).
+     it unwraps receiver triangles with `bpy.ops.uv.lightmap_pack(PREF_BOX_DIV=64, PREF_MARGIN_DIV=0.10)`, bakes each
+     light in Cycles at 384 samples (`use_adaptive_sampling = False`) with island-clamped despiking and 4-pass binomial
+     smoothing, and writes `rgb9e5ufloat` texels, L1 SH probes, per-triangle `uv2Tris`, Blender version and the input
+     scene's SHA-256 hash (`assertBakedLightmapFresh(meta, currentSpec)` fails checks if geometry or light specs drift).
   3. Stamp UV2s onto the mesh with `applyBakedUv2ToMesh(packed24, meta)` (or `packMeshWithUv2`), upload the texture
      array with `uploadBakedLightmapTexture(device, meta, b64)` (`r.setDetailTextureArray(gi.view)`), build the scene
      shader with `bakedLightmapHooks(physicalScene)`, and call `packBakedLightmapUniforms(knobs, meta, sceneLights,
@@ -229,11 +229,7 @@ dynamic objects (`MAT.actor` or unlightmapped meshes inside the room box) sample
 shadowed surfaces take the night sky's tint with no env bake (`fogAmbient`, `packages/kit/gpu/fog-scatter.ts`).
 Baked floor AO and Jimenez's multi-bounce AO keep crevices saturated instead of grey (`packages/kit/gpu/shaders.ts`).
 
-**Baked lightmaps (landing, branch `kit-lightmaps`).** Baked indirect light for static rooms. The branch fills in this
-entry (where, cost, Kit's decision, pitfalls) when it merges.
-
-**Not built yet:** directional (SH) ambient, canopy-openness sky occlusion for forests (woods research rank 3), and the
-first-person flashlight hit bounce.
+**Not built yet:** first-person flashlight hit bounce.
 
 ## Shadows
 

@@ -42,7 +42,7 @@ def parse_args():
     out_ts = "packages/kit/gpu/gi/house-lightmap-data.ts"
     out_json = ""
     size = 128
-    samples = 96
+    samples = 384
     bounces = 3
     i = 0
     while i < len(argv):
@@ -125,8 +125,7 @@ def setup_cycles_scene(samples: int, bounces: int):
     except Exception:
         pass
     cycles.samples = samples
-    cycles.use_adaptive_sampling = True
-    cycles.adaptive_threshold = 0.008
+    cycles.use_adaptive_sampling = False
     cycles.use_denoising = False
     cycles.max_bounces = bounces
     cycles.diffuse_bounces = bounces
@@ -425,14 +424,14 @@ def build_scene_from_spec(scene, spec: dict, map_size: int):
         PREF_CONTEXT="ALL_FACES",
         PREF_PACK_IN_ONE=True,
         PREF_NEW_UVLAYER=False,
-        PREF_BOX_DIV=48,
-        PREF_MARGIN_DIV=0.22,
+        PREF_BOX_DIV=64,
+        PREF_MARGIN_DIV=0.10,
     )
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    # Inset each polygon's UV island slightly toward its centroid by 0.6 texels so linear sampling stays inside the island
+    # Inset each polygon's UV island slightly toward its centroid by 0.85 texels so linear sampling stays inside the island
     uv_data = rec_mesh.uv_layers.active.data
-    inset = 0.6 / float(map_size)
+    inset = 0.85 / float(map_size)
     uv2_tris = []
     quad_uv_rects = []
     for p_idx, poly in enumerate(rec_mesh.polygons):
@@ -632,8 +631,10 @@ def bake_object_indirect(scene, obj, mat, width: int, height: int, name: str):
 
 def smooth_uv_islands(pixels, size: int, quad_uv_rects):
     """
-    Applies 1 pass of unoccluded-neighbor dilation + 1 pass of 3x3 tent smoothing strictly within each polygon's
-    UV2 island bounding box so Monte Carlo variance is smooth while islands never bleed across margins.
+    Applies interior zero-fill dilation, 3x3 median despiking, and 4 passes of separable 5-tap binomial
+    ([1, 4, 6, 4, 1]) smoothing strictly within each polygon's UV2 island interior, then extrudes the 1-texel
+    border into the margin so Monte Carlo variance on the ceiling and walls is completely smooth while islands
+    never bleed across margins.
     """
     grid = [[(0.0, 0.0, 0.0) for _ in range(size)] for _ in range(size)]
     for y in range(size):
@@ -647,31 +648,38 @@ def smooth_uv_islands(pixels, size: int, quad_uv_rects):
                 max(0.0, float(pixels[idx + 2])),
             )
 
+    kernel = (1.0, 4.0, 6.0, 4.0, 1.0)
     for u_min, v_min_bl, u_max, v_max_bl in quad_uv_rects:
         v0 = 1.0 - v_max_bl
         v1 = 1.0 - v_min_bl
-        x0 = max(0, int(math.floor(u_min * size)) - 1)
-        x1 = min(size - 1, int(math.ceil(u_max * size)))
-        y0 = max(0, int(math.floor(v0 * size)) - 1)
-        y1 = min(size - 1, int(math.ceil(v1 * size)))
-        if x1 <= x0 or y1 <= y0:
+        ix0 = max(0, int(math.floor(u_min * size + 0.25)))
+        ix1 = min(size - 1, int(math.ceil(u_max * size - 0.25)) - 1)
+        iy0 = max(0, int(math.floor(v0 * size + 0.25)))
+        iy1 = min(size - 1, int(math.ceil(v1 * size - 0.25)) - 1)
+        if ix1 < ix0:
+            ix0 = max(0, int(math.floor(u_min * size)))
+            ix1 = min(size - 1, int(math.ceil(u_max * size)))
+        if iy1 < iy0:
+            iy0 = max(0, int(math.floor(v0 * size)))
+            iy1 = min(size - 1, int(math.ceil(v1 * size)))
+        if ix1 < ix0 or iy1 < iy0:
             continue
 
-        # 2 passes of zero-fill dilation inside the island box
-        for _ in range(2):
-            snap = [row[x0 : x1 + 1] for row in grid[y0 : y1 + 1]]
-            for y in range(y0, y1 + 1):
-                for x in range(x0, x1 + 1):
-                    r, g, b = snap[y - y0][x - x0]
+        # 1. Zero-fill dilation inside the strict island interior [ix0..ix1, iy0..iy1]
+        for _ in range(3):
+            snap = [row[ix0 : ix1 + 1] for row in grid[iy0 : iy1 + 1]]
+            for y in range(iy0, iy1 + 1):
+                for x in range(ix0, ix1 + 1):
+                    r, g, b = snap[y - iy0][x - ix0]
                     if r + g + b > 1e-6:
                         continue
                     sr = sg = sb = 0.0
                     cnt = 0
                     for dy in (-1, 0, 1):
-                        ny = min(y1, max(y0, y + dy))
+                        ny = min(iy1, max(iy0, y + dy))
                         for dx in (-1, 0, 1):
-                            nx = min(x1, max(x0, x + dx))
-                            nr, ng, nb = snap[ny - y0][nx - x0]
+                            nx = min(ix1, max(ix0, x + dx))
+                            nr, ng, nb = snap[ny - iy0][nx - ix0]
                             if nr + ng + nb > 1e-6:
                                 sr += nr
                                 sg += ng
@@ -680,24 +688,66 @@ def smooth_uv_islands(pixels, size: int, quad_uv_rects):
                     if cnt > 0:
                         grid[y][x] = (sr / cnt, sg / cnt, sb / cnt)
 
-        # 1 pass of 3x3 tent filter clamped to the island box
-        snap = [row[x0 : x1 + 1] for row in grid[y0 : y1 + 1]]
-        for y in range(y0, y1 + 1):
-            for x in range(x0, x1 + 1):
-                sr = sg = sb = sw = 0.0
+        # 2. 3x3 median despike per channel inside [ix0..ix1, iy0..iy1]
+        snap = [row[ix0 : ix1 + 1] for row in grid[iy0 : iy1 + 1]]
+        for y in range(iy0, iy1 + 1):
+            for x in range(ix0, ix1 + 1):
+                rs, gs, bs = [], [], []
                 for dy in (-1, 0, 1):
-                    ny = min(y1, max(y0, y + dy))
-                    wy = 2.0 if dy == 0 else 1.0
+                    ny = min(iy1, max(iy0, y + dy))
                     for dx in (-1, 0, 1):
-                        nx = min(x1, max(x0, x + dx))
-                        wx = 2.0 if dx == 0 else 1.0
-                        w = wx * wy
-                        nr, ng, nb = snap[ny - y0][nx - x0]
+                        nx = min(ix1, max(ix0, x + dx))
+                        nr, ng, nb = snap[ny - iy0][nx - ix0]
+                        rs.append(nr)
+                        gs.append(ng)
+                        bs.append(nb)
+                rs.sort()
+                gs.sort()
+                bs.sort()
+                grid[y][x] = (rs[4], gs[4], bs[4])
+
+        # 3. 4 passes of separable 5-tap binomial ([1, 4, 6, 4, 1]) smoothing clamped to [ix0..ix1, iy0..iy1]
+        for _ in range(4):
+            snap_h = [row[ix0 : ix1 + 1] for row in grid[iy0 : iy1 + 1]]
+            for y in range(iy0, iy1 + 1):
+                for x in range(ix0, ix1 + 1):
+                    sr = sg = sb = sw = 0.0
+                    for d in (-2, -1, 0, 1, 2):
+                        nx = min(ix1, max(ix0, x + d))
+                        w = kernel[d + 2]
+                        nr, ng, nb = snap_h[y - iy0][nx - ix0]
                         sr += nr * w
                         sg += ng * w
                         sb += nb * w
                         sw += w
-                grid[y][x] = (sr / sw, sg / sw, sb / sw)
+                    grid[y][x] = (sr / sw, sg / sw, sb / sw)
+
+            snap_v = [row[ix0 : ix1 + 1] for row in grid[iy0 : iy1 + 1]]
+            for y in range(iy0, iy1 + 1):
+                for x in range(ix0, ix1 + 1):
+                    sr = sg = sb = sw = 0.0
+                    for d in (-2, -1, 0, 1, 2):
+                        ny = min(iy1, max(iy0, y + d))
+                        w = kernel[d + 2]
+                        nr, ng, nb = snap_v[ny - iy0][x - ix0]
+                        sr += nr * w
+                        sg += ng * w
+                        sb += nb * w
+                        sw += w
+                    grid[y][x] = (sr / sw, sg / sw, sb / sw)
+
+        # 4. Extrude 1-texel border outward into margin so linear sampling at UV edges never hits zero
+        ex0 = max(0, ix0 - 1)
+        ex1 = min(size - 1, ix1 + 1)
+        ey0 = max(0, iy0 - 1)
+        ey1 = min(size - 1, iy1 + 1)
+        for y in range(ey0, ey1 + 1):
+            cy = min(iy1, max(iy0, y))
+            for x in range(ex0, ex1 + 1):
+                if ix0 <= x <= ix1 and iy0 <= y <= iy1:
+                    continue
+                cx = min(ix1, max(ix0, x))
+                grid[y][x] = grid[cy][cx]
 
     return grid
 

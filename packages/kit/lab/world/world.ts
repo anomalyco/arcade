@@ -23,7 +23,7 @@ import { ScreenDisplay, ScreenQuadPass } from "../../gpu/screen/display"
 import { screenBounceSource, screenSceneLight } from "../../gpu/screen/light"
 import { ScreenProgramme, type ProgrammeKind } from "../../gpu/screen/programme"
 import { createScreenDisplaySettings, type ScreenDisplaySettings } from "../../gpu/screen/settings"
-import { BAKED_GI_UNIFORM_FLOATS, HOUSE_LIGHTMAP_META, bakedLightmapHooks, packBakedLightmapUniforms, uploadBakedLightmapTexture, type BakedGiMode, type BakedLightmapGpu } from "../../gpu/gi/lightmap"
+import { BAKED_GI_STRUCT_FIELDS_WGSL, BAKED_GI_UNIFORM_FLOATS, HOUSE_LIGHTMAP_META, bakedLightmapHooks, packBakedLightmapUniforms, uploadBakedLightmapTexture, type BakedGiMode, type BakedLightmapGpu } from "../../gpu/gi/lightmap"
 import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, SCREEN_AT, SCREEN_BAKE_REFERENCE, SCREEN_BULB, SCREEN_LEDS, SCREEN_LIGHT_ID, SCREEN_ROOM, SCREEN_TUBE, WALL_PAINTS, WORLD_CAMERA, WORLD_BOUNCE, WORLD_FOCUS, WORLD_LIGHT_ID, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldClock, type WorldFlicker, type WorldGeometry } from "./scene"
 export { SCREEN_LIGHT_ID } from "./scene"
 
@@ -253,7 +253,13 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         })
       : useBakedGi
       ? new Renderer(device, ctx, format, {
-          scene: makeSceneShader(bakedLightmapHooks(physicalScene), false),
+          scene: makeSceneShader(
+            bakedLightmapHooks({
+              ...physicalScene,
+              declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f, ${BAKED_GI_STRUCT_FIELDS_WGSL} }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`,
+            }),
+            false,
+          ),
           sprite: spriteShader(),
           post: WORLD_POST,
         })
