@@ -19,7 +19,8 @@ struct Light {pos:vec4f,color:vec4f,dir:vec4f}
 @group(0) @binding(0) var<uniform> F:Frame;
 @group(0) @binding(1) var<storage,read> lights:array<Light>;
 `
-export type LabLight={x:number;y:number;z:number;radius:number;r:number;g:number;b:number;power:number;dx?:number;dy?:number;dz?:number;cone?:number}
+/** `shadowed`: the debug world casts its plan shadows from this light (effect flashes are unshadowed by default). */
+export type LabLight={x:number;y:number;z:number;radius:number;r:number;g:number;b:number;power:number;dx?:number;dy?:number;dz?:number;cone?:number;shadowed?:boolean}
 export type CameraWriter=(width:number,height:number,vp:Float32Array,inverse:Float32Array,eye:Float32Array,focus:readonly number[])=>void
 export type StageMarker={x:number;y:number;z:number;radius?:number;yaw?:number;pitch?:number;roll?:number;kind?:"select"|"hover"|"ghost"|"invalid"|"reticle"}
 export type StageTileViewport = {

@@ -14,6 +14,8 @@ import {
   type ExplosionPresetId,
 } from "../fx/explosion"
 import { smokeDefaults, smokeRanges, type SmokeKey } from "../fx/volume-settings"
+import { FLARE_DEFAULTS, FLARE_RANGES, FlareFx, flareEnvelope, type FlareLight, type FlareSettings } from "../fx/flare"
+import { stepThrown, throwBody, type ThrownBody } from "../sim/thrown"
 import type { LabControl } from "../lab-panel"
 import { curveTable, curveText, gradientTable, gradientText, parseCurve, parseGradient } from "../ramps"
 import { LOOK_PRESETS, LOOK_PRESET_IDS } from "../gpu/look"
@@ -30,8 +32,21 @@ export const effectSpecs:Record<string,ParticleSpec>={
 export const effectOptions=[
   {value:"smoke",label:"Grenade smoke"},{value:"tyre",label:"Tyre smoke"},{value:"nitro",label:"Nitro flame"},
   {value:"sparks",label:"Sparks"},{value:"explosion",label:"Explosion"},{value:"water",label:"Hydrant water"},
-  {value:"debris",label:"Debris"},{value:"fire",label:"Fire"},
+  {value:"debris",label:"Debris"},{value:"fire",label:"Fire"},{value:"flare",label:"Road flare"},
 ]
+/** Lab keys for the road flare's settings (`fx/flare.ts`), prefixed so they never meet the explosion's or smoke's. */
+const flareKey=(key:keyof FlareSettings)=>`flare${key[0]!.toUpperCase()}${key.slice(1)}`
+const flareParams={
+  flareIntensity:FLARE_DEFAULTS.intensity,flareTemperature:FLARE_DEFAULTS.temperature,flareBurnTime:FLARE_DEFAULTS.burnTime,
+  flareSmoke:FLARE_DEFAULTS.smoke,flareSparkRate:FLARE_DEFAULTS.sparkRate,flareSlagRate:FLARE_DEFAULTS.slagRate,
+  flareFlicker:FLARE_DEFAULTS.flicker,flareHalo:FLARE_DEFAULTS.halo,
+}
+/** Where the Lab's flare is: struck in a hand, thrown, then burning where it came to rest. */
+export type FlareStart="throw"|"burning"|"gutter"
+const FLARE_HOLD=0.9
+const FLARE_STICK=0.11
+/** Full-burn power and reach of the flare's light in the debug world (its lamps are about 1–1.5). */
+const FLARE_POWER=4,FLARE_REACH=15
 const specs=effectSpecs
 /** Effects whose particles come from `effectSpecs` and take the over-life ramps. */
 const rampEffects=new Set(["sparks","debris","water","fire","nitro"])
@@ -73,6 +88,8 @@ export function createEffects(context:LabContext) {
     interval:2.2,
     effect:"smoke",
     ...lifeRampDefaults,
+    ...flareParams,
+    flareStart:"throw" as FlareStart,
     playing:true,
     loop:true,
     targetX:-1,
@@ -85,6 +102,7 @@ export function createEffects(context:LabContext) {
   Object.defineProperties(params,{
     worldHour:{enumerable:true,get:()=>context.world?.state.hour??13,set:(v:number)=>{if(context.world)context.world.state.hour=Number(v)}},
     worldLook:{enumerable:true,get:()=>context.world?.look.preset??"current",set:(v:string)=>{context.world?.setLook(String(v))}},
+    worldLamps:{enumerable:true,get:()=>context.world?.state.lampPower??1,set:(v:number)=>{if(context.world)context.world.state.lampPower=Number(v)}},
   })
   // The Effects lab plays on the shared debug world (world/world.ts) unless the stage room is picked.
   // On the world the Spawn playground (if any) is neither drawn nor collided with.
@@ -103,6 +121,58 @@ export function createEffects(context:LabContext) {
     else{volume.colorShift=0;volume.coreGlow=0}
   }
   let effect="smoke",time=0,seed=7
+  const flare=new FlareFx(7)
+  let flareBody:ThrownBody|null=null
+  const flareLightOut:FlareLight={x:0,y:0,z:0,r:1,g:0,b:0,level:0}
+  const syncFlareSettings=()=>{for(const k of Object.keys(FLARE_DEFAULTS) as (keyof FlareSettings)[])flare.settings[k]=Number((params as Record<string,unknown>)[flareKey(k)])}
+  /** Where the flare's burning end is and which way its flame jets: in the hand, tumbling, or lying on the ground. */
+  const placeFlare=()=>{
+    const tx=params.targetX,tz=params.targetZ
+    const b=flareBody
+    if(!b||time<FLARE_HOLD&&params.flareStart==="throw"){
+      // Held out at arm's length, burning end up and forward, while the striker catches.
+      const sway=Math.sin(time*2.3)*0.01
+      flare.x=tx-3.2;flare.y=1.38+sway;flare.z=tz+0.4;flare.dx=0.55;flare.dy=0.8;flare.dz=-0.15
+      flare.vx=flare.vy=flare.vz=0
+    }else{
+      let ax:number,ay:number,az:number
+      if(b.rest){
+        // On the ground the flame jets out of the end, propped up a little by the stick and litter.
+        const sign=b.spin%(2*Math.PI)<Math.PI?1:-1
+        ax=b.ax*sign;ay=0.3;az=b.az*sign
+      }else{
+        const c=Math.cos(b.spin),s=Math.sin(b.spin)
+        ax=b.ax*c;ay=s;az=b.az*c
+      }
+      const l=Math.hypot(ax,ay,az)
+      flare.dx=ax/l;flare.dy=ay/l;flare.dz=az/l
+      flare.x=b.x+flare.dx*FLARE_STICK;flare.y=b.y+Math.max(0,flare.dy*FLARE_STICK);flare.z=b.z+flare.dz*FLARE_STICK
+      flare.vx=b.vx;flare.vy=b.vy;flare.vz=b.vz
+    }
+  }
+  const resetFlare=(ground:((x:number,z:number)=>number)|undefined)=>{
+    syncFlareSettings()
+    const tx=params.targetX,tz=params.targetZ,g=(x:number,z:number)=>ground?ground(x,z):0
+    flareBody=null
+    if(params.flareStart==="throw"){flare.strike(0);placeFlare();return}
+    // Already burning where it lies: a body at rest on the origin.
+    const b=throwBody(tx,g(tx,tz)+0.0125,tz,0.6,0,-0.3,seed)
+    b.rest=true;b.spin=seed%2?0.5:4
+    flareBody=b
+    const burn=flare.settings.burnTime
+    flare.strike(params.flareStart==="gutter"?Math.max(2,burn-11):20)
+    placeFlare()
+  }
+  const advanceFlare=(dt:number)=>{
+    const ground=sceneGround()
+    if(params.flareStart==="throw"&&!flareBody&&time>=FLARE_HOLD){
+      // A lob from the hand to the origin, ~4 m away, so it bounces and rolls in view.
+      flareBody=throwBody(flare.x,flare.y,flare.z,3.9,3.1,-0.55,seed)
+    }
+    if(flareBody)stepThrown(flareBody,dt,{ground:(x,z)=>ground?ground(x,z):0})
+    placeFlare()
+    flare.step(dt,particles)
+  }
   const source={smokeDistance:0,smokeX:0,smokeZ:0,smokeActive:false,idle:0}
   const random=()=>{seed=Math.imul(seed,1664525)+1013904223|0;return(seed>>>0)/4294967296}
   const nextTuningRng=()=>{
@@ -137,6 +207,7 @@ export function createEffects(context:LabContext) {
       spawnExplosion(particles,volume,tx,airburst?gy+1.8:gy,tz,params,random,params.size,params.density,{airburst})
     }
     if(effect==="sparks"||effect==="debris")for(let i=0;i<params.rate;i++)emit(tx,gy+0.8,tz)
+    if(effect==="flare")resetFlare(ground)
     params.effect=effect
     context.emit?.({type:"effect",section:"effects",effect,x:tx,y:gy,z:tz})
     context.sync()
@@ -162,12 +233,18 @@ export function createEffects(context:LabContext) {
     if(effect==="tyre"&&time<3.5){trail.follow(source,tx+Math.sin(time*1.8)*2,tz+Math.cos(time*1.8)*1.5,0,0,dt,params.density)}
     if(effect==="water"||effect==="fire"||effect==="nitro")emitter.step(tx,0.3,tz,dt,params.rate,"rate",emit)
     if(effect==="explosion")applyExplosionSmokeLive(volume,params,params.density)
+    if(effect==="flare")advanceFlare(dt)
     particles.update(dt,activeWalls,groundFn);volume.update(dt);trail.update(dt)
-    const loopPeriod=effect==="smoke"?params.growthTime+params.hold+params.fade+0.6:effect==="tyre"?Math.max(4,params.interval*2.5):params.interval
+    const loopPeriod=effect==="smoke"?params.growthTime+params.hold+params.fade+0.6:effect==="tyre"?Math.max(4,params.interval*2.5):effect==="flare"?params.flareBurnTime+16:params.interval
     if(params.loop&&time>=loopPeriod-1e-6)reset()
   }
   const prepare=()=>{
     if(inPlayground())return
+    if(effect==="flare"){
+      const l=flare.light(flareLightOut)
+      stage.dynamicLights=l.level>0?[{x:l.x,y:l.y,z:l.z,radius:FLARE_REACH,r:l.r,g:l.g,b:l.b,power:FLARE_POWER*l.level,shadowed:true}]:null
+      return
+    }
     if(effect!=="explosion"){
       stage.dynamicLights=null
       return
@@ -216,13 +293,19 @@ export function createEffects(context:LabContext) {
       reset("explosion")
     }},
     {key:"playing",label:"Play",group:"Emitter"},{key:"loop",label:"Loop",group:"Emitter"},
-    {key:"interval",label:"Loop interval",group:"Emitter",type:"range",min:0.5,max:8,step:0.1,unit:"s",visible:s=>Boolean(s.loop)&&s.effect!=="smoke"&&s.effect!=="water"&&s.effect!=="fire"&&s.effect!=="nitro"},
+    {key:"interval",label:"Loop interval",group:"Emitter",type:"range",min:0.5,max:8,step:0.1,unit:"s",visible:s=>Boolean(s.loop)&&s.effect!=="smoke"&&s.effect!=="water"&&s.effect!=="fire"&&s.effect!=="nitro"&&s.effect!=="flare"},
     {key:"trigger",label:"Retrigger",group:"Emitter",type:"action",run:()=>reset()},
-    {key:"rate",label:"Rate",group:"Parameters",type:"range",min:5,max:180,step:1,unit:"/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"&&s.effect!=="explosion",change:retriggerIfOneShot},
-    {key:"size",label:"Size",group:"Parameters",type:"range",min:0.3,max:2,step:0.05,unit:"m",visible:s=>s.effect!=="tyre"&&s.effect!=="smoke"&&s.effect!=="explosion",change:retriggerIfOneShot},
-    {key:"speed",label:"Speed",group:"Parameters",type:"range",min:0.2,max:2,step:0.05,unit:"m/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"&&s.effect!=="explosion",change:retriggerIfOneShot},
-    {key:"density",label:"Density",group:"Parameters",type:"range",min:0.1,max:2,step:0.05,unit:"",visible:s=>s.effect!=="smoke"&&s.effect!=="explosion",change:retriggerIfOneShot},
-    {key:"random-Parameters",label:"Randomize Parameters",group:"Parameters",type:"action",visible:s=>s.effect!=="smoke"&&s.effect!=="explosion",run:()=>{
+    {key:"worldLamps",label:"Street lamps",group:"World",type:"range",min:0,max:1,step:0.05,unit:"×",visible:s=>s.backdrop==="world"&&s.effect==="flare"},
+    {key:"flareStart",label:"Start",group:"Flare",type:"select",options:[{value:"throw",label:"Strike and throw"},{value:"burning",label:"Burning on the ground"},{value:"gutter",label:"Guttering out"}],visible:s=>s.effect==="flare",change:()=>reset()},
+    ...(Object.keys(FLARE_RANGES) as (keyof FlareSettings)[]).map((key):LabControl=>{
+      const [min,max,step,unit,label,group]=FLARE_RANGES[key]
+      return {key:flareKey(key),label,group,type:"range",min,max,step,unit,visible:s=>s.effect==="flare",change:()=>{syncFlareSettings();if(key==="burnTime"&&params.playing)reset();else context.sync()}}
+    }),
+    {key:"rate",label:"Rate",group:"Parameters",type:"range",min:5,max:180,step:1,unit:"/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"&&s.effect!=="explosion"&&s.effect!=="flare",change:retriggerIfOneShot},
+    {key:"size",label:"Size",group:"Parameters",type:"range",min:0.3,max:2,step:0.05,unit:"m",visible:s=>s.effect!=="tyre"&&s.effect!=="smoke"&&s.effect!=="explosion"&&s.effect!=="flare",change:retriggerIfOneShot},
+    {key:"speed",label:"Speed",group:"Parameters",type:"range",min:0.2,max:2,step:0.05,unit:"m/s",visible:s=>s.effect!=="smoke"&&s.effect!=="tyre"&&s.effect!=="explosion"&&s.effect!=="flare",change:retriggerIfOneShot},
+    {key:"density",label:"Density",group:"Parameters",type:"range",min:0.1,max:2,step:0.05,unit:"",visible:s=>s.effect!=="smoke"&&s.effect!=="explosion"&&s.effect!=="flare",change:retriggerIfOneShot},
+    {key:"random-Parameters",label:"Randomize Parameters",group:"Parameters",type:"action",visible:s=>s.effect!=="smoke"&&s.effect!=="explosion"&&s.effect!=="flare",run:()=>{
       const rng=nextTuningRng()
       if(effect!=="tyre"){
         params.rate=Math.round(25+rng()*120)
@@ -317,7 +400,7 @@ export function createEffects(context:LabContext) {
     prepare,
     retrigger:()=>reset(),
     reroll,
-    frameTarget:()=>({x:params.targetX,y:0.5,z:params.targetZ,dist:16}),
+    frameTarget:()=>effect==="flare"&&flareBody?{x:flareBody.x,y:0.4,z:flareBody.z,dist:9}:{x:params.targetX,y:0.5,z:params.targetZ,dist:16},
     objects:()=>[{id:"emitter:origin",label:`${effectOptions.find(o=>o.value===effect)?.label??effect} Origin`,category:"emitter",x:params.targetX,y:0.1,z:params.targetZ,radius:0.9,movable:true}],
     moveObject:(id,x,z)=>{
       if(id!=="emitter:origin")return false
@@ -326,7 +409,9 @@ export function createEffects(context:LabContext) {
       reset()
       return true
     },
-    telemetry:()=>`${particles.count+trail.count} particles · ${volume.count}/4 volumes`,
+    telemetry:()=>effect==="flare"
+      ?`${particles.count} particles · flare ${flareEnvelope(flare.age,flare.settings.burnTime).phase} ${flare.age.toFixed(1)} s · light ${flareLightOut.level.toFixed(2)}${flareBody?.rest?" · at rest":""}`
+      :`${particles.count+trail.count} particles · ${volume.count}/4 volumes`,
   }
   type VariantSlot = {
     sig: string
