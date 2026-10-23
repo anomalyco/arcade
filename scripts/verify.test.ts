@@ -10,12 +10,15 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), "verify-test-"))
   roots.push(root)
+  await Bun.write(join(root, "package.json"), JSON.stringify({ name: "verify-fixture", private: true }))
   for (const file of ["verify.ts", "verify-scope.ts", "verify-remote.ts"]) {
     await Bun.write(join(root, "scripts", file), Bun.file(join(import.meta.dir, file)))
   }
   for (const game of ["lot", "brawl"]) {
     await Bun.write(join(root, ".github/workflows", `${game}.yml`), `on:\n  pull_request:\n    paths: ["games/${game}/**"]\n`)
-    await Bun.write(join(root, "games", game, "package.json"), JSON.stringify({ scripts: { check: "tsc --noEmit && bun test && vite build" } }))
+    await Bun.write(join(root, "games", game, "package.json"), JSON.stringify({ scripts: {
+      check: "bun scripts/build-id.ts && tsc --noEmit && bun test && vite build && bun scripts/check-bundle.ts",
+    } }))
   }
   return root
 }
@@ -106,7 +109,7 @@ test("remote wrapper delivers a submitter-local snapshot to a git-less worker", 
   const changed = join(submitter, "only-on-submitter.txt")
   await Bun.write(changed, "games/lot/src/main.ts\n")
   const hive = join(submitter, "bin/hivemind")
-  await Bun.write(hive, '#!/bin/bash\nwhile [[ "$1" != "--" ]]; do shift; done\nshift\ncd "$VERIFY_WORKER"\nexec "$@"\n')
+  await Bun.write(hive, '#!/bin/bash\nprintf "%s\\n" "$@" > "$VERIFY_WORKER/hive-args.txt"\nwhile [[ "$1" != "--" ]]; do shift; done\nshift\ncd "$VERIFY_WORKER"\nexec "$@"\n')
   chmodSync(hive, 0o755)
   const result = Bun.spawnSync(["bun", "scripts/verify-remote.ts", "--", "--changed", changed, "--list"], {
     cwd: submitter,
@@ -120,4 +123,28 @@ test("remote wrapper delivers a submitter-local snapshot to a git-less worker", 
   expect(output).toContain("lot:tsc")
   expect(output).not.toContain("brawl:tsc")
   expect(output).toContain("jobs=1, test-workers=1")
+  expect(await Bun.file(join(worker, "hive-args.txt")).text()).toContain("--kind\ncargo\n")
+})
+
+test("verification tiers keep default checks headless, smoke one game, and retain the full release graph", async () => {
+  const root = await fixture()
+  const fast = run(root, ["--all"])
+  expect(fast.code).toBe(0)
+  expect(fast.output).toContain("lot:build-id")
+  expect(fast.output).toContain("lot:tsc")
+  expect(fast.output).toContain("lot:test")
+  for (const command of ["vite build", "smoke.mjs", "wrangler", "check-bundle.ts"]) expect(fast.output).not.toContain(command)
+  const smoke = run(root, ["--smoke", "--game", "lot"])
+  expect(smoke.code).toBe(0)
+  expect(smoke.output).toContain("lot:build-id")
+  expect(smoke.output).toContain("vite build")
+  expect(smoke.output).toContain("smoke.mjs   (after lot:build)")
+  for (const command of ["tsc --noEmit", "bun test", "wrangler", "brawl:"]) expect(smoke.output).not.toContain(command)
+  const release = run(root, ["--release", "--export", root])
+  expect(release.code).toBe(0)
+  for (const command of ["tsc --noEmit", "bun test", "vite build", "smoke.mjs", "wrangler", "check-bundle.ts"])
+    expect(release.output).toContain(command)
+  expect(release.output).not.toContain("--incremental")
+  for (const args of [["--smoke"], ["--smoke", "--game", "missing"], ["--smoke", "--game", "lot", "--all"], ["--game", "lot"]])
+    expect(run(root, args).code).toBe(1)
 })

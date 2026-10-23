@@ -19,7 +19,7 @@ below and in this file's git history.
    ```
 
    That is the export, frozen install, `check:packages`, every game's check, smoke and dry-run. Budget for minutes:
-   the Oct 22 remote-mini `verify --all` measurement took 1,204 s at 2 jobs, with existing simulation and smoke
+   the Oct 22 remote-mini full-plan measurement (before headless `verify`) took 1,204 s at 2 jobs, with simulation and smoke
    failures; release additionally exports and installs. The old ~30 s parallel / ~145 s serial estimates are stale.
    `scripts/verify.ts` documents exactly what it runs. Flags override `ARCADE_VERIFY_JOBS` /
    `ARCADE_VERIFY_TEST_WORKERS`, then `HIVEMIND_JOBS` / `HIVEMIND_TEST_WORKERS`, then defaults of 2 each;

@@ -14,6 +14,7 @@
     "check:packages": "bun run --filter '@arcade/*' check",
     "verify": "bun scripts/verify.ts",
     "verify:remote": "bun scripts/verify-remote.ts",
+    "verify:smoke": "bun scripts/verify.ts --smoke",
     "verify:release": "bun scripts/verify.ts --release"
   },
   "devDependencies": {
