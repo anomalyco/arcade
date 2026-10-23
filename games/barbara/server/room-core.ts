@@ -1,5 +1,6 @@
 import { type Activity, type Conn, type IdleState, RoomCore } from "@arcade/kit/net/room-core"
 import type { SavedSeat } from "@arcade/kit/net/seats"
+import { VoiceRoom, type VoiceIce } from "@arcade/kit/net/voice"
 import { BUILD } from "../shared/build.gen"
 import {
   decodeClient, encodeServer, flareRow, GRACE_MS, intentOps, MAX_PLAYERS, nightWire, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
@@ -99,11 +100,11 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     return { version: 1, build: BUILD, nights: this.nights, code: this.code, world: this.world.params, state: { ...this.state, players, events: [] }, seats: this.checkpointSeats(), pids: [...this.pids], names: [...this.names] }
   }
 
-  static restore(night: NightCheckpoint, clock: () => number = Date.now, build = BUILD): WoodsRoomCore {
+  static restore(night: NightCheckpoint, clock: () => number = Date.now, build = BUILD, ice?: () => Promise<VoiceIce>): WoodsRoomCore {
     // BUILD hashes shared state definitions and makeWorld, so neither can silently change beneath a saved night.
     if (night.version !== 1 || night.build !== BUILD) throw new Error("Incompatible night checkpoint")
     if (!night.state || !Array.isArray(night.state.players) || night.state.players.some((p) => !p.air || !p.map)) throw new Error("Incomplete night checkpoint")
-    const core = new WoodsRoomCore(night.code, clock, makeWorld(night.world), build)
+    const core = new WoodsRoomCore(night.code, clock, makeWorld(night.world), build, ice)
     if (!Number.isSafeInteger(night.nights) || night.nights < 0) throw new Error("Invalid night count")
     core.nights = night.nights
     Object.assign(core.state, night.state, { events: [] })
@@ -146,9 +147,10 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     if (this.dirty || this.clock() - this.savedAt >= 2000) this.save()
   }
 
-  constructor(code: string, clock: () => number = Date.now, world: WoodsWorld = makeWorld(), build = BUILD) {
+  constructor(code: string, clock: () => number = Date.now, world: WoodsWorld = makeWorld(), build = BUILD, ice?: () => Promise<VoiceIce>) {
     super({ code, build, title: "Woods", maxPlayers: MAX_PLAYERS, snapEvery: SNAP_EVERY, inputs: intentOps, clock, graceMs: GRACE_MS, idleKickMs: 20 * 60_000, idleWarnMs: 30_000 })
     this.world = world
+    this.voice = new VoiceRoom(ice, clock)
     this.seed = codeSeed(code)
     this.state = createWoods(world, TEAM, this.seed, [])
   }

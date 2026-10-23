@@ -1,6 +1,7 @@
 import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/interpolate"
 import { Predictor, Smoother } from "@arcade/kit/net/prediction"
 import { RoomSocket } from "@arcade/kit/net/room-socket"
+import type { VoiceChat } from "@arcade/kit/voice"
 import { BUILD } from "../shared/build.gen"
 import { createNight, canLight } from "../shared/night"
 import { applyFlares, applyMapDelta, applyNightWire, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
@@ -163,13 +164,14 @@ export class OnlineSession implements Session {
   bytesIn = 0
   readonly startedAt = performance.now()
 
-  constructor(readonly world: WoodsWorld, readonly room: string, name: string) {
+  constructor(readonly world: WoodsWorld, readonly room: string, name: string, voice?: VoiceChat) {
     this.view = createWoods(world, 0, world.params.seed, [])
     const s = world.camp.spawn
     this.self = newPlayer(-1, false, name || "You", s.x, s.z, s.yaw)
     this.prev = { x: s.x, z: s.z, y: 0 }
     this.view.players.push(this.self)
     this.socket = new RoomSocket({
+      voice,
       game: GAME,
       room,
       automaticReload: true,
