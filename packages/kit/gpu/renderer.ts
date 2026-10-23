@@ -193,6 +193,15 @@ export type FrameInput = {
     spotCones?: boolean
     /** Lower HDR alpha by particle coverage (Looks that read alpha as one minus a colour mask keep fire in colour). */
     keepColour?: boolean
+    /** Inverse-square soft core (m) for the particle lights (`ParticleFrameInput.falloff`); 0 or omitted keeps the window. */
+    falloff?: number
+    /**
+     * Draw the particles after the volumes and fog blur instead of in the scene: those read the scene depth, which
+     * particles never write, so they would fog, blur and show through smoke the depth of whatever is behind it. The
+     * particles then take only `haze` for the mist in front of them (`ParticleFrameInput.haze`) and skip temporal AA.
+     */
+    afterFog?: boolean
+    haze?: readonly [number, number]
   }
   weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
@@ -874,6 +883,13 @@ export class Renderer {
     }
   }
 
+  /** Kit particles drawn after the fog (`FrameInput.fxLighting.afterFog`) onto `target` (`tw` × `th`). */
+  private drawLateParticles(enc: GPUCommandEncoder, target: GPUTextureView, tw: number, th: number): void {
+    const pass = enc.beginRenderPass({ label: "late particles", colorAttachments: [{ view: target, loadOp: "load", storeOp: "store" }] })
+    this.particleRenderer!.drawLate(pass, this.targets.depthView, this.targets.width, this.targets.height, tw, th, DEPTH_CFG.clearValue === 0)
+    pass.end()
+  }
+
   /** Blurs the image after the fog volume by its fog (`FrameInput.fogBlur`) and mixes it back into `target`. */
   private drawFogBlur(enc: GPUCommandEncoder, f: FrameInput, vp: Float32Array, target: GPUTextureView, tw: number, th: number): void {
     if (!f.fogBlur || !f.fog || f.fogBlur.strength <= 0) return
@@ -1474,6 +1490,7 @@ export class Renderer {
   private encodeFrame(f: FrameInput, targetView: GPUTextureView | undefined, taa: TemporalResolve | null): void {
     const d = this.device
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
+    const lateFx = !!(f.fxParticles && f.fxParticles.count > 0 && f.fxLighting?.afterFog)
     if (taa) this.syncBloomSource(taa.output, taa.outputView)
     else this.syncBloomSource(this.targets.hdr, this.targets.hdrView)
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
@@ -1531,7 +1548,8 @@ export class Renderer {
       this.particleRenderer ??= new ParticleRenderer(d, DEPTH, SAMPLES)
       const fl = f.fxLighting
       this.particleRenderer.setFrame({
-        vp: f.frame,
+        // Drawn late onto temporal AA's output, which is unjittered.
+        vp: taa && fl?.afterFog ? this.unjittered : f.frame,
         eye: [f.frame[16]!, f.frame[17]!, f.frame[18]!],
         debug: 0,
         ambient: fl?.ambient ?? [Math.max(0.18, f.frame[28]!), Math.max(0.2, f.frame[29]!), Math.max(0.24, f.frame[30]!)],
@@ -1539,6 +1557,8 @@ export class Renderer {
         lightCount: fl?.lights ? (fl.lightCount ?? 0) : f.lightCount,
         lightStride: LIGHT_FLOATS,
         spotCones: fl?.spotCones,
+        falloff: fl?.falloff ?? 0,
+        haze: fl?.haze ?? [0, 0],
       })
       this.particleRenderer.upload(f.fxParticles)
     }
@@ -1756,7 +1776,7 @@ export class Renderer {
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass(
       this.targets.configureMainPass({
-        storeDepth: hasSmoke || runSharedBlur || !!taa || this.volumeNeedsDepth(f) || !!(f.fogBlur && f.fog),
+        storeDepth: hasSmoke || runSharedBlur || !!taa || this.volumeNeedsDepth(f) || !!(f.fogBlur && f.fog) || lateFx,
         timestampWrites: this.timing && !timerStarted ? this.timer!.start : undefined,
         extraColorAttachment: motion ? this.velocityAttachment : null,
       }),
@@ -1820,7 +1840,7 @@ export class Renderer {
       pass.draw(6, addCount)
     }
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
-    if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion,Boolean(f.fxLighting?.keepColour))
+    if(f.fxParticles&&f.fxParticles.count>0&&!lateFx)this.particleRenderer!.draw(pass,motion,Boolean(f.fxLighting?.keepColour))
     if(f.weather)this.weatherRenderer!.draw(pass,motion)
     if (this.passes.count("alpha")) {
       // Splatter, particles and weather bind their own groups; alpha plugins get the scene's back.
@@ -1863,7 +1883,7 @@ export class Renderer {
         rp.draw(m.count, r.count, 0, r.first)
       }
       if (f.splatter) this.splatterRenderer!.drawReactive(rp)
-      if (f.fxParticles && f.fxParticles.count > 0) this.particleRenderer!.drawReactive(rp)
+      if (f.fxParticles && f.fxParticles.count > 0 && !lateFx) this.particleRenderer!.drawReactive(rp)
       if (f.weather) this.weatherRenderer!.drawReactive(rp)
       if (this.passes.count("alpha")) {
         rp.setBindGroup(0, this.sceneGroup)
@@ -1889,6 +1909,7 @@ export class Renderer {
 
     if (this.volumes.length && !taa) this.drawVolumes(enc, f, f.frame, [f.frame[16]!, f.frame[17]!, f.frame[18]!], this.targets.hdrView, this.targets.width, this.targets.height)
     if (!taa) this.drawFogBlur(enc, f, f.frame, this.targets.hdrView, this.targets.width, this.targets.height)
+    if (!taa && lateFx) this.drawLateParticles(enc, this.targets.hdrView, this.targets.width, this.targets.height)
     if (!taa && this.overlayPass?.active) this.overlayPass.encode(enc, this.targets.hdrView, this.targets.width, this.targets.height, this.sceneGroup)
 
     let activeDown0: GPUBindGroup | undefined
@@ -1952,6 +1973,7 @@ export class Renderer {
       taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
+      if (lateFx) this.drawLateParticles(enc, taa.outputView, this.width, this.height)
       if (this.overlayPass?.active) this.overlayPass.encode(enc, taa.outputView, this.width, this.height, this.sceneGroup)
     }
     if (this.meterPass && this.bloomSourceView) this.meterPass.encode(enc, this.bloomSourceView)

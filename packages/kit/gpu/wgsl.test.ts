@@ -85,7 +85,7 @@ describe("wgslStruct & resolveWgsl", () => {
 
   test("converted uniform structs match exact float counts and eliminate u0..u15 swizzles", () => {
     expect(LookUniformsStruct.floatCount).toBe(64)
-    expect(ParticleFrameStruct.floatCount).toBe(120)
+    expect(ParticleFrameStruct.floatCount).toBe(124)
     expect(VolumeFrameStruct.floatCount).toBe(136)
     expect(FoliageWindConfigStruct.floatCount).toBe(12)
     expect(FoliageActorsStruct.floatCount).toBe(20)
@@ -169,6 +169,15 @@ describe("wgslStruct & resolveWgsl", () => {
     pr.setFrame({ lights, lightCount: 3, lightStride: 16, spotCones: true })
     expect(pr.uniforms[ParticleFrameStruct.offsetOf("lightCount")]).toBe(2)
     expect(Array.from(pr.uniforms.subarray(cones, cones + 8)).map((v) => Math.round(v * 100) / 100)).toEqual([0.6, 0.8, 0.85, 1, 0, 0, 0, 0])
+
+    // The inverse-square core stays until a frame sets another (0 is the window falloff).
+    const falloff = ParticleFrameStruct.offsetOf("shading")
+    expect(pr.uniforms[falloff]).toBe(0)
+    pr.setFrame({ falloff: 0.5 })
+    pr.setFrame({ lights, lightCount: 3, lightStride: 16 })
+    expect(pr.uniforms[falloff]).toBe(0.5)
+    pr.setFrame({ falloff: -1 })
+    expect(pr.uniforms[falloff]).toBe(0)
   })
 
   test("specializes Look scene & post variants and surface material slots without .replace()", () => {

@@ -3,9 +3,10 @@ import { reactivePipelineDescriptor } from "../gpu/reactive"
 import { PARTICLE_CAPACITY, Particles } from "./particles"
 
 /**
- * Typed WGSL layout for `ParticleRenderer` frame uniforms (120 floats / 480 bytes).
+ * Typed WGSL layout for `ParticleRenderer` frame uniforms (124 floats / 496 bytes).
  * Keeps the original `[vp(16), eye(3), debug(1), ambient(3), lightCount(1), lights(64)]` prefix, then one plan cone per
- * light (`[dirX, dirZ, cosHalf, on]`, written only when `setFrame` is asked for `spotCones`).
+ * light (`[dirX, dirZ, cosHalf, on]`, written only when `setFrame` is asked for `spotCones`), then `shading`
+ * (`[falloff core m, haze density, haze clear distance m, 0]`).
  */
 export const ParticleFrameStruct = wgslStruct("Frame", {
   vp: "mat4x4f",
@@ -15,6 +16,7 @@ export const ParticleFrameStruct = wgslStruct("Frame", {
   lightCount: "f32",
   lights: "array<vec4f, 16>",
   cones: "array<vec4f, 8>",
+  shading: "vec4f",
 })
 
 export type ParticleLightInput = {
@@ -42,6 +44,19 @@ export type ParticleFrameInput = {
    * spot lights then only light particles inside their cone, with a soft edge. Off by default (every light a point).
    */
   spotCones?: boolean
+  /**
+   * Light particles by inverse square with this soft core (m) instead of the default window: a light lights a particle
+   * d away by `power · core² / (core² + d²)`, still fading to nothing at its radius, so smoke glows only near a flame and
+   * dims with distance from it like everything else it lights. 0 (the default) keeps the window `(1 − d/r)²`, which
+   * lights a column of smoke almost evenly from top to bottom.
+   */
+  falloff?: number
+  /**
+   * The mist between the eye and a particle drawn by `drawLate` (after the host's fog, which would otherwise treat it as
+   * the surface behind it): `[density per m, clear distance m]`, the forest's depth mist (clear, then a 12 m ramp up
+   * to `density`). The particle fades by its transmittance. Ignored by `draw`.
+   */
+  haze?: readonly [number, number]
 }
 
 export const blackbodyFireWgsl = /* wgsl */ `
@@ -62,6 +77,26 @@ fn strontiumFlame(T: f32, tint: vec3f) -> vec3f {
   var c = mix(tint * vec3f(0.45, 0.3, 0.4), tint * 2.8, smoothstep(0.12, 0.55, T));
   c = mix(c, vec3f(6.0, 3.0, 3.5), smoothstep(0.7, 1.3, T));
   return c * smoothstep(0.03, 0.16, T);
+}
+`
+
+/**
+ * `drawLate`'s fragment stage: the host's scene depth (multisampled, sample 0) in group `group` with
+ * `[depth texels per target pixel x, y, reversed depth (0/1), 0]`, tested by hand since the late pass has no depth
+ * attachment, and the depth mist in front of the particle (`ParticleFrameInput.haze`).
+ */
+const lateWgsl = (group: number) => /* wgsl */ `
+@group(${group}) @binding(0) var lateDepth: texture_depth_multisampled_2d;
+@group(${group}) @binding(1) var<uniform> lateView: vec4f;
+@fragment fn fsLate(o:Out)->@location(0) vec4f {
+  let size=vec2i(textureDimensions(lateDepth));
+  let scene=textureLoad(lateDepth,clamp(vec2i(o.position.xy*lateView.xy),vec2i(0),size-vec2i(1)),0);
+  // In front of the scene is the larger depth with reversed depth, the smaller without.
+  if(select(o.position.z-scene,scene-o.position.z,lateView.z>0.5)>0.0){discard;}
+  let c=shade(o);
+  let d=max(0.0,distance(o.world,F.eye)-F.shading.z);
+  let ramp=min(d,12.0);
+  return c*exp(-F.shading.y*(ramp*ramp/24.0+max(0.0,d-12.0)));
 }
 `
 
@@ -139,7 +174,9 @@ ${strontiumFlameWgsl}
   for(var l=0;l<min(8,i32(F.lightCount));l++){
     let pos=F.lights[l*2];let color=F.lights[l*2+1];let delta=pos.xyz-s.pos.xyz;let d=length(delta);
     if(d<pos.w){
-      var k=color.w*pow(1.0-d/pos.w,2.0)*(0.35+0.65*max(0.0,dot(normal,delta/max(d,0.01))));
+      var fall=pow(1.0-d/pos.w,2.0);
+      if(F.shading.x>0.0){let c2=F.shading.x*F.shading.x;let w=1.0-d*d/(pos.w*pos.w);fall=c2/(c2+d*d)*w*w;}
+      var k=color.w*fall*(0.35+0.65*max(0.0,dot(normal,delta/max(d,0.01))));
       let cone=F.cones[l];
       if(cone.w>0.5){
         let plan=-delta.xz;let pl=length(plan);
@@ -171,7 +208,9 @@ ${strontiumFlameWgsl}
   if(F.debug==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
   return o;
 }
-@fragment fn fs(o:Out)->@location(0) vec4f {
+@fragment fn fs(o:Out)->@location(0) vec4f { return shade(o); }
+${lateWgsl(bindGroupIndex + 1)}
+fn shade(o:Out)->vec4f {
   var alpha=o.color.a;
   if(o.kind==7.0){
     let r=length(o.uv);
@@ -315,6 +354,7 @@ const AMBIENT_OFFSET = ParticleFrameStruct.offsetOf("ambient")
 const LIGHT_COUNT_OFFSET = ParticleFrameStruct.offsetOf("lightCount")
 const LIGHTS_OFFSET = ParticleFrameStruct.offsetOf("lights")
 const CONES_OFFSET = ParticleFrameStruct.offsetOf("cones")
+const SHADING_OFFSET = ParticleFrameStruct.offsetOf("shading")
 
 /** One instanced HDR draw. Non-debris extra vertices degenerate; debris gets six genuinely lit faces. */
 export class ParticleRenderer {
@@ -330,6 +370,12 @@ export class ParticleRenderer {
   private readonly makePipe: (heat: boolean, motion: boolean, keepColour?: boolean) => GPURenderPipeline
   private readonly describe: (heat: boolean, motion: boolean, keepColour?: boolean) => GPURenderPipelineDescriptor
   private reactivePipe?: GPURenderPipeline
+  private readonly makeLate: () => GPURenderPipeline
+  private latePipe?: GPURenderPipeline
+  private lateLayout?: GPUBindGroupLayout
+  private lateBuf?: GPUBuffer
+  private lateGroup?: { group: GPUBindGroup; depth: GPUTextureView }
+  private readonly lateView = new Float32Array(4)
   private count = 0
   constructor(
     private readonly device: GPUDevice,
@@ -406,6 +452,21 @@ export class ParticleRenderer {
         multisample: { count: sampleCount },
       })
     this.makePipe = (heat, motion, keepColour) => device.createRenderPipeline(this.describe(heat, motion, keepColour))
+    this.makeLate = () => {
+      const late = (this.lateLayout ??= device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth", multisampled: true } },
+          { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        ],
+      }))
+      const { depthStencil: _depth, multisample: _samples, ...base } = this.describe(false, false)
+      return device.createRenderPipeline({
+        ...base,
+        label: "kit particles (late)",
+        layout: device.createPipelineLayout({ bindGroupLayouts: [...bindGroupLayouts, late] }),
+        fragment: { ...base.fragment!, entryPoint: "fsLate" },
+      })
+    }
     this.pipeline = this.makePipe(false, false)
     this.heat = this.makePipe(true, false)
   }
@@ -421,6 +482,11 @@ export class ParticleRenderer {
       u[EYE_OFFSET + 1] = input.eye[1] ?? 0
       u[EYE_OFFSET + 2] = input.eye[2] ?? 0
     }
+    if (input.falloff !== undefined) u[SHADING_OFFSET] = Math.max(0, input.falloff)
+    if (input.haze) {
+      u[SHADING_OFFSET + 1] = Math.max(0, input.haze[0])
+      u[SHADING_OFFSET + 2] = input.haze[1]
+    }
     if (input.debug !== undefined) {
       u[DEBUG_OFFSET] = input.debug
     }
@@ -430,7 +496,7 @@ export class ParticleRenderer {
       u[AMBIENT_OFFSET + 2] = input.ambient[2] ?? 0
     }
     if (input.lights !== undefined) {
-      u.fill(0, LIGHTS_OFFSET)
+      u.fill(0, LIGHTS_OFFSET, SHADING_OFFSET)
       const cones = input.spotCones && input.lights instanceof Float32Array && (input.lightStride ?? 8) >= 12
       let written = 0
       if (input.lights instanceof Float32Array) {
@@ -483,6 +549,33 @@ export class ParticleRenderer {
     const keep = keepColour ? (this.keepPipelines[motion ? 1 : 0] ??= this.makePipe(false, motion, true)) : null
     pass.setPipeline(this.uniforms[DEBUG_OFFSET] === 2 ? this.heat : keep ?? (motion ? this.motionPipeline! : this.pipeline))
     pass.setBindGroup(this.bindGroupIndex, this.group)
+    pass.setVertexBuffer(0, this.instances)
+    pass.draw(36, this.count)
+  }
+  /**
+   * Draws after the host's fog and other depth-driven passes, onto a single-sample target: those passes read the scene
+   * depth, which particles never write, so drawn into the scene they would fog, blur or reveal each particle by the
+   * depth of whatever is behind it. `depth` is the scene's multisampled depth (`depthW` × `depthH`, tested here by
+   * hand) and the target is `targetW` × `targetH`. Upload with the unjittered camera when the target is temporal AA's
+   * output. Particles drawn here skip the reactive mask.
+   */
+  drawLate(pass: GPURenderPassEncoder, depth: GPUTextureView, depthW: number, depthH: number, targetW: number, targetH: number, reversedDepth = false) {
+    if (!this.count) return
+    this.latePipe ??= this.makeLate()
+    this.lateBuf ??= this.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+    this.lateView[0] = depthW / targetW
+    this.lateView[1] = depthH / targetH
+    this.lateView[2] = reversedDepth ? 1 : 0
+    this.device.queue.writeBuffer(this.lateBuf, 0, this.lateView)
+    if (this.lateGroup?.depth !== depth) {
+      this.lateGroup = {
+        depth,
+        group: this.device.createBindGroup({ layout: this.lateLayout!, entries: [{ binding: 0, resource: depth }, { binding: 1, resource: { buffer: this.lateBuf } }] }),
+      }
+    }
+    pass.setPipeline(this.latePipe)
+    pass.setBindGroup(this.bindGroupIndex, this.group)
+    pass.setBindGroup(this.bindGroupIndex + 1, this.lateGroup.group)
     pass.setVertexBuffer(0, this.instances)
     pass.draw(36, this.count)
   }
