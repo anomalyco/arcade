@@ -6,9 +6,9 @@ export type HelmView = { order: number; power: number; knots: number; heading: n
 
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
-/** Helm styles; #tl and #br positions and the shared type live in style.css. */
+/** Helm styles; #br position and the shared type live in style.css. */
 const CSS = `
-#tr { position: absolute; top: 22px; right: 28px; font-size: 13px; letter-spacing: 0.32em; margin-right: -0.32em; opacity: 0.85; }
+#tr { position: absolute; top: 14px; right: 18px; text-transform: none; }
 #br[hidden] { display: none; }
 #br { display: grid; justify-items: end; gap: 9px; }
 #br .helm-row { display: flex; align-items: center; gap: 16px; }
@@ -38,12 +38,13 @@ const CSS = `
 `
 
 /**
- * Minimal HUD: the name top left, how many are at sea (or OFFLINE) top right, and once a ship is driven, the helm
+ * Minimal HUD: the shell's volume control top right (`#tr`, mounted by main.ts), and once a ship is driven, the helm
  * bottom right: speed and heading, a slim throttle bar (order outline, engine output fill) with its percentage, and a
  * rudder tick.
  */
 export class Hud {
-  private status: HTMLElement
+  /** Top right, where main.ts mounts the shell's volume control. */
+  readonly corner: HTMLElement
   private helm: HTMLElement
   private speed: HTMLElement
   private course: HTMLElement
@@ -51,7 +52,6 @@ export class Hud {
   private fill: HTMLElement
   private mark: HTMLElement
   private rudder: HTMLElement
-  private last = ""
   private lastHelm = ""
   private lastSeat = ""
   private seatEl: HTMLElement
@@ -65,11 +65,11 @@ export class Hud {
       style.textContent = CSS
       document.head.append(style)
     }
-    root.innerHTML = `<div id="tl" class="brand">CARRIER</div><div id="tr"></div>
+    root.innerHTML = `<div id="tr"></div>
 <div id="br" hidden><div class="helm-row"><span class="speed"></span><span class="sep"></span><span class="course"></span></div>
 <div class="helm-row small"><span class="thr-bar"><i class="fill"></i><i class="mark"></i></span><span class="thr"></span><span class="rudder"><i></i></span></div></div>
 <div id="bl"><div class="flash"></div><div class="role"></div></div>`
-    this.status = root.querySelector<HTMLElement>("#tr")!
+    this.corner = root.querySelector<HTMLElement>("#tr")!
     this.helm = root.querySelector<HTMLElement>("#br")!
     this.speed = this.helm.querySelector<HTMLElement>(".speed")!
     this.course = this.helm.querySelector<HTMLElement>(".course")!
@@ -98,13 +98,6 @@ export class Hud {
     if (v.state) role.querySelector("i")!.textContent = ` · ${v.state}`
     if (eKey) role.insertAdjacentHTML("beforeend", `<span class="ops">${keyCapHtml("KeyE")}DEPLOY</span>`)
     this.seatEl.querySelector(".flash")!.textContent = v.flash
-  }
-
-  update(net: { readonly state: "connecting" | "online" | "offline"; readonly players: number }): void {
-    const text = net.state === "online" ? `${net.players} AT SEA` : net.state === "offline" ? "OFFLINE" : ""
-    if (text === this.last) return
-    this.last = text
-    this.status.textContent = text
   }
 
   /** The player's ship, every frame (null hides the helm). */

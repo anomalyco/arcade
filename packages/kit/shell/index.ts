@@ -13,6 +13,7 @@ export { LEAVE_GUARD_AFTER_MS, LeaveGuard, ShellLoading, type LoadingStage } fro
 export { CHANNEL_LABEL, REDUCE_MOTION_STORAGE_KEY, ShellSettings, muteStorageKey, type ShellQuality, type ShellRow, type ShellSection, type ShellSettingsOptions } from "./settings"
 export { audioRuntimeSync, type ShellAudioRuntime } from "./audio"
 export { SHELL_CSS, ShellView, installShellStyles, shellKeysHtml, type ShellViewOptions } from "./view"
+export { ShellVolumeButton, mountVolumeControl, volumeLevel, type ShellVolumeButtonOptions, type ShellVolumeLevel } from "./volume"
 
 /**
  * A game's quality on the shell's policy: Auto starts at High and steps down only on measured slow frames, the pick

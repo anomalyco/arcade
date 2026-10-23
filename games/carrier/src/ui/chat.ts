@@ -11,7 +11,7 @@ const KEEP = 8
 
 /** Getaway's chat look (@arcade/kit/client/chat.css); carrier only places it and adds the channel tag. */
 const CSS = `
-#ct { position: fixed; left: 22px; top: 58px; z-index: 12; width: min(380px, 40vw); pointer-events: none; zoom: var(--hud, 1); }
+#ct { position: fixed; left: 22px; top: 20px; z-index: 12; width: min(380px, 40vw); pointer-events: none; zoom: var(--hud, 1); }
 body.mn-open #ct { display: none; }
 #ct .achat-input { display: flex; align-items: center; }
 #ct .achat-input[hidden] { display: none; }
@@ -20,7 +20,7 @@ body.mn-open #ct { display: none; }
 `
 
 /**
- * Text chat, top left under the brand. T opens the input to everyone, Y to my carrier's crew (Tab inside switches);
+ * Text chat, in the top left corner. T opens the input to everyone, Y to my carrier's crew (Tab inside switches);
  * Enter sends (an empty line just closes), Esc or a click elsewhere cancels. While it is open the input owns the
  * keyboard: its keys never reach the game's handlers (all on `window`), and `onToggle` lets main.ts pause the game,
  * free the cursor and close the other menus; the lock comes back with them closed. Lines show the sender in their

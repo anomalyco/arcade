@@ -75,3 +75,6 @@
     `carrier.audio.v4` is carried over once) and the "SOUND OFF" toast stays. Quality is in Settings and uses the
     slow-frames policy.
   - Connection trouble shows in the shell's reconnect pill.
+  - In play the HUD's top right is the shell's volume control (`mountVolumeControl` into `Hud.corner`): click mutes,
+    hover for master volume; it is reachable once Esc frees the pointer. The CARRIER name (top left) and the player
+    count ("N AT SEA" / "OFFLINE", top right) are gone; chat sits in the top left corner.
