@@ -43,8 +43,8 @@ export type ShellViewOptions = {
   askName?: boolean
   /** The game's controls as key-cap prompts, shown in the hint row along the bottom of the title and Escape menu. */
   controls?: () => string
-  /** Whether M toggles mute (the cap is shown beside the volume). */
-  muteKey?: boolean
+  /** Whether M toggles mute right now (the cap is shown beside the volume and on Settings' Mute). */
+  muteKey?: boolean | (() => boolean)
   /**
    * A theme's own furniture around the menu (a camcorder's OSD, a case file's stamp): HTML drawn full-screen, under
    * the menu and without pointer events, redrawn when the phase changes. Style it from the game's CSS.
@@ -81,6 +81,7 @@ export class ShellView {
   private readonly offs: (() => void)[] = []
   private raf = 0
   private curtainTimer = 0
+  private footShown = ""
 
   constructor(
     parent: HTMLElement,
@@ -94,7 +95,7 @@ export class ShellView {
     const doc = parent.ownerDocument
     this.root = doc.createElement("div")
     this.root.className = "arcade-shell"
-    this.root.innerHTML = `<div class="as-loading" hidden></div><div class="as-overlay" inert><div class="as-decor" aria-hidden="true"></div><div class="as-frame"><div class="as-brand"><h1 class="as-title">${esc(o.title)}</h1><p class="as-sub" role="status"></p></div><div class="as-card" role="dialog" aria-modal="true"></div><div class="as-aside"></div></div><div class="as-foot">${this.footHtml()}</div></div><div class="as-pill" role="status" hidden></div>`
+    this.root.innerHTML = `<div class="as-loading" hidden></div><div class="as-overlay" inert><div class="as-decor" aria-hidden="true"></div><div class="as-frame"><div class="as-brand"><h1 class="as-title">${esc(o.title)}</h1><p class="as-sub" role="status"></p></div><div class="as-card" role="dialog" aria-modal="true"></div><div class="as-aside"></div></div><div class="as-foot"></div></div><div class="as-pill" role="status" hidden></div>`
     parent.append(this.root)
     this.overlay = this.root.querySelector(".as-overlay")!
     this.card = this.root.querySelector(".as-card")!
@@ -138,13 +139,17 @@ export class ShellView {
       if (flow.overlay !== blocked) {
         blocked = flow.overlay
         this.render()
-      } else if (this.phase) {
-        this.syncQuality()
-        this.fade()
-      }
+      } else if (this.phase === "settings") this.syncQuality()
       this.raf = requestAnimationFrame(tick)
     }
     this.raf = requestAnimationFrame(tick)
+    // The scroll fade is measured when the menu's content changes (a game's slot included), never per frame.
+    const win = doc.defaultView
+    if (win?.MutationObserver) {
+      const content = new win.MutationObserver(() => this.fade())
+      content.observe(this.card, { childList: true, subtree: true })
+      this.offs.push(() => content.disconnect())
+    }
     this.render()
   }
 
@@ -185,7 +190,7 @@ export class ShellView {
     if (phase !== this.decorPhase && this.o.decor) this.decor.innerHTML = this.o.decor(phase)
     this.decorPhase = phase
     const l = this.lobby
-    const key = [phase, l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels, l?.hasSolo].join("|")
+    const key = [phase, this.muteCap(), l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels, l?.hasSolo].join("|")
     if (force || key !== this.layout) {
       this.layout = key
       this.card.toggleAttribute("data-enter", enter)
@@ -198,7 +203,12 @@ export class ShellView {
       // Items arrive one after another, top to bottom (`--i` scales `--shell-stagger`).
       ;[...this.card.children].forEach((el, i) => (el as HTMLElement).style.setProperty("--i", String(i)))
       if (changed) this.card.scrollTop = 0
-      if (force) this.foot.innerHTML = this.footHtml()
+    }
+    // The hint row and the M cap follow the game (a flare used up, M handed to the map) without a rebuild a frame.
+    const foot = this.footHtml()
+    if (force || foot !== this.footShown) {
+      this.footShown = foot
+      this.foot.innerHTML = foot
     }
     if (changed) {
       // Restart the bottom row's entrance (it stays mounted between screens).
@@ -214,6 +224,12 @@ export class ShellView {
   }
 
   private readonly onResize = () => this.fade()
+
+  /** Whether the M cap shows: M mutes right now. */
+  private muteCap(): boolean {
+    const m = this.o.muteKey
+    return typeof m === "function" ? m() : m !== false
+  }
 
   /** Marks which edges of a scrolling menu have more content, for the CSS fade. */
   private fade(): void {
@@ -243,7 +259,7 @@ export class ShellView {
       const label = b.querySelector(".as-mute-label")
       if (label) label.textContent = s.muted ? "Muted" : "Mute"
     }
-    this.root.dataset.muted = String(s.muted || s.volumes.volumeMaster <= 0)
+    this.root.dataset.muted = String(s.muted)
     const vol = this.foot.querySelector<HTMLElement>(".as-vol")
     if (vol) vol.dataset.level = volumeLevel(s.muted, s.volume("master"))
     this.syncQuality()
@@ -289,7 +305,7 @@ export class ShellView {
   private titleHtml(): string {
     const o = this.o
     const l = this.lobby
-    const name = l && o.askName ? `<label class="as-name as-row"><span>Name</span><input type="text" data-field="name" maxlength="16" autocomplete="off" spellcheck="false" /></label>` : ""
+    const name = l && o.askName ? `<label class="as-name as-row"><span>Name</span><input type="text" data-field="name" placeholder="Your name" maxlength="16" autocomplete="off" spellcheck="false" /></label>` : ""
     let body: string
     if (l?.room) body = this.roomHtml()
     else if (l?.linkedRoom) body = `${this.item("join-linked", `Join room ${l.linkedRoom.toUpperCase()}`, { primary: true })}${l.hasSolo ? this.item("solo", o.soloLabel ?? "Play alone") : ""}${name}`
@@ -337,8 +353,9 @@ export class ShellView {
     const c = this.o.controls?.() ?? ""
     const hints = `<div class="as-controls">${c}</div>`
     if (!this.settings.channels.length) return hints
-    const m = this.o.muteKey === false ? "" : keyCapHtml("KeyM")
-    const tip = `Mute${this.o.muteKey === false ? "" : " (M)"}`
+    const cap = this.muteCap()
+    const m = cap ? keyCapHtml("KeyM") : ""
+    const tip = `Mute${cap ? " (M)" : ""}`
     return `${hints}<div class="as-vol" data-level="high"><button class="as-icon as-vol-btn" data-act="mute" aria-label="${tip}" title="${tip}">${SPEAKER_ICON}</button><input type="range" min="0" max="100" step="5" data-vol="master" aria-label="Volume" /><output></output>${m}</div>`
   }
 
@@ -346,7 +363,7 @@ export class ShellView {
     const s = this.settings
     const vol = s.channels.map((c) => `<label class="as-field"><span>${esc(s.labels[c])}</span><input type="range" min="0" max="100" step="5" data-vol="${c}" /><output></output></label>`).join("")
     const sound = s.channels.length > 0
-    const mute = `<div class="as-field"><span></span><button class="as-pick as-mute" data-act="mute" aria-pressed="false"><span class="as-mute-label">Mute</span>${this.o.muteKey === false ? "" : keyCapHtml("KeyM")}</button></div>`
+    const mute = `<div class="as-field"><span></span><button class="as-pick as-mute" data-act="mute" aria-pressed="false"><span class="as-mute-label">Mute</span>${this.muteCap() ? keyCapHtml("KeyM") : ""}</button></div>`
     const quality = s.quality
       ? `<div class="as-head">Graphics</div><div class="as-field"><span>Quality</span><div class="as-seg">${(s.quality.modes ?? QUALITY.map(([m]) => m)).map((m) => `<button data-act="quality" data-mode="${m}" aria-pressed="${s.quality!.mode === m}">${m === "auto" ? "Auto" : TIER[m]}</button>`).join("")}</div></div><div class="as-note" data-note="quality" role="status"></div>`
       : ""
@@ -416,8 +433,6 @@ export class ShellView {
     const t = e.target as HTMLInputElement
     if (t.dataset.vol) {
       this.settings.setVolume(t.dataset.vol as never, Number(t.value))
-      // Turning the master volume up is asking to hear it: it unmutes (M and the slider always agree).
-      if (t.dataset.vol === "master" && this.settings.muted && Number(t.value) > 0) this.settings.setMuted(false)
     } else if (t.dataset.act === "reduce-motion") this.settings.setReduceMotion(t.checked)
     else if (t.dataset.field === "name") this.lobby?.setName(t.value)
     else if (t.dataset.row) {
@@ -535,12 +550,20 @@ export const SHELL_CSS = `
 .arcade-shell .as-slot:empty { display: none; }
 /* Menu items: words on the column's edge, the highlight bleeding out into the padding. The primary item is lit until
    the pointer picks another. */
-.arcade-shell .as-btn { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; width: calc(100% + 32px); margin-inline: -16px; padding: 8px 16px; box-sizing: border-box; text-align: left; font: 600 var(--shell-item-size)/1.25 var(--shell-font); color: var(--shell-ink); background: transparent; border: 0; border-radius: var(--shell-radius); cursor: pointer; opacity: 0.72; transition: opacity 0.12s, background-color 0.12s, color 0.12s; }
+.arcade-shell .as-btn { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 8px 16px; box-sizing: border-box; text-align: left; font: 600 var(--shell-item-size)/1.25 var(--shell-font); color: var(--shell-ink); background: transparent; border: 0; border-radius: var(--shell-radius); cursor: pointer; opacity: 0.72; transition: opacity 0.12s, background-color 0.12s, color 0.12s; }
 .arcade-shell .as-btn::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 1.1em; margin-top: -0.55em; border-radius: 2px; background: var(--shell-accent); transform: scaleY(0); transition: transform 0.16s var(--shell-ease); }
+.arcade-shell .as-card > .as-btn { width: calc(100% + 32px); margin-inline: -16px; }
 .arcade-shell .as-btn > span { white-space: nowrap; }
+/* A game's own buttons inside the menu (a slot's tools, a pair in .as-row2): compact, on the field colour. */
+.arcade-shell .as-slot .as-btn { justify-content: center; text-align: center; font-size: 14px; padding: 8px 10px; background: var(--shell-field); opacity: 0.85; }
+.arcade-shell .as-slot .as-btn::before { display: none; }
+.arcade-shell .as-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.arcade-shell .as-row2 .as-btn:only-child { grid-column: 1 / -1; }
+.arcade-shell .as-link { padding: 0; background: none; border: 0; color: var(--shell-dim); font: 14px var(--shell-font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.arcade-shell .as-link:hover, .arcade-shell .as-link:focus-visible { color: var(--shell-ink); }
 .arcade-shell .as-btn small { font: 400 13px var(--shell-font); color: var(--shell-dim); }
-.arcade-shell .as-btn:hover:not(:disabled), .arcade-shell .as-btn:focus-visible, .arcade-shell .as-card:not(:has(.as-btn:hover)) .as-primary:not(:disabled) { opacity: 1; background: var(--shell-field); }
-.arcade-shell .as-btn:hover:not(:disabled)::before, .arcade-shell .as-btn:focus-visible::before, .arcade-shell .as-card:not(:has(.as-btn:hover)) .as-primary:not(:disabled)::before { transform: none; }
+.arcade-shell .as-btn:hover:not(:disabled), .arcade-shell .as-btn:focus-visible, .arcade-shell .as-card:not(:has(.as-btn:hover, .as-btn:focus-visible)) .as-primary:not(:disabled) { opacity: 1; background: var(--shell-field); }
+.arcade-shell .as-btn:hover:not(:disabled)::before, .arcade-shell .as-btn:focus-visible::before, .arcade-shell .as-card:not(:has(.as-btn:hover, .as-btn:focus-visible)) .as-primary:not(:disabled)::before { transform: none; }
 .arcade-shell .as-btn:disabled { opacity: 0.35; cursor: default; }
 .arcade-shell .as-btn:focus-visible, .arcade-shell .as-icon:focus-visible, .arcade-shell .as-seg button:focus-visible, .arcade-shell .as-inline:focus-visible, .arcade-shell .as-pick:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: 2px; }
 /* A row with a field in it (Join, Name, the room's invite): label on the column's edge, the field underlined. */
@@ -584,6 +607,8 @@ export const SHELL_CSS = `
 .arcade-shell .as-head { margin-top: 10px; font: 600 11px var(--shell-font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--shell-dim); }
 .arcade-shell .as-head:first-child { margin-top: 0; }
 .arcade-shell .as-field { display: grid; grid-template-columns: 10.5em 1fr 3em; align-items: center; gap: 10px; font-size: 14px; }
+/* A field with nothing after its control (a text field) gives the control the whole width. */
+.arcade-shell .as-field:not(:has(> output, > i)) { grid-template-columns: 10.5em 1fr; }
 .arcade-shell .as-field > span { color: var(--shell-dim); }
 .arcade-shell .as-field input[type=range] { width: 100%; accent-color: var(--shell-accent); }
 .arcade-shell .as-field input[type=checkbox] { justify-self: start; width: 18px; height: 18px; accent-color: var(--shell-accent); }

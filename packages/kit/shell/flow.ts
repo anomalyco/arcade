@@ -67,12 +67,15 @@ export class ShellFlow {
     this.begun = o.start === "playing"
     this.on(this.doc, "pointerlockchange", () => this.lockChanged())
     this.on(this.doc, "pointerlockerror", () => {
+      // Only the shell's own request: a refusal of the Lab panel's or the game's is theirs.
+      if (this.askedAt === -Infinity) return
       // Refused (still the browser's cooldown): the click's activation lasts a few seconds, so ask once more quietly.
       if (!this.retried && now() - this.askedAt < RETRY_WITHIN_MS && this.target) {
         this.retried = true
         this.schedule(this.o.relockMs?.retry ?? RETRY_AFTER_MS)
         return
       }
+      this.askedAt = -Infinity
       this._lockRefused = true
       this.emit()
     })
@@ -137,6 +140,7 @@ export class ShellFlow {
   /** Opens the pause menu (releases the pointer lock). */
   pause(): void {
     if (!this.begun) return
+    this.cancelLock()
     if (this.target) {
       if (this.locked) this.release()
     } else this.pausedFlag = true
@@ -168,6 +172,8 @@ export class ShellFlow {
   /** Opens or closes Settings. Opened in play, it pauses; closing it then plays again (not in pointer-lock games, whose lock needs a click on Resume). */
   openSettings(open = true): void {
     if (open) {
+      // A click's lock request still waiting out the cooldown was a Resume the player has moved on from.
+      this.cancelLock()
       this.settingsFromPlay = this.screen === "playing" && !this.target
       if (this.screen === "playing") this.pause()
     }
@@ -209,21 +215,29 @@ export class ShellFlow {
   }
 
   private schedule(wait: number): void {
-    this.cancelLock()
+    this.clearPending()
     const target = this.target
     if (!target) return
-    const ask = () => {
+    const ask = (waited: boolean) => {
       this.pending = null
       if (this.begun && this.locked) return
+      // While it waited, Settings or the Lab panel took the screen: the click isn't asking to play any more.
+      if (waited && (this._settingsOpen || this.o.blocked?.())) return this.cancelLock(), this.emit()
       ;(this.o.requestLock ?? defaultLock)(target)
       this.emit()
     }
-    if (wait <= 0) return ask()
-    this.pending = setTimeout(ask, wait)
+    if (wait <= 0) return ask(false)
+    this.pending = setTimeout(() => ask(true), wait)
     this.emit()
   }
 
+  /** Drops a waiting request and forgets the click, so a later refusal (the Lab panel's) isn't taken as ours. */
   private cancelLock(): void {
+    this.clearPending()
+    this.askedAt = -Infinity
+  }
+
+  private clearPending(): void {
     if (this.pending === null) return
     clearTimeout(this.pending)
     this.pending = null
@@ -287,7 +301,8 @@ function defaultLock(el: HTMLElement): void {
   }
   try {
     const p = c.requestPointerLock({ unadjustedMovement: true })
-    if (p) void p.catch(plain)
+    // Only a platform without raw mouse input asks again plainly; any other refusal already fired its pointerlockerror.
+    if (p) void p.catch((e: unknown) => (e as { name?: string } | null)?.name === "NotSupportedError" && plain())
   } catch {
     plain()
   }

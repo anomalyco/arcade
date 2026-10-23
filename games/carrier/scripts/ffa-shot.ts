@@ -317,7 +317,7 @@ await shot(preview, "05-preview-tab-berth")
 await preview.close()
 const menu = await open(`${base}?shell`, "menu")
 await menu.waitForTimeout(1500)
-const foot = (await menu.locator(".as-card .as-controls").innerText()).replace(/\s+/g, " ")
+const foot = (await menu.locator(".as-foot .as-controls").innerText()).replace(/\s+/g, " ")
 check(/ships/i.test(foot) && !/teams/i.test(foot), `title footer: "${foot}"`)
 await shot(menu, "06-start-menu")
 

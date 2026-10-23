@@ -1,4 +1,4 @@
-/* While the shell's title is up over the live sea (body.mn-open, set in main.ts), the HUD stays out of the way. */
+/* While the shell is up over the live sea (body.mn-open, set in main.ts out of play), the HUD stays out of the way. */
 body.mn-open #hud {
   display: none;
 }

@@ -76,6 +76,8 @@ export class ShellSettings {
   private readonly storage: Storage2 | null
   private readonly automated: boolean
   private savedVolumes = ""
+  /** The master level unmuting comes back to when the slider was taken to 0: the last level heard. */
+  private restoreMaster = DEFAULT_VOLUME_SETTINGS.volumeMaster
   private readonly listeners = new Set<() => void>()
 
   constructor(o: ShellSettingsOptions) {
@@ -90,6 +92,9 @@ export class ShellSettings {
     this.savedVolumes = JSON.stringify(this.volumes)
     const muted = read(this.storage, muteStorageKey(this.game)) ?? (o.legacyMuteKey ? read(this.storage, o.legacyMuteKey) : null)
     this._muted = this.automated || muted === "1" || muted === "true"
+    // Master and mute are one control: master at 0 is muted.
+    if (this.volumes.volumeMaster > 0) this.restoreMaster = this.volumes.volumeMaster
+    else this._muted = true
     const motion = read(this.storage, REDUCE_MOTION_STORAGE_KEY) ?? (o.legacyReduceMotionKey ? read(this.storage, o.legacyReduceMotionKey) : null)
     this._reduceMotion = motion === null ? Boolean(o.prefersReducedMotion ?? prefersReducedMotion()) : motion === "true" || motion === "1"
   }
@@ -123,15 +128,30 @@ export class ShellSettings {
     const key = CHANNEL_KEY[channel]
     if (this.volumes[key] === v) return
     this.volumes[key] = v
+    if (channel === "master") {
+      if (v > 0) this.restoreMaster = v
+      // Master and mute are one control: taking it to 0 mutes, and moving it up from muted is asking to hear it.
+      if (v === 0 || this._muted) this.writeMuted(v === 0)
+    }
     if (!this.automated) this.savedVolumes = saveVolumeSettings(this.storage, this.game, this.volumes, this.savedVolumes)
     this.emit()
   }
 
+  /** Unmuting with master at 0 brings master back to the last level heard. */
   setMuted(muted: boolean): void {
+    if (this._muted === muted) return
+    this.writeMuted(muted)
+    if (!muted && this.volumes.volumeMaster === 0) {
+      this.volumes.volumeMaster = this.restoreMaster
+      if (!this.automated) this.savedVolumes = saveVolumeSettings(this.storage, this.game, this.volumes, this.savedVolumes)
+    }
+    this.emit()
+  }
+
+  private writeMuted(muted: boolean): void {
     if (this._muted === muted) return
     this._muted = muted
     if (!this.automated) write(this.storage, muteStorageKey(this.game), muted ? "1" : "0")
-    this.emit()
   }
 
   toggleMute(): void {

@@ -348,11 +348,10 @@ async function main() {
   syncAudio()
   // Top right in play: the shell's speaker (click mutes, hover for master volume), reachable once Esc frees the pointer.
   mountVolumeControl(gameShell.settings, hud.corner)
-  // The title is up: the HUD stays out of the way. Chat, Tab, DEPLOY and the full map (G) work only in play, so none
-  // opens behind the title or the menu; any shell screen frees the cursor.
+  // Out of play (title or Escape menu) the HUD stays out of the shell's way. Chat, Tab, DEPLOY and the full map (G)
+  // work only in play, so none opens behind the title or the menu; any shell screen frees the cursor.
   const syncScreen = () => {
-    const title = gameShell.flow.screen === "title"
-    document.body.classList.toggle("mn-open", title)
+    document.body.classList.toggle("mn-open", !gameShell.playing)
     chat.enabled = teams.enabled = ops.enabled = flight.radar.enabled = gameShell.playing
     if (!gameShell.playing) chat.hide()
     if (!gameShell.playing) input.suspend()

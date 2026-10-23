@@ -21,6 +21,8 @@ html, body { margin: 0; height: 100%; background: #05070b; color: var(--text); f
 #view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
 #hud, #overlay { position: fixed; inset: 0; pointer-events: none; }
 #overlay > * { pointer-events: auto; }
+/* The shell's menu brings its own bottom row (hints, volume): the HUD steps aside while it is up. */
+html[data-shell] #hud { visibility: hidden; }
 button { font: inherit; color: inherit; }
 .off { display: none !important; }
 

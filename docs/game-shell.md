@@ -20,7 +20,10 @@ tool; the shell is what players see.
    for measurement. Unsupported Ultra requests fall back to High.
 3. **Volume and mute are always reachable from the title and the Escape menu**: the master volume slider and speaker
    in the bottom-right corner, and M (unless the game gives M to something else, like Outbreak's map, and passes
-   `muteKey: false`). They agree: M mutes and the slider shows Muted; turning the slider up unmutes. Per-channel
+   `muteKey: false`, or a function when it changes in play, like split-keyboard Archers). The M cap shows only while M
+   mutes. Master and mute are one control: master at 0 is muted, turning the slider up unmutes, and unmuting at 0
+   brings back the last level heard. While the shell is up, `html[data-shell]` is set so a game can hide its HUD
+   (`html[data-shell] #hud { visibility: hidden }`) clear of the bottom row. Per-channel
    volumes are in Settings (a menu item on both screens).
 4. **No game ships its own volume or quality UI.** The Lab panel may keep designer mix levels (renamed "Mix level"
    where it was "Volume"), but player volume, mute, quality and reduce camera motion live in the shell's Settings.

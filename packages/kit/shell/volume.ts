@@ -47,7 +47,8 @@ export class ShellVolumeButton {
     this.button.addEventListener("click", () => settings.toggleMute())
     this.slider.addEventListener("input", () => {
       settings.setVolume(this.channel, Number(this.slider.value))
-      if (settings.muted && Number(this.slider.value) > 0) settings.setMuted(false)
+      // Master unmutes itself (settings); another channel's slider turned up while muted is asking to hear it too.
+      if (this.channel !== "master" && settings.muted && Number(this.slider.value) > 0) settings.setMuted(false)
     })
     const letGo = () => this.slider.blur()
     this.slider.addEventListener("change", letGo)

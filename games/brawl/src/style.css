@@ -88,6 +88,8 @@ kbd { font: inherit; }
 
 /* Menus */
 #menu { position: fixed; inset: 0; pointer-events: none; }
+/* The shell's menu brings its own bottom row (hints, volume): the HUD and Brawl's menus step aside while it is up. */
+html[data-shell] #hud, html[data-shell] #menu { visibility: hidden; }
 #menu.full { pointer-events: auto; overflow: auto; }
 #menu.landing-bg { background: radial-gradient(ellipse at 50% 38%, rgba(16, 20, 38, 0.45), rgba(6, 7, 14, 0.88)); }
 #menu.select-bg { background: radial-gradient(ellipse at 50% 25%, rgba(28, 34, 62, 0.92), rgba(9, 11, 20, 0.97) 70%); }
