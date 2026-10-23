@@ -48,8 +48,9 @@ jobs:
         run: bun ../../scripts/smoke.mjs
       # Every deploy restarts the rooms (games in progress reset): skip it when the build is identical to what is live.
       - name: Deploy
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        timeout-minutes: 40
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bun scripts/deploy.ts --if-changed --no-build
+        run: bun ../../scripts/deploy-game.ts --no-build

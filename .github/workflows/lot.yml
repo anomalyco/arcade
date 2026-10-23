@@ -32,8 +32,9 @@ jobs:
         timeout-minutes: 3
         run: bun ../../scripts/smoke.mjs
       - name: Deploy
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        timeout-minutes: 40
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bunx --no-install wrangler deploy
+        run: bun ../../scripts/deploy-game.ts --no-build
