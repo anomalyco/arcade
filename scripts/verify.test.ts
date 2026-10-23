@@ -24,7 +24,8 @@ function run(root: string, args: string[], env: Record<string, string | undefine
   const result = Bun.spawnSync(["bun", "scripts/verify.ts", "--list", ...args], {
     cwd: root,
     env: { ...process.env, ARCADE_VERIFY_CHANGED_FILE: undefined, ARCADE_VERIFY_JOBS: undefined,
-      ARCADE_VERIFY_TEST_WORKERS: undefined, HIVEMIND_CPUS: undefined, ...env },
+      ARCADE_VERIFY_TEST_WORKERS: undefined, HIVEMIND_CPUS: undefined,
+      HIVEMIND_JOBS: undefined, HIVEMIND_TEST_WORKERS: undefined, ...env },
     stdout: "pipe", stderr: "pipe",
   })
   return { code: result.exitCode, output: result.stdout.toString() + result.stderr.toString() }
@@ -84,6 +85,19 @@ test("submitter scope includes both sides of renames plus staged, dirty and untr
   git("add", "staged.ts")
   await Bun.write(join(root, "untracked space.ts"), "untracked\n")
   expect((await gitChangedFiles(root, "base")).sort()).toEqual(["dirty.ts", "old.ts", "renamed.ts", "staged.ts", "untracked space.ts"])
+})
+
+test("HiveMind budgets are fallbacks and fractional CPU allocations round down with a floor of one", async () => {
+  const root = await fixture()
+  const env = { HIVEMIND_JOBS: "4", HIVEMIND_TEST_WORKERS: "3", HIVEMIND_CPUS: "3.9" }
+  expect(run(root, ["--all"], env).output).toContain("jobs=3, test-workers=3")
+  expect(run(root, ["--all"], { ...env, ARCADE_VERIFY_JOBS: "2", ARCADE_VERIFY_TEST_WORKERS: "1" }).output)
+    .toContain("jobs=2, test-workers=1")
+  for (const cpu of ["0.5", "0", "-0.5"]) {
+    const result = run(root, ["--all"], { ...env, HIVEMIND_CPUS: cpu })
+    expect(result.code).toBe(0)
+    expect(result.output).toContain("jobs=1, test-workers=1")
+  }
 })
 
 test("remote wrapper delivers a submitter-local snapshot to a git-less worker", async () => {

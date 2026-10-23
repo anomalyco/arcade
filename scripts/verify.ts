@@ -12,7 +12,7 @@
 //
 // Git-less workers require --changed or ARCADE_VERIFY_CHANGED_FILE; --all explicitly selects every workspace target.
 // Release mode copies the synced tree, minus ignored build output, as its clean export.
-// Budgets: flags override ARCADE_VERIFY_JOBS / ARCADE_VERIFY_TEST_WORKERS (default 2 each).
+// Budgets: flags > ARCADE_VERIFY_JOBS / ARCADE_VERIFY_TEST_WORKERS > HIVEMIND_JOBS / HIVEMIND_TEST_WORKERS > 2.
 // HIVEMIND_CPUS, when provided, caps both budgets to the allocation, never the host's core count.
 //
 // "Affected" comes from the CI workflows themselves: a target runs when a changed file (committed since the
@@ -49,13 +49,18 @@ const positiveInteger = (value: string, name: string) => {
   if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${name} must be a positive integer (received ${JSON.stringify(value)})`)
   return n
 }
-const allocation = process.env.HIVEMIND_CPUS === undefined ? undefined : positiveInteger(process.env.HIVEMIND_CPUS, "HIVEMIND_CPUS")
-const budget = (flag: string, env: string) => Math.min(
-  positiveInteger(option(flag, process.env[env] ?? "2"), flag), allocation ?? Infinity,
+const cpuBudget = (value: string) => {
+  const n = Number(value)
+  if (!Number.isFinite(n)) throw new Error("HIVEMIND_CPUS must be finite")
+  return Math.max(1, Math.floor(n))
+}
+const allocation = process.env.HIVEMIND_CPUS === undefined ? undefined : cpuBudget(process.env.HIVEMIND_CPUS)
+const budget = (flag: string, env: string, hiveEnv: string) => Math.min(
+  positiveInteger(option(flag, process.env[env] ?? process.env[hiveEnv] ?? "2"), flag), allocation ?? Infinity,
 )
-const jobs = budget("--jobs", "ARCADE_VERIFY_JOBS")
+const jobs = budget("--jobs", "ARCADE_VERIFY_JOBS", "HIVEMIND_JOBS")
 const repo = resolve(import.meta.dir, "..")
-const testWorkers = budget("--test-workers", "ARCADE_VERIFY_TEST_WORKERS")
+const testWorkers = budget("--test-workers", "ARCADE_VERIFY_TEST_WORKERS", "HIVEMIND_TEST_WORKERS")
 
 const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
@@ -239,7 +244,7 @@ if (all) {
     throw new Error("verify: no git checkout or changed-file list. Run bun run verify:remote on the submitter, pass --changed <file> / ARCADE_VERIFY_CHANGED_FILE, or explicitly use --all.")
   }
 }
-console.log(`verify: jobs=${jobs}, test-workers=${testWorkers} (flags > ARCADE_VERIFY_* > defaults 2/2${allocation === undefined ? "" : `; capped by HIVEMIND_CPUS=${allocation}`})`)
+console.log(`verify: jobs=${jobs}, test-workers=${testWorkers} (flags > ARCADE_VERIFY_* > HIVEMIND_* > defaults 2/2${allocation === undefined ? "" : `; capped by HIVEMIND_CPUS=${allocation}`})`)
 
 // Ignored output a git-less copy leaves behind, mirroring the .gitignore files.
 const COPY_EXCLUDES = [".git", "node_modules", "dist", ".wrangler", "*.tsbuildinfo", ".DS_Store", ".env*", "captures", ".scratch", "shots", "proof-output", "build.gen.ts", ".arcade-control.json"]

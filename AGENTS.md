@@ -17,18 +17,21 @@ game's own `AGENTS.md`.
   paths match your changes (vs `origin/main`, including uncommitted files), in parallel, with incremental typecheck,
   then smoke and `wrangler deploy --dry-run`; docs-only checks nothing. Use
   `bun run verify:remote --worker mini -- --all` to pass HiveMind options before `--` and verify options after it.
-- Before opening or merging a PR, run `hivemind run --kind browser -- bun run verify:release` (~30 s): a clean
+- Before opening or merging a PR, run `hivemind run --kind browser -- bun run verify:release`: a clean
   `git archive` export of HEAD, root frozen install, then every workspace target's check commands, smoke and dry-run
   with cold caches. Commit first; it ignores uncommitted changes. Dry-runs do not deploy. The per-game
   `bun run check` and `bun run check:packages` still work and are what CI runs.
+  Budget for minutes: the Oct 22 remote-mini `verify --all` run took 1,204 s at 2 jobs (including existing test
+  and smoke failures); release also adds export and frozen install. The old ~30 s estimate no longer applies.
 - HiveMind workers sync files without a usable `.git`. A bare remote `verify` fails unless given
   `--changed <file>` or `ARCADE_VERIFY_CHANGED_FILE` (newline-separated paths); an empty file checks nothing.
   `verify:remote` ships that snapshot automatically, including committed, staged, unstaged and untracked paths
   versus `origin/main`. Use `--all` explicitly for every workspace target. The plan prints its targets and reason.
   `verify:release` copies the synced tree, minus ignored
   output, as its export, so uncommitted files are included. `--export <dir|tar>` verifies a pre-made `git archive`.
-- Worker budgets default to `--jobs 2 --test-workers 2`. Flags override `ARCADE_VERIFY_JOBS` and
-  `ARCADE_VERIFY_TEST_WORKERS`; `HIVEMIND_CPUS`, when supplied by the worker, caps both to its allocation.
+- Worker budgets default to `--jobs 2 --test-workers 2`. Precedence is flags, then `ARCADE_VERIFY_JOBS` /
+  `ARCADE_VERIFY_TEST_WORKERS`, then `HIVEMIND_JOBS` / `HIVEMIND_TEST_WORKERS`, then 2 each.
+  `HIVEMIND_CPUS`, when supplied by the worker, caps both to its allocation (rounded down, minimum 1).
   `verify:remote` forwards the two Arcade budget variables; it never forwards the submitter's CPU allocation.
 - Every `tests/` and `scripts/` file is typechecked (Getaway's `tsconfig.scripts.json` also covers root `scripts/`).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.

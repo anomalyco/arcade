@@ -18,8 +18,12 @@ below and in this file's git history.
    hivemind run --kind browser --worker studio -- bun run verify:release
    ```
 
-   That is the export, frozen install, `check:packages`, every game's check, smoke and dry-run, in parallel (~30 s
-   against ~145 s serially). `scripts/verify.ts` documents exactly what it runs.
+   That is the export, frozen install, `check:packages`, every game's check, smoke and dry-run. Budget for minutes:
+   the Oct 22 remote-mini `verify --all` measurement took 1,204 s at 2 jobs, with existing simulation and smoke
+   failures; release additionally exports and installs. The old ~30 s parallel / ~145 s serial estimates are stale.
+   `scripts/verify.ts` documents exactly what it runs. Flags override `ARCADE_VERIFY_JOBS` /
+   `ARCADE_VERIFY_TEST_WORKERS`, then `HIVEMIND_JOBS` / `HIVEMIND_TEST_WORKERS`, then defaults of 2 each;
+   the worker's `HIVEMIND_CPUS` allocation caps both budgets.
 
 5. Run the Metal browser proofs for anything visual that the merge touched, and repeat the Outbreak frame-time bench
    (`games/outbreak/scripts/bench-outbreak.ts`) when renderer or Outbreak code changed. Record before and after.
