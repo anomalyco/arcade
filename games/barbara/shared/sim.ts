@@ -673,9 +673,11 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   const people = here.filter((p) => !p.bot)
   const sound = stepDistant(state.distant, world, people, state.t, feel.distantRate, feel)
   if (sound) state.events.push(sound)
-  const creature = stepCreature(state.distant, world, here, state.t, feel, SIGNAL_HOLD, flareSources(state.flares, world, here, state.t, feel))
+  const flares = flareSources(state.flares, world, here, state.t, feel)
+  const creature = stepCreature(state.distant, world, here, state.t, feel, SIGNAL_HOLD, flares)
   if (creature) state.events.push(creature)
-  if (hasSpider(feel.creature)) state.events.push(...stepStalker(state.stalker, world, state.players, state.t, dt, feel, SIGNAL_HOLD, (w) => eyeOf(world, w as Player)))
+  // The taken are out of the woods for it too: it neither stalks nor keeps clear of where they stood.
+  if (hasSpider(feel.creature)) state.events.push(...stepStalker(state.stalker, world, here, state.t, dt, feel, SIGNAL_HOLD, (w) => eyeOf(world, w as Player), flares))
   // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
   // Dawn coming, and dawn come, get a line each.
