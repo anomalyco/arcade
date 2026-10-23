@@ -3,10 +3,10 @@
 //   bun run dev --workers    also start each game's Worker on first /api or /ws request
 // Launch through Nexus from the repository root: nexus run <name> -- bun run dev
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync } from "node:fs"
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { createServer as createHttpServer, request, type IncomingMessage, type ServerResponse } from "node:http"
 import { connect, createServer as createNetServer, type Socket } from "node:net"
-import { join, resolve } from "node:path"
+import { extname, join, resolve } from "node:path"
 import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite"
 import { devRoute, hubPath } from "../packages/kit/dev-hub-model"
 import { createDevControlServer, extraPageHosts } from "./dev-control-server"
@@ -98,9 +98,28 @@ function text(res: ServerResponse, status: number, body: string, type = "text/pl
 
 const workerOff = (game: string) => JSON.stringify({ error: `The ${game} Worker is off. Restart with: bun run dev --workers` })
 
+// Proof captures registered by `agent-ops gallery-link` (symlinks under captures/<slug>).
+const capturesDir = join(root, "captures")
+const captureTypes: Record<string, string> = {
+  html: "text/html; charset=utf-8", json: "application/json", css: "text/css", js: "text/javascript", svg: "image/svg+xml",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", webm: "video/webm",
+}
+
+function serveCapture(url: string, res: ServerResponse) {
+  const rel = decodeURIComponent(url.split("?")[0]!.slice("/captures/".length))
+  if (rel.split("/").includes("..")) return text(res, 400, "Bad path")
+  let file = join(capturesDir, rel)
+  if (existsSync(file) && statSync(file).isDirectory()) file = ["compare.html", "index.html"].map(name => join(file, name)).find(existsSync) ?? ""
+  if (!file || !existsSync(file)) return text(res, 404, "Not found")
+  const type = captureTypes[extname(file).slice(1).toLowerCase()] ?? "application/octet-stream"
+  res.writeHead(200, { "content-type": type, "cache-control": "no-store" })
+  createReadStream(file).pipe(res)
+}
+
 async function handle(req: IncomingMessage, res: ServerResponse) {
   if (await control.handleHttp(req, res)) return
   if (await labFeedback.handle(req, res)) return
+  if (req.url?.startsWith("/captures/")) return serveCapture(req.url, res)
   const target = devRoute(req.url ?? "/", games)
   try {
     if (target.kind === "redirect") return void res.writeHead(302, { location: target.location }).end()
