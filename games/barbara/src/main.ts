@@ -592,6 +592,7 @@ async function main() {
     nightView.draw(fp, state.night, world)
     dawn.apply(view.forest.settings, dawnShare(state.night, state.t))
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
+    friends.readingLevel = held.settings.readingLevel
     const beams = friends.frame(fp, world, state, meId, dt, (q) => beamLevel(q, time, settings), (q) => {
       const d = Math.hypot(q.x - at.x, q.z - at.z)
       if (d > 14 || !playing) return

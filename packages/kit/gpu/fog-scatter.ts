@@ -459,6 +459,12 @@ export type FogLamp = {
   shadow?: number
   /** Torch half-angle (rad): the shared beam profile (`FogUpdate.beam`) replaces the round cone, as on surfaces. */
   beam?: number
+  /**
+   * How far a `beam` lamp's axis turned since last frame (rad, its move over its range counted in). With
+   * `fogScatterVolume({ torches: true })` the air it swept skips the history, so a friend's swinging beam leaves no
+   * trail. Leave it 0 for a beam fixed to the camera (the local torch): the camera's own motion handles that one.
+   */
+  motion?: number
 }
 
 const tmpScore: { i: number; s: number; x: number; z: number }[] = []
@@ -650,7 +656,7 @@ export class FogScatter {
       L.set([l.x, l.y, l.z, l.range], o)
       L.set([l.color[0] * k0, l.color[1] * k0, l.color[2] * k0, l.cosOuter ?? -2], o + 4)
       L.set([axis[0], axis[1], axis[2], l.cosInner ?? -1], o + 8)
-      L.set([(l.size ?? 0.2) * 0.5, l.shadow === undefined || l.shadow < 0 ? 0 : l.shadow + 1, l.beam ?? 0, 0], o + 12)
+      L.set([(l.size ?? 0.2) * 0.5, l.shadow === undefined || l.shadow < 0 ? 0 : l.shadow + 1, l.beam ?? 0, l.motion ?? 0], o + 12)
       L.set([l.color[0] * raw, l.color[1] * raw, l.color[2] * raw, sigma], o + 16)
       if (l.lens) {
         const n = Math.hypot(l.lens.arm[0], l.lens.arm[1]) || 1
@@ -1004,7 +1010,9 @@ export type FogScatterHooks = {
    * The forest's torch model, off by default (the classic lamp fog the Lot, Outbreak and Night Shift compile):
    * `FogLamp.beam` lamps take the shared beam profile (`FogUpdate.beam`) with no leak, every lamp's light levels
    * off within its fixture size (near field d²/(d² + size²) instead of fading in), and the phase's isotropic share is
-   * `FogSettings.phaseFloor` instead of a fixed 0.15.
+   * `FogSettings.phaseFloor` instead of a fixed 0.15. Also writes the slot's reactive mask (`VolumeLightShader.reactive`):
+   * where a `FogLamp.motion` beam lights the air this frame or could have last frame, the history is dropped, so a
+   * swinging beam leaves no trail.
    */
   torches?: boolean
   /** Torch-only in-scatter multiplier expression; does not change extinction or classic lamps. Requires torches. */
@@ -1034,6 +1042,7 @@ export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader
     history: true,
     ...(hooks.surface ? { color: true } : {}),
     ...(hooks.spotShadows ? { spotShadows: true } : {}),
+    ...(torches ? { reactive: true } : {}),
     transmittance: true,
     code: /* wgsl */ `
 ${common}
@@ -1066,7 +1075,9 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 }
 
 fn fogIgn(p: vec2f) -> f32 { return fract(52.9829189 * fract(dot(p, vec2f(0.06711056, 0.00583715)))); }
-
+${torches ? `// How much more air light the moving beams (FogLamp.motion) could have sent along this ray last frame than now.
+var<private> fogMoveChange: vec3f;
+` : ""}
 /** Single-scattered lamp light along ro + rd·[0, dist], equiangular-sampled per lamp. */
 fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
   var acc = vec3f(0.0);
@@ -1128,7 +1139,10 @@ ${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); t
     let ta = atan((a - s0) / h);
     let tb = atan((b - s0) / h);
     var sum = 0.0;
-    for (var j = 0u; j < n; j++) {
+${torches ? `    var swept = 0.0;
+    // How far the beam turned since last frame (rad): a sample within that of its axis may have been lit then.
+    let sweep = select(0.0, L.d.w * 1.5, L.d.z > 0.0);
+` : ""}    for (var j = 0u; j < n; j++) {
       let t = mix(ta, tb, (jitter + f32(j)) / f32(n));
       let lx = rd * (s0 + h * tan(t)) - toL;
       let ld = max(length(lx), 1e-3);
@@ -1139,9 +1153,11 @@ ${torches ? `      var cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0
       // profile carries its own spill, and the body behind the reflector sends nothing back, so it takes no leak. The
       // profile is packed in FOG.pad0/pad1 (bank3.z is the bank's relief, bank3.w the phase's isotropic share).
       if (L.d.z > 0.0) { cone = kitBeamProfile(kitBeamAngle(dot(ln, L.c.xyz)) / L.d.z, FOG.pad0, FOG.pad1); }` : `      ${hooks.spotShadows ? "var" : "let"} cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0 - leak) + leak;`}
-${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShadowAir(u32(L.d.y - 0.5), ro + rd * (s0 + h * tan(t))); }\n` : ""}${torches ? `      // Outside the torch profile (or fully shadowed), the sample contributes exactly zero.
+${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShadowAir(u32(L.d.y - 0.5), ro + rd * (s0 + h * tan(t))); }\n` : ""}${torches ? `      var was = 0.0;
+      if (sweep > 0.0) { was = kitBeamProfile(max(kitBeamAngle(dot(ln, L.c.xyz)) - sweep, 0.0) / L.d.z, FOG.pad0, FOG.pad1); }
+      // Outside the torch profile (or fully shadowed), the sample contributes exactly zero.
       // Avoid the terrain-relative bank lookup and both extinction integrals for these samples.
-      if (cone == 0.0) { continue; }
+      if (cone == 0.0 && was == 0.0) { continue; }
 ` : ""}      let r4 = ld / L.a.w;
 ${torches ? `      // Near field: within about its size a lamp's light hasn't spread to I/d² yet (a torch's beam leaves a 5 cm lens
       // as a column), so irradiance levels off at I/d0² instead of climbing to the lens.
@@ -1162,16 +1178,21 @@ ${hooks.distanceFog ? `      let mediumPoint = ro + rd * (s0 + h * tan(t));
       thick = (thick + fogDistanceSigma(mediumPoint, ro) / max(L.e.w, 1e-5)) * exp(-fogDistanceDepth(ro, mediumPoint) - fogDistanceDepth(L.a.xyz, mediumPoint));
 ` : ""}${torches ? `      // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
       // sets (HG alone at g 0.75 sends 0.08 of the isotropic amount back; a 0.15 share nearly triples it).
-      sum += cone * win * mix(hg, 1.0, FOG.bank3.w) * thick${hooks.torchScatter ? ` * select(1.0, ${hooks.torchScatter}, L.d.z > 0.0)` : ""};` : `      sum += cone * win * mix(1.0, hg, 0.85) * thick;`}
+      let lit = win * mix(hg, 1.0, FOG.bank3.w) * thick${hooks.torchScatter ? ` * select(1.0, ${hooks.torchScatter}, L.d.z > 0.0)` : ""};
+      sum += cone * lit;
+      swept += was * lit;` : `      sum += cone * win * mix(1.0, hg, 0.85) * thick;`}
     }
-    acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);
+${torches ? `    let lamp = L.b.rgb * (tb - ta) / (h * f32(n) * 12.566371);
+    acc += lamp * sum;
+    // A hand's tremor keeps the history; a swing (0.02 rad a frame and up) drops it.
+    if (sweep > 0.0) { fogMoveChange += lamp * max(swept - sum, 0.0) * smoothstep(0.003, 0.02, L.d.w); }` : `    acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);`}
   }
   return acc;
 }
 
-@fragment fn fs(o: VO) -> @location(0) vec4f {
+${torches ? "struct FogOut { @location(0) color: vec4f, @location(1) react: f32 }\n" : ""}@fragment fn fs(o: VO) -> ${torches ? "FogOut" : "@location(0) vec4f"} {
   // Alpha is the transmittance the scene behind keeps (the slot composites scene · a + rgb): 1 leaves it as it was.
-  if (FOG.medium.w < 0.5 || (FOG.scatter.w < 0.5${atmo ? " && FOG.bank.w < 0.5 && FOG.cloud.w <= 0.0" : ""})) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  if (FOG.medium.w < 0.5 || (FOG.scatter.w < 0.5${atmo ? " && FOG.bank.w < 0.5 && FOG.cloud.w <= 0.0" : ""})) { return ${torches ? "FogOut(vec4f(0.0, 0.0, 0.0, 1.0), 0.0)" : "vec4f(0.0, 0.0, 0.0, 1.0)"}; }
   let eye = V.eye.xyz;
   let d = volumeDepth(o.uv);
   let sky = volumeIsSky(d);
@@ -1185,7 +1206,9 @@ ${hooks.distanceFog ? `      let mediumPoint = ro + rd * (s0 + h * tan(t));
   let jitter = fogIgn(px + V.eye.w * 5.588238);
   let samples = u32(max(FOG.reflect.x, 1.0));
   var acc = airlight(eye, rd, dist, samples, jitter);
-  // Clouds behind the bank, then the bank in front of everything: rgb in-scatter, a the transmittance.
+${torches ? `  // Reactive: the air light a moving beam may have taken off this ray since last frame (where its trail would be).
+  let moved = dot(fogMoveChange, vec3f(0.2126, 0.7152, 0.0722));
+` : ""}  // Clouds behind the bank, then the bank in front of everything: rgb in-scatter, a the transmittance.
   var trans = 1.0;${hooks.distanceFog ? `
   let distanceT = select(exp(-fogDistanceDepth(eye, eye + rd * dist)), 1.0, sky && !(${hooks.distanceFogSky ?? "true"}));
   trans *= distanceT;
@@ -1270,7 +1293,7 @@ ${street ? "        if (L.f.z > 0.0) { aim = min(streetProfile(-ld, L.f.xy, FOG.
       acc += gl * fres * wet * T * trans * FOG.reflect.z;
     }
   }
-  return vec4f(acc, trans);
+  return ${torches ? "FogOut(vec4f(acc, trans), moved)" : "vec4f(acc, trans)"};
 }
 `,
   }
