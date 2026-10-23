@@ -19,6 +19,9 @@ import { FRAME, FRAME_FLOATS, TIME_WRAP } from "../render/frame"
 import { buildIslandMesh } from "../render/island-mesh"
 import { Ocean } from "../render/ocean"
 import { PlaneFx } from "../render/plane-fx"
+import { WeaponFx } from "../render/weapon-fx"
+import { FLIGHT_FX } from "../render/flight-fx"
+import { FlightJuice, type JuiceJet } from "./juice"
 import { loadPlaneModels } from "../render/plane-glb"
 import { type PlaneDrawPose, PlanePass } from "../render/plane-pass"
 import { teamColor } from "../render/team"
@@ -82,7 +85,14 @@ async function main() {
   renderer.addPass("opaque", ocean)
   renderer.addPass("opaque", clouds)
   renderer.addPass("alpha", wake)
+  const wfx = new WeaponFx(renderer)
+  const juice = new FlightJuice(renderer, models, wfx)
+  juice.onBoom = (id) => {
+    if (id < 0) flight.shake(0.22)
+  }
+  renderer.addPass("alpha", wfx)
   renderer.addPass("alpha", fx)
+  const jet: JuiceJet = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, qx: 0, qy: 0, qz: 0, qw: 1, g: 1, throttle: 0, burner: 0, kind: vehicle, flying: false }
 
   const input = new FlightInput(canvas)
   input.invert = params.has("invert")
@@ -149,6 +159,8 @@ async function main() {
     warp,
     team,
     inspect: null as { yaw: number; pitch: number; dist: number } | null,
+    juice,
+    juiceFx: FLIGHT_FX,
     wing: null as { x: number; y: number; z: number; team: number; kind?: VehicleKind } | null,
     doors: 0,
     stores: undefined as number | undefined,
@@ -232,6 +244,12 @@ async function main() {
     wake.upload()
     planePass.begin()
     fx.begin(cam.eye, target)
+    wfx.begin(cam.eye, target, dt, cam.fov, canvas.height)
+    juice.begin(cam.eye, cam.viewProj, cam.fov, target, dt, sea, arch)
+    const p = flight.draw
+    Object.assign(jet, { x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, qx: p.qx, qy: p.qy, qz: p.qz, qw: p.qw, g: p.g, throttle: pose?.throttle ?? 0, burner: pose?.burner ?? 0 })
+    jet.kind = flight.vehicle
+    jet.flying = flight.phase === "flying"
     if (flight.phase === "crashed") fx.burst(flight.plane.x, flight.plane.y, flight.plane.z, flight.crashTime, flight.plane.crashed === "sea")
     if (pose && debug.wing) {
       const w = debug.wing
@@ -245,7 +263,9 @@ async function main() {
       wingPose.y += w.y + qw * ty + (qz * tx - qx * tz)
       wingPose.z += w.z + qw * tz + (qx * ty - qy * tx)
       planePass.add(wingPose)
-      fx.plane(1, planePass.modelMatrix(wingPose, new Float32Array(16)), wingPose.throttle, wingPose.burner, 0, wingPose.kind)
+      const wm = planePass.modelMatrix(wingPose, new Float32Array(16))
+      const wv = juice.jet(1, wm, { ...jet, x: wingPose.x, y: wingPose.y, z: wingPose.z, kind: wingPose.kind ?? "hornet" })
+      fx.plane(1, wm, wingPose.throttle, wingPose.burner, wv, wingPose.kind)
     }
     if (pose) {
       pose.accent = teamColor(debug.team)
@@ -254,10 +274,14 @@ async function main() {
       pose.stores = debug.stores
       planePass.add(pose)
       const m = planePass.modelMatrix(pose, new Float32Array(16))
-      fx.plane(0, m, pose.throttle, pose.burner, flight.vapour, flight.vehicle)
+      fx.plane(0, m, pose.throttle, pose.burner, juice.jet(-1, m, jet), flight.vehicle)
     }
+    juice.streaks(pose ? jet : null, cam.mode === "cockpit" && !debug.inspect)
     planePass.upload()
     fx.upload()
+    wfx.upload()
+    juice.end()
+    cam.fovKick = juice.fovKick
 
     frame.set(cam.viewProj, FRAME.viewProj)
     frame.set(cam.eye, FRAME.eye)

@@ -13,6 +13,7 @@ import type { WeatherSystem } from "../render/weather-system"
 import { BotsLab, type BotsHost } from "./bots-lab"
 import { DevPanel } from "./dev-panel"
 import { feelSection } from "./feel-lab"
+import { juiceSection } from "./juice-lab"
 import { radarSection } from "./radar-lab"
 import { sightSection } from "./sight-lab"
 import { viewSection } from "./view-lab"
@@ -69,6 +70,8 @@ export function installDevTools(ctx: DevToolsContext) {
     radarSection,
     // FEEL: the flight camera's lean, lag, kicks and the g-load grey-out (src/flight/feel.ts).
     feelSection,
+    // JUICE: speed streaks, vapour, the vapour cone, burner, heat shimmer and sea spray (src/render/flight-fx.ts).
+    juiceSection,
     // BOTS: spawn and drive bots in a dev room (server/bots.ts).
     bots.section,
     // ZONES: the objective's rules (Apply to room restarts the round with them) and the zones' look.

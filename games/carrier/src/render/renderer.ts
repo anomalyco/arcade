@@ -88,6 +88,11 @@ export class Renderer {
     this.post.bloomLevels = levels
   }
 
+  /** Heat shimmer sources the composite applies (post.ts HEAT_FLOATS layout, pixels); written by src/flight/juice.ts. */
+  get heat(): Float32Array {
+    return this.post.heat
+  }
+
   /** Compiles a shader module and reports any compile errors with their line. */
   module(code: string, label: string): GPUShaderModule {
     return compileShaderModuleWithLog(this.device, code, label)
