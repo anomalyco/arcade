@@ -826,8 +826,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 35 at the hull, falling to 8 at
     25 m.
   - Enemy jet crashing into the ship: 30.
-  - Ramming (`"ram"`, see "Carrier collisions" below): 6 · (closing speed − 1.5 m/s)^1.5, at most 650; the hull that
-    brought the speed takes up to 40% less. A 15 m/s T-bone: ~300 to the rammed side, ~180 to the rammer.
+  - Ramming (`"ram"`, see "Carrier collisions" below): 6 · (closing speed − 1.5 m/s)^1.5, at most 300 (30%: a ram
+    hurts, but no longer out-sinks every weapon); the hull that brought the speed takes up to 40% less. A 15 m/s
+    T-bone: ~300 to the rammed side, ~180 to the rammer.
   - Friendly fire is off: `Fleet.hit` refuses the ship's own team (its own crew; every other carrier is an enemy).
 - Zones (`hullZone`, ship-local):
   - ISLAND hits also wreck the bridge (`island` 0..1: bomb 0.4, missile 0.15, round 0.0015). `hullLimits`

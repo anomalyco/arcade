@@ -72,7 +72,7 @@ describe("ship collisions", () => {
     expect(b.u).toBeLessThan(0.5)
     expect(r.maxDepth).toBeLessThan(1.5)
     expect(r.damageA).toBeCloseTo(r.damageB, 6)
-    expect(r.damageA).toBeGreaterThan(250)
+    expect(r.damageA).toBeGreaterThan(200)
     // Never through each other: A stays south of B.
     expect(b.z).toBeLessThan(a.z - 320)
   })

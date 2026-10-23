@@ -49,7 +49,7 @@ export const COLLIDE = {
   harmSpeed: 1.5,
   harm: 6,
   harmExp: 1.5,
-  harmMax: 650,
+  harmMax: 300,
   /** The hull that does the ramming (its own speed into the contact) takes up to this share less. */
   rammer: 0.4,
   /** A pair that just collided takes only the excess of a harder hit for this long (s). */
