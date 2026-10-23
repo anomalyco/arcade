@@ -19,7 +19,7 @@ const option = (name: string, fallback?: string) => {
 const changedFile = option("--changed", process.env.ARCADE_VERIFY_CHANGED_FILE)
 const paths = changedFile !== undefined
   ? await Bun.file(resolve(changedFile)).text()
-  : verifyArgs.includes("--all") && !verifyArgs.includes("--release")
+  : (verifyArgs.includes("--all") || verifyArgs.includes("--smoke")) && !verifyArgs.includes("--release")
     ? undefined
     : (await gitChangedFiles(repo, option("--base", "origin/main")!)).join("\n")
 // --changed is replaced by the worker-local snapshot, never a submitter's absolute path.
@@ -48,7 +48,8 @@ const bootstrap = `
     process.exitCode = child.exitCode;
   } finally { rmSync(dir, { recursive: true, force: true }); }
 `
-const kind = hiveArgs.some((arg) => arg === "--kind" || arg.startsWith("--kind=")) ? [] : ["--kind", "browser"]
+const kind = hiveArgs.some((arg) => arg === "--kind" || arg.startsWith("--kind="))
+  ? [] : ["--kind", verifyArgs.includes("--release") || verifyArgs.includes("--smoke") ? "browser" : "cargo"]
 const child = Bun.spawn(["hivemind", "run", ...kind, ...hiveArgs, "--", "bun", "-e", bootstrap, payload], {
   cwd: repo, stdin: "inherit", stdout: "inherit", stderr: "inherit",
 })

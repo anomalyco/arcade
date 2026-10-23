@@ -15,6 +15,7 @@
     "check:scripts": "bun games/blackout/scripts/build-id.ts && bun games/outbreak/scripts/build-id.ts && tsc --noEmit -p scripts/tsconfig.json && bun test --max-concurrency 4 scripts/verify-scripts.test.ts",
     "verify": "bun scripts/verify.ts",
     "verify:remote": "bun scripts/verify-remote.ts",
+    "verify:smoke": "bun scripts/verify.ts --smoke",
     "verify:release": "bun scripts/verify.ts --release"
   },
   "devDependencies": {
