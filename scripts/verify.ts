@@ -65,21 +65,23 @@ const testWorkers = budget("--test-workers", "ARCADE_VERIFY_TEST_WORKERS", "HIVE
 const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
 
-type Target = { name: string; dirs: string[]; game?: string; independent?: boolean }
+type Target = { name: string; dirs: string[]; game?: string; independent?: boolean; check?: string }
 
 async function workflowTargets(): Promise<{ target: Target; paths: string[] }[]> {
   const out: { target: Target; paths: string[] }[] = []
-  for (const name of [...WORKSPACE_GAMES, "packages", ...Object.keys(INDEPENDENT)]) {
+  for (const name of [...WORKSPACE_GAMES, "packages", "scripts", ...Object.keys(INDEPENDENT)]) {
     const file = join(repo, ".github/workflows", `${name}.yml`)
     if (!existsSync(file)) continue
     const yaml = Bun.YAML.parse(await Bun.file(file).text()) as any
     const paths: string[] = yaml?.on?.pull_request?.paths ?? []
     const target: Target =
-      name === "packages"
-        ? { name, dirs: ["packages/kit", "packages/knobs"] }
-        : WORKSPACE_GAMES.includes(name)
-          ? { name, dirs: [`games/${name}`], game: name }
-          : { name, dirs: [INDEPENDENT[name]!], independent: true }
+      name === "scripts"
+        ? { name, dirs: ["."], check: "check:scripts" }
+        : name === "packages"
+          ? { name, dirs: ["packages/kit", "packages/knobs"] }
+          : WORKSPACE_GAMES.includes(name)
+            ? { name, dirs: [`games/${name}`], game: name }
+            : { name, dirs: [INDEPENDENT[name]!], independent: true }
     out.push({ target, paths })
   }
   return out
@@ -117,20 +119,22 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
   for (const dir of target.dirs) {
     const cwd = join(root, dir)
     const scripts = require(join(cwd, "package.json")).scripts as Record<string, string>
-    const cmds = [...new Set(expand(scripts, "check"))]
+    const cmds = [...new Set(expand(scripts, target.check ?? "check"))]
     const prep: string[] = []
     const tag = (s: string) => `${target.name}${target.dirs.length > 1 ? `/${basename(dir)}` : ""}:${s}`
     if (target.independent && !existsSync(join(cwd, "node_modules"))) {
       steps.push({ id: tag("install"), cwd, cmd: "bun install --frozen-lockfile", deps: [], kind: "install" })
       prep.push(tag("install"))
     }
-    for (const cmd of cmds.filter((c) => c.startsWith("bun scripts/build-id.ts"))) {
-      steps.push({ id: tag("build-id"), cwd, cmd, deps: [...prep], kind: "prep" })
-      prep.push(tag("build-id"))
+    const isBuildId = (cmd: string) => /^bun (?:games\/[^/]+\/)?scripts\/build-id\.ts$/.test(cmd)
+    for (const cmd of cmds.filter(isBuildId)) {
+      const id = tag(`build-id${prep.length ? `-${prep.length}` : ""}`)
+      steps.push({ id, cwd, cmd, deps: [...prep], kind: "prep" })
+      prep.push(id)
     }
     let build: string | undefined
     for (const raw of cmds) {
-      if (raw.startsWith("bun scripts/build-id.ts")) continue
+      if (isBuildId(raw)) continue
       let cmd = raw.replace(/^bun scripts\/build-id\.ts && /, "")
       let kind = "other"
       if (/^tsc\b/.test(cmd)) {
@@ -251,7 +255,7 @@ const COPY_EXCLUDES = [".git", "node_modules", "dist", ".wrangler", "*.tsbuildin
 
 let root = repo
 let exportDir: string | undefined
-if (release) {
+if (release && !flag("--list")) {
   let t = performance.now()
   if (exportArg && statSync(exportArg).isDirectory()) {
     root = exportArg

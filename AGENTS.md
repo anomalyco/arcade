@@ -34,7 +34,8 @@ game's own `AGENTS.md`.
   `HIVEMIND_CPUS`, when supplied by the worker, caps both to its allocation (rounded down, minimum 1).
   `verify:remote` forwards the two Arcade budget variables; it never forwards the submitter's CPU allocation.
 - Every `tests/` and `scripts/` file is typechecked. Game configs cover their own scripts/tests; root `scripts/`
-  has `scripts/tsconfig.json`, checked by `bun run check:scripts` and the standalone `scripts` CI workflow. This
+  has `scripts/tsconfig.json`, checked by `bun run check:scripts`, the `scripts` CI workflow, and the workflow-scoped
+  `scripts` target in `verify` / `verify:release`. This
   config also owns Blackout's cross-game `scripts/animation/` harnesses and `tests/motion-*.test.ts`, excluded from
   its game script check (the game still runs those tests).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
