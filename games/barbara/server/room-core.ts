@@ -275,7 +275,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     const sent = this.sent.get(id)!
     const me = s.players.find((p) => p.id === pid)
     const snap: Snapshot = { type: "s", t: Math.round(s.t * 1000) / 1000, ack: this.acks.get(pid) ?? -1, me: pid, p: ents ?? this.entities() }
-    if (me) snap.you = [me.x, me.z, me.vx, me.vz, me.mapRaise, me.air.y, me.air.v, me.yaw, me.pitch, Number(me.light)].map((v) => Math.round(v * 1e5) / 1e5), me.flares]
+    if (me) snap.you = [...[me.x, me.z, me.vx, me.vz, me.mapRaise, me.air.y, me.air.v, me.yaw, me.pitch, Number(me.light)].map((v) => Math.round(v * 1e5) / 1e5), me.flares]
     const names = s.players.map((p) => `${p.id}:${p.name}`).join("|")
     if (names !== sent.names) { sent.names = names; snap.names = Object.fromEntries(s.players.map((p) => [p.id, p.name])) }
     if (s.rev.found !== sent.found) { sent.found = s.rev.found; snap.found = s.found }
