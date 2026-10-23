@@ -1,9 +1,12 @@
 // Headless Metal evidence. Run through hivemind; one browser and one ephemeral loopback server.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const label = process.env.RUN_LABEL ?? "early"
 const out = join(import.meta.dir, `../../../captures/running/${label}`)

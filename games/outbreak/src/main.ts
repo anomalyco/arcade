@@ -2,6 +2,7 @@ import { Camera } from "@arcade/kit/client/camera"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { Renderer } from "@arcade/kit/gpu/renderer"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { OUTBREAK_LAB_TABS } from "./lab-tabs"
 import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { createLookControls } from "@arcade/kit/look"
 import {
@@ -10,10 +11,12 @@ import {
   resolveQualityMode,
 } from "@arcade/kit/quality"
 import { DRIVING_FX_DEFAULTS, drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
+import { createGameShell, muteStorageKey, type ShellQuality } from "@arcade/kit/shell"
 import { wrapHour } from "../shared/day-cycle"
 import { LocalSession } from "../shared/session"
 import { OutbreakAudio } from "./audio"
 import { BotsLabController } from "./bots-lab"
+import { muteOnM, type ControlSettings } from "./controls/settings"
 import { CoopView } from "./coop-view"
 import type { DiscoveryHost } from "./discovery/stage"
 import { outbreakClientFeatures } from "./features"
@@ -33,11 +36,17 @@ import {
   migrateOutbreakLocalStorage,
   resolveWorldMode,
 } from "./settings"
+import { OUTBREAK_QUALITY_KEY, OUTBREAK_QUALITY_PROFILES } from "./quality"
+import { inventoryPresenter } from "./inventory/hooks"
+import { RunTools } from "./lobby/run-tools"
+import { radialInteract } from "./radial/state"
+import { soundButton } from "./volume/index"
 import { shaders } from "./shaders"
 import { LAMP_FOG_DEFAULTS, lampFog, lampFogControls } from "./air/lamp-fog"
 import "./style.css"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { type VehicleLabHost } from "./vehicle-lab"
+import { isTrainingSession } from "./onboarding/session"
 
 const params = new URLSearchParams(location.search)
 try {
@@ -46,12 +55,15 @@ try {
 const settings = createOutbreakSettings(params)
 if (!params.has("quality") && !params.has("view.quality") && !navigator.webdriver) {
   try {
-    const savedQuality = loadSavedQualityMode(localStorage)
+    const savedQuality = loadSavedQualityMode(localStorage, OUTBREAK_QUALITY_KEY) ?? loadSavedQualityMode(localStorage)
     if (savedQuality) settings.view.quality = savedQuality
   } catch {}
 }
+// The game shell's quality policy: Auto starts High and steps down only on measured slow frames.
 const qualityController = new AdaptiveQualityController({
   mode: resolveQualityMode(settings.view.quality),
+  profiles: OUTBREAK_QUALITY_PROFILES,
+  stepDown: "slow-frames",
 })
 
 async function main() {
@@ -123,7 +135,8 @@ async function main() {
     })(),
     automated: navigator.webdriver,
   })
-  audio.arm()
+  // The game shell owns M (when Controls gives it to mute) and the player's volumes; see below.
+  audio.arm(window, () => false)
   const vehicleAudio = new OutbreakVehicleAudio(audio)
   const frameRenderer = new OutbreakFrameRenderer({
     device,
@@ -234,9 +247,109 @@ async function main() {
       inputController.release()
       pacer.clock.pause(performance.now())
     },
-    (key, value) => onSettingChanged(key, value),
+    { capture: "focus", openGroups: ["Feel"], onChange: (key, value) => onSettingChanged(key, value) },
   )
+  lab.setTabs(OUTBREAK_LAB_TABS)
+  input.blocked = () => lab.holdsInput
   bindOutbreakLabControls(lab, settings, controls)
+
+  // The Escape menu and Settings are the kit game shell. Outbreak's own lobby (over the practice space, with survivor
+  // and kit picks and the co-op muster) stays its title, so the shell starts in play and never shows its title card.
+  const quality: ShellQuality = {
+    get mode() {
+      return qualityController.getMode()
+    },
+    get tier() {
+      return qualityController.getActiveTier()
+    },
+    setMode: (mode) => onSettingChanged("quality", mode),
+  }
+  let escapeOwned = false
+  const shell = createGameShell({
+    game: "outbreak", title: "OUTBREAK", start: "playing", leaveLabel: null, quality,
+    channels: ["master", "effects", "ambience", "voice"], labels: { voice: "Zombies" },
+    // M is the map unless Backquote › Controls moves it to mute.
+    muteKey: () => muteOnM(settings.hud as unknown as ControlSettings),
+    // Outbreak keeps its own leave-site prompt (Backquote › Controls, `src/controls`): it knows a dead or finished run.
+    leaveGuard: false,
+    keysBlocked: () => lab.hasFocus(),
+    escapeOwned: () => escapeOwned,
+  })
+  // Escape closes the bag, the map, the radial or the lobby first: read which before their handlers close them.
+  // In Training, holding Escape skips it (src/onboarding), so it never opens the menu there.
+  window.addEventListener("keydown", (e) => {
+    if (e.code !== "Escape") return
+    escapeOwned = Boolean(isTrainingSession(session) || coop.lobby?.isOpen || inventoryHud.packOpen || inventoryHud.craftOpen || inventoryPresenter()?.open || map.isOpen || radialInteract.isOpen)
+  }, true)
+  // The paused menu keeps the game's keys (Esc, Backquote and a mute M still work), as the old pause menu did.
+  window.addEventListener("keydown", (e) => {
+    if (shell.playing || shell.hidden) return
+    const t = e.target as HTMLElement | null
+    if (t?.closest?.("input, textarea, select, [contenteditable]")) return
+    if (e.code === "Escape" || e.code === "Backquote" || (e.code === "KeyM" && muteOnM(settings.hud as unknown as ControlSettings))) return
+    e.stopImmediatePropagation()
+  }, true)
+  const runTools = new RunTools({
+    run: () => coop.lobby?.runSeed ?? { seed, houseSeed: settings.world.houseSeed, terrain: settings.world.terrain },
+    inRoom: () => Boolean(coop.net),
+    loadout: () => {
+      shell.flow.resume()
+      coop.lobby?.openStart()
+      coop.onSessionChange?.()
+    },
+    leaveRoom: () => {
+      shell.flow.resume()
+      coop.leaveRoom()
+    },
+  })
+  shell.view?.pauseSlot.append(runTools.el)
+  coop.onPause = () => shell.flow.pause()
+  // Solo, the menu stops the night (clock, audio, input) like the old pause menu; a room keeps running under it.
+  let shellPaused = false
+  shell.flow.subscribe(() => {
+    const paused = shell.flow.screen === "paused"
+    if (paused === shellPaused) return
+    shellPaused = paused
+    coop.shellPaused = paused
+    inputController.release()
+    if (paused) runTools.sync()
+    if (!coop.net) window.dispatchEvent(new Event(paused ? "outbreak-menu-open" : "outbreak-menu-close"))
+  })
+  // Volume and mute: the shell's Settings and the Lab's Volume rows edit the same `settings.audio` values.
+  const a = settings.audio
+  try {
+    if (localStorage.getItem(muteStorageKey("outbreak")) === null && a.audioMuted) shell.settings.setMuted(true)
+  } catch {}
+  let pushed = ""
+  const audioKey = () => `${a.volumeMaster}|${a.volumeEffects}|${a.volumeAmbience}|${a.volumeVoice}|${a.audioMuted}`
+  const toAudio = () => {
+    const s = shell.settings
+    a.volumeMaster = s.volume("master")
+    a.volumeEffects = s.volume("effects")
+    a.volumeAmbience = s.volume("ambience")
+    a.volumeVoice = s.volume("voice")
+    a.audioMuted = s.muted ? 1 : 0
+    if (s.reduceMotion !== Boolean(settings.view.reduceMotion)) settings.view.reduceMotion = s.reduceMotion ? 1 : 0
+    pushed = audioKey()
+    speaker.sync(s.muted || s.volume("master") <= 0)
+    lab.refresh()
+  }
+  /** The Lab or the harness changed `settings.audio`: show it in Settings too. */
+  const fromAudio = () => {
+    if (audioKey() === pushed) return
+    const s = shell.settings
+    s.setVolume("master", a.volumeMaster)
+    s.setVolume("effects", a.volumeEffects)
+    s.setVolume("ambience", a.volumeAmbience)
+    s.setVolume("voice", a.volumeVoice)
+    s.setMuted(Boolean(a.audioMuted))
+    pushed = audioKey()
+  }
+  const speaker = soundButton(() => shell.flow.openSettings())
+  const reduceMotion = Boolean(settings.view.reduceMotion)
+  shell.settings.subscribe(toAudio)
+  toAudio()
+  if (reduceMotion && !shell.settings.reduceMotion) settings.view.reduceMotion = 1
 
   registerOutbreakGameCommands({
     features: outbreakClientFeatures,
@@ -335,6 +448,7 @@ async function main() {
   performance.mark("outbreak:textures")
   frameRenderer.syncTextures()
   function draw(dt: number) {
+    fromAudio()
     pacer.recordFrameStart(performance.now())
     frameRenderer.drawFrame(dt)
     pacer.updateMeter(performance.now())

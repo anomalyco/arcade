@@ -626,3 +626,105 @@ tr.me td {
   letter-spacing: 0.14em;
   min-height: 14px;
 }
+
+/* ---- The kit game shell (title, Escape menu, Settings) in Blackout's colours -------------------- */
+
+.arcade-shell {
+  --shell-font: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --shell-ink: var(--ink);
+  --shell-dim: var(--dim);
+  --shell-card: var(--panel);
+  --shell-edge: var(--line);
+  --shell-accent: var(--ink);
+  --shell-accent-ink: #0a0d16;
+  --shell-backdrop: radial-gradient(ellipse at 50% 40%, rgba(16, 22, 40, 0.75), rgba(3, 4, 9, 0.95));
+  --shell-radius: 0;
+  font-size: 14px;
+}
+
+.arcade-shell .as-card {
+  gap: 8px;
+}
+
+/* Wide-tracked monospace wraps "Play with friends" at the shell's size: one line keeps the title card inside 720p. */
+.arcade-shell .as-choices .as-btn {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  padding: 12px 8px;
+}
+
+.arcade-shell .as-big {
+  padding: 12px;
+}
+
+.picks .modepick button {
+  padding: 5px 0;
+}
+
+.arcade-shell .as-title {
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: 0.5em;
+  margin-right: -0.5em;
+}
+
+.arcade-shell .as-btn {
+  letter-spacing: 0.12em;
+}
+
+.landing.picks {
+  width: 100%;
+  gap: 10px;
+  margin: 6px 0 4px;
+}
+
+.picks .pickhead {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  color: var(--dim);
+}
+
+.picks .pickhead span {
+  color: var(--faint);
+  letter-spacing: 0.06em;
+  margin-left: 8px;
+}
+
+.picks .modepick,
+.picks .mappick,
+.picks .modeblurb {
+  margin-top: 0;
+}
+
+.picks .modeblurb b {
+  display: inline;
+  margin: 0 8px 0 0;
+}
+
+/* The picked map's chip says it; its blurb stays in the chip's tooltip so the title card fits 1280×720. */
+.picks .mappick + .modeblurb {
+  display: none;
+}
+
+.picks .pickfoot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+
+.picks .sandbox {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.picks .stats {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.picks .stats:empty {
+  display: none;
+}

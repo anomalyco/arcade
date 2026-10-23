@@ -1,8 +1,11 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { writeFileSync } from "node:fs"
 import { hostname } from "node:os"
 import { join } from "node:path"
 import { findChromeExecutable, installGpuInstrumentation } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const opt = (key: string, fallback: string) => process.argv.find(a => a.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback
 const base = opt("base", "")

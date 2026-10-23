@@ -899,6 +899,21 @@ export class GunneryWorld {
     return use
   }
 
+  /**
+   * CIWS rounds gunner `by` claims against something on carrier `ship`'s deck (a parked jet, shared/deck-jets.ts):
+   * the same checks as `ciwsShipHits` (a manned CIWS, an enemy ship within range, the round budget), nothing emitted.
+   * Returns the rounds allowed.
+   */
+  ciwsDeckRounds(by: number, ship: GroundShip, n: number): number {
+    const g = this.gunners.get(by)
+    if (!g || WEAPON_MOUNTS[g.mount]!.kind !== "ciws" || ship.id === undefined || ship.team === g.team) return 0
+    if (this.authority) {
+      const at = this.mountAt(g, mw)
+      if (at && Math.hypot(ship.x - at[0], ship.z - at[2]) > GUNNERY.ciws.range + 400) return 0
+    }
+    return this.spend(g, n)
+  }
+
   private spend(g: Gunner, n: number): number {
     if (!this.authority) return Math.max(0, Math.floor(n))
     const use = Math.max(0, Math.min(Math.floor(n), Math.floor(g.rounds)))

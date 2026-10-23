@@ -1,0 +1,21 @@
+/* The night clock (src/night-clock): a chip at the top left, under the summary when the HUD style shows one. */
+.night-clock {
+  position: fixed; left: 12px; top: 10px; z-index: 9; pointer-events: none;
+  display: flex; align-items: center; gap: var(--hud-3); height: 22px; padding: 0 var(--hud-4) 0 var(--hud-3);
+  border-radius: var(--hud-r-chip); background: var(--hud-chip); box-shadow: inset 0 0 0 1px var(--hud-line);
+  color: var(--hud-ink-2); font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased; transition: color var(--m-default-ms, .3s) var(--m-default, ease)
+}
+.night-clock[hidden] { display: none }
+body[data-hud="callouts"][data-chrome="full"] .night-clock { top: 38px }
+.night-clock .nc-label { color: var(--hud-ink) }
+.night-clock .nc-time { min-width: 9ch }
+/* A crescent moon; a low sun at dusk. */
+.night-clock .nc-glyph { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 3px -1px 0 0 currentColor; transform: rotate(-20deg) }
+.night-clock[data-tone="dusk"] .nc-glyph { box-shadow: none; background: currentColor; clip-path: inset(0 0 45% 0); transform: translateY(2px) }
+/* How much of the night is left. */
+.night-clock .nc-bar { position: relative; width: 44px; height: 3px; border-radius: 2px; background: var(--hud-line-2); overflow: hidden }
+.night-clock .nc-bar > i { position: absolute; inset: 0; background: currentColor; transform-origin: left center }
+.night-clock[data-tone="dusk"] { color: var(--hud-caution) }
+.night-clock[data-tone="dusk"] .nc-bar { display: none }
+.night-clock[data-tone="dawn"] { color: var(--hud-warm) }

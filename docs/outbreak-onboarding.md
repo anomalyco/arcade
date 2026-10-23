@@ -54,7 +54,7 @@ so the hint only leads you there.
 | Recipe board | E, gear, over the workbench | a bandage is made (a digit in the panel) |
 | Hall door | E, door-open | the bedroom door is open |
 | Shut it | E, door-close, once through | it is shut behind you |
-| Crouch | hold Ctrl, near the glass | crouched by the glass for 0.3 s |
+| Crouch | hold Z, near the glass | crouched by the glass for 0.3 s |
 | Board up | B, board-up, over the east window (back to the dresser without planks) | a board is up |
 | Sprint | Shift while moving | 0.6 s of sprinting |
 | Front door | E, door-open | it is open, or you are outside |

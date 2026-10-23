@@ -1,17 +1,11 @@
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { ROSTER, CHARACTERS } from "../../shared/characters"
 import { GAME } from "../../shared/config"
-import { NAME_MAX } from "../../shared/protocol"
 import type { RosterRow, Snapshot } from "../../shared/view"
 import { SLOT_COLORS } from "../game/game"
 import { SLOT_KEYS } from "./hud"
 
 export type MenuActions = {
-  quick: (name: string) => void
-  practice: (name: string) => void
-  create: (name: string) => void
-  join: (name: string, room: string) => void
-  watch: () => void
   pick: (char: string) => void
   ready: (ready: boolean) => void
 }
@@ -20,23 +14,32 @@ const css = (c: readonly number[]) => `rgb(${Math.round(c[0]! * 255)},${Math.rou
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const ordinal = (n: number) => ["1st", "2nd", "3rd"][n] ?? `${n + 1}th`
 
-/** Landing page, the character select screen and the results, as DOM over the canvas. */
+/** The title card's own art: the roster parade and Watch the bots, in the shell's title slot. */
+export function titleArt(watch: () => void): HTMLElement {
+  const el = document.createElement("div")
+  el.className = "title-art"
+  el.innerHTML = `<div class="parade">${ROSTER.map((c, i) => `<div class="parade-face" style="background-image:url(portraits/${c.id}.jpg);--i:${i};--c:${css(c.color)}"></div>`).join("")}</div>`
+  const link = document.createElement("button")
+  link.className = "as-link watch"
+  link.textContent = "Watch the bots"
+  link.addEventListener("click", watch)
+  el.append(link)
+  return el
+}
+
+/** The character select screen and the results, as DOM over the canvas (the title is the kit game shell). */
 export class Menus {
-  private mode: "landing" | "select" | "results" | "none" = "none"
+  private mode: "select" | "results" | "none" = "none"
   private html = ""
   private hover = ""
 
-  constructor(private root: HTMLElement, private name: string, private act: MenuActions) {
+  constructor(private root: HTMLElement, private act: MenuActions) {
     root.addEventListener("click", (e) => this.click(e))
     root.addEventListener("mouseover", (e) => {
       const card = (e.target as HTMLElement).closest<HTMLElement>("[data-char]")
       this.hover = card?.dataset.char ?? ""
     })
     root.addEventListener("mouseleave", () => (this.hover = ""))
-  }
-
-  get landingShown(): boolean {
-    return this.mode === "landing"
   }
 
   hide(): void {
@@ -46,50 +49,12 @@ export class Menus {
     this.root.innerHTML = ""
   }
 
-  landing(room: string | null, notice = ""): void {
-    this.mode = "landing"
-    this.html = ""
-    this.root.className = "full landing-bg"
-    const faces = ROSTER.map((c, i) => `<div class="parade-face" style="background-image:url(portraits/${c.id}.jpg);--i:${i};--c:${css(c.color)}"></div>`).join("")
-    this.root.innerHTML = `<div class="landing">
-      <div class="parade">${faces}</div>
-      <div class="logo">${esc(GAME.title)}</div>
-      <div class="sub">3-STOCK RING-OUT BRAWLER · BUILD DAMAGE % · KNOCK FOES OVER THE ROPES</div>
-      ${notice ? `<div class="notice">${esc(notice)}</div>` : ""}
-      <label class="field">Your name <input id="name" maxlength="${NAME_MAX}" value="${esc(this.name)}" autocomplete="off" spellcheck="false"></label>
-      <div class="buttons">
-        ${room ? `<button data-act="join-room" class="primary">Join room ${esc(room.toUpperCase())}</button>` : `<button data-act="quick" class="primary">Quick play</button>`}
-        <button data-act="practice">Practice vs bots</button>
-        <button data-act="create">Create private room</button>
-        <span class="join"><input id="code" maxlength="8" placeholder="code" autocomplete="off" spellcheck="false"><button data-act="join">Join</button></span>
-      </div>
-      <div class="controls">${keyCapHtml("KeyW")}${keyCapHtml("KeyA")}${keyCapHtml("KeyS")}${keyCapHtml("KeyD")} move · ${keyCapHtml("Mouse0")} attack · ${keyCapHtml("KeyQ")} ${keyCapHtml("KeyE")} powers · ${keyCapHtml("Space")} dodge</div>
-      <button data-act="watch" class="link">Watch the bots</button>
-    </div>`
-    this.room = room
-  }
-  private room: string | null = null
-
-  private input(id: string): string {
-    return (this.root.querySelector<HTMLInputElement>(`#${id}`)?.value ?? "").trim()
-  }
-
   private click(e: MouseEvent): void {
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act],[data-char]")
     if (!el) return
-    const name = this.mode === "landing" ? this.input("name") || "guest" : this.name
-    if (this.mode === "landing") this.name = name
     const act = el.dataset.act
     if (el.dataset.char) return this.act.pick(el.dataset.char)
-    if (act === "quick") this.act.quick(name)
-    else if (act === "practice") this.act.practice(name)
-    else if (act === "create") this.act.create(name)
-    else if (act === "join-room" && this.room) this.act.join(name, this.room)
-    else if (act === "join") {
-      const code = this.input("code").toLowerCase().replace(/[^a-z0-9]/g, "")
-      if (code) this.act.join(name, code)
-    } else if (act === "watch") this.act.watch()
-    else if (act === "random") {
+    if (act === "random") {
       const c = ROSTER[Math.floor(Math.random() * ROSTER.length)]!
       this.act.pick(c.id)
     } else if (act === "ready") this.act.ready(el.dataset.ready !== "1")
@@ -97,7 +62,6 @@ export class Menus {
 
   /** Called every frame in a match: shows the select screen or the results as the phase changes. */
   update(snap: Snapshot | null, roster: RosterRow[], myId: string, room: string | null, colorOf: (id: string) => readonly number[]): void {
-    if (this.mode === "landing") return
     const phase = snap?.phase
     if (phase === "select" && myId) this.select(snap!, roster, myId, room)
     else if (phase === "results") this.results(snap!, roster, colorOf)

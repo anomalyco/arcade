@@ -140,7 +140,8 @@ fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
     outbreakUnseenAlpha = 0.0;
     return colIn;
   }
-  let sight = fieldSight3(world, n);
+  var sight = fieldSight3(world, n);
+  sight.x = max(sight.x, outbreakMateSeen());
   outbreakSeen = sight.x;
   if (sight.x >= 0.996) {
     outbreakUnseenAlpha = 0.0;

@@ -1,5 +1,11 @@
 # Lot — asset credits
 
+## Shared night sky (opt-in)
+
+Yale Bright Star Catalogue BSC5, public-domain JSON conversion by aduboisforge; NASA SVS CGI Moon Kit 2019,
+Ernie Wright / LRO–LROC. The sky uses a filtered, compressed colour map and a normalized binary star catalogue.
+Sources, licence evidence and hashes: `packages/kit/sky/assets/CREDITS.md` and `sources.json` in the Arcade source.
+
 ## Station wagon — CC BY 4.0
 
 **Fairheaven SW '84 – Low poly model**, by **Daniel Zhabotinsky**.

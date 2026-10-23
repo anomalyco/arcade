@@ -1,10 +1,10 @@
 /** Requested beat-1 review tape: headless GPU readback, file-only audio. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync,readdirSync,mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import type { WalkCamera } from "../src/walk-camera"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
-import type { Opening } from "../src/opening"
+import { OPENING, type Opening } from "../src/opening"
 import type { Elevator } from "../src/elevator"
 import type { Settings } from "../src/settings"
 import type { Call } from "../shared/call"
@@ -15,6 +15,11 @@ import type { Continuity } from "../src/polish/continuity"
 import type { DustField } from "../src/polish/dust"
 import type { tubeSignal } from "../src/polish/tube"
 import type { CameraFilter } from "@arcade/kit/gpu/post/camcorder"
+
+await using budget = browserBudget()
+const { chromium } = budget
+/** Real E answers 4.5 s after the opening hands over (the look-round below takes the 3 s before). */
+const ANSWER_AT=Math.round(OPENING.end+4.5)
 type App={camera:WalkCamera;renderer:Renderer;opening:Opening;elevator:Elevator;settings:Settings;audio:OfficeAudio;call:Call;physics:OfficePhysics;continuity:Continuity;dustField:DustField;tubeSignal:typeof tubeSignal;clock:number;paused:boolean;step(ms:number):void;renderBeatAudio:typeof renderBeatAudio}
 type Host=Window&{nightshift:App;cameraFilter:CameraFilter;capture(ms:number):Promise<string>;tape:BeatAudioFrame[];pixelMean:number;finalPixelMax?:number}
 const out=resolve(process.env.NIGHTSHIFT_BEAT_DIR??"captures/nightshift-beat1"),stills=process.argv.includes("--stills"),controls=process.argv.includes("--controls"),filters=process.argv.includes("--filters"),fps=30
@@ -65,6 +70,7 @@ try{
   await page.waitForFunction(()=>!!(window as unknown as Host).nightshift,undefined,{polling:100,timeout:120000})
   await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;a.paused=true;a.renderer.render=a.renderer.drawTo.bind(a.renderer);a.step(0)})
   if(controls)await page.evaluate(async()=>{const w=window as unknown as Host;await w.capture(0);if(w.pixelMean!==0)throw Error("Scene visible before Begin")})
+  await page.waitForSelector("#arcade-boot[data-ready]",{state:"attached",timeout:30000})
   await page.locator("#view").click({force:true})
   await page.waitForFunction(()=>document.pointerLockElement?.id==="view"&&(window as unknown as Host).nightshift.audio.ready,undefined,{polling:100,timeout:30000}).catch(async e=>{console.error(await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;return {locked:document.pointerLockElement?.id,started:a.opening.started,audioReady:a.audio.ready,audioError:a.audio.error,hidden:document.hidden,focus:document.hasFocus()}}));throw e})
   if(filters){
@@ -146,7 +152,7 @@ try{
     await checkHangUp(CALL_FIRST_LINE_END,true)
     trace.push({beginsBlack:true,beginContinuesFromBlack:true,firstCallForced:true,repeatHangupAfterFirstLine:true,introInputBlocked:true,pointerUnlockPauses:true,panelPauses:true,completionPersisted:true,firstMoveHeight:height,reducedMotionRestored:true,skipPoseContinuous:true})
   }else if(stills){
-    for(const [name,time] of [["01-at-desk",2],["02-whip-to-phone",7.4],["03-look-across",16.5]] as const){
+    for(const [name,time] of [["01-at-desk",1.2],["02-whip-to-phone",OPENING.ring+.6],["03-look-across",OPENING.end+.5]] as const){
       const jpg=await page.evaluate(async time=>{const w=window as unknown as Host;while(w.nightshift.opening.time<time-.05){w.nightshift.step(50);await w.nightshift.renderer.passContext.device.queue.onSubmittedWorkDone()}return w.capture(50)},time)
       await Bun.write(resolve(out,`beat1-${name}.jpg`),Buffer.from(jpg,"base64"))
     }
@@ -158,27 +164,27 @@ try{
     await page.keyboard.down("w")
     for(let i=0;i<115*fps;i++){
       if(i===fps){await page.keyboard.up("w");const state=await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;return {x:a.camera.body.x,z:a.camera.body.y,phase:a.call.phase}});if(state.x!==-.74||state.z!==-4.47||state.phase!=="ringing")throw Error("Intro leaked movement/interaction")}
-      if(i===20*fps){await page.keyboard.press("e");answered=true}
+      if(i===ANSWER_AT*fps){await page.keyboard.press("e");answered=true}
       if(endedFrame>=0&&i===endedFrame+2*fps){await page.keyboard.down("a");walkFrame=i}
       if(walkFrame>=0&&i===walkFrame+14){await page.keyboard.up("a");await page.keyboard.down("w")}
       if(turnBackFrame>=0&&i===turnBackFrame+fps)await page.keyboard.down("s")
-      const result=await page.evaluate(async({i,fps,endedFrame,turnBackFrame})=>{
+      const result=await page.evaluate(async({i,fps,endedFrame,turnBackFrame,look})=>{
         const w=window as unknown as Host,a=w.nightshift,t=i/fps
         const smooth=(x:number)=>{const v=Math.max(0,Math.min(1,x));return v*v*v*(10+v*(-15+6*v))}
-        if(t>=17&&t<20){const k=smooth((t-17)/2);a.camera.yaw=-3.1+2.3*k;a.camera.pitch=.025-.275*k}
+        if(t>=look&&t<look+3){const k=smooth((t-look)/2);a.camera.yaw=-3.1+2.3*k;a.camera.pitch=.025-.275*k}
         if(endedFrame>=0){const k=smooth((i-endedFrame)/(2*fps));a.camera.yaw=-.8+(-Math.PI+.8)*k;a.camera.pitch=-.25+.13*k}
         if(turnBackFrame>=0)a.camera.yaw=-Math.PI+Math.PI*smooth((i-turnBackFrame)/(.8*fps))
         const jpg=await w.capture(1000/fps),c=a.camera,o=a.opening,e=a.elevator,s=a.settings
         const distance=Math.hypot(c.body.x-.12,c.body.y+5.4),pan=((.12-c.eye[0])*Math.cos(c.yaw)-(-5.4-c.eye[2])*Math.sin(c.yaw))/Math.max(.1,distance)
          const signal=a.tubeSignal(a.clock,s.flicker)
-         w.tape.push({time:t,openingTime:o.time,ringTime:Math.max(0,o.time-6.2),distance,pan,call:{...a.call},room:{time:t,x:c.body.x,z:c.body.y,yaw:c.yaw,volume:s.volume*(1-e.fade),active:true,tube:signal.level,foley:s.foley,room:s.roomTone*o.roomGain,ballast:s.polish&&s.tubeSound?signal:undefined,crackle:s.tubeCrackle},events:c.walk.events.map(event=>({...event,time:event.time+t-c.walk.time}))})
+         w.tape.push({time:t,openingTime:o.time,ringTime:Math.max(0,o.time-OPENING.ring),distance,pan,call:{...a.call},room:{time:t,x:c.body.x,z:c.body.y,yaw:c.yaw,volume:s.volume*(1-e.fade),active:true,tube:signal.level,foley:s.foley,room:s.roomTone*o.roomGain,ballast:s.polish&&s.tubeSound?signal:undefined,crackle:s.tubeCrackle},events:c.walk.events.map(event=>({...event,time:event.time+t-c.walk.time}))})
          return {jpg,time:t,opening:o.time,complete:o.complete,eye:[...c.eye],yaw:c.yaw,pitch:c.pitch,phase:a.call.phase,elapsed:a.call.elapsed,lift:a.call.lift,closure:e.closure,fade:e.fade,done:e.done,tube:signal,continuityEvents:a.continuity.events.length,finalPixelMax:w.finalPixelMax,subtitle:document.getElementById("subtitle")!.textContent??""}
-      },{i,fps,endedFrame,turnBackFrame})
-      if(answered&&i===21*fps&&result.phase!=="call")throw Error("Real E did not answer")
+      },{i,fps,endedFrame,turnBackFrame,look:ANSWER_AT-3})
+      if(answered&&i===(ANSWER_AT+1)*fps&&result.phase!=="call")throw Error("Real E did not answer")
       if(endedFrame<0&&result.phase==="ended")endedFrame=i
       if(turnBackFrame<0&&result.eye[2]>8.1){turnBackFrame=i;await page.keyboard.up("w")}
       const {jpg,...state}=result;trace.push(state);const bytes=Buffer.from(jpg,"base64");enc.stdin.write(bytes);await enc.stdin.flush()
-      const label=i===2*fps?"01-at-desk":i===Math.round(7.4*fps)?"02-whip-to-phone":i===16*fps?"03-look-across":result.eye[2]>6&&!result.done?"04-elevator":undefined
+      const label=i===Math.round(1.2*fps)?"01-at-desk":i===Math.round((OPENING.ring+.6)*fps)?"02-whip-to-phone":i===Math.round((OPENING.end+.5)*fps)?"03-look-across":result.eye[2]>6&&!result.done?"04-elevator":undefined
       if(label&&!saved.has(label)){saved.add(label);await Bun.write(resolve(out,`beat1-${label}.jpg`),bytes)}
       if(i%(10*fps)===0)console.log(`Beat 1 ${Math.round(i/fps)}s: ${result.phase}`)
       if(result.done)break

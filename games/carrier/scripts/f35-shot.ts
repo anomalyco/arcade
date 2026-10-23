@@ -9,9 +9,13 @@
 // flying in formation, each drawn by the other page as a remote with its own model; the menu shows the F-35C in use.
 // --only=polish (into <out>/polish/): undersides seen from below, the HUD role line over sea and sky, the F-35C's and
 // the Hornet's touchdowns (hooks on the same wires), and weapons.html?f35 on the F-35C model.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -490,4 +494,4 @@ if (only.includes("solo")) await solo()
 if (only.includes("mp")) await mp()
 console.log(logs.length ? logs.slice(0, 40).join("\n") : "no console errors")
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

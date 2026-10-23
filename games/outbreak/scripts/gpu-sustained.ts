@@ -1,8 +1,11 @@
 import assert from "node:assert/strict"
 import { existsSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * Sustained frame cost at 3456×1894: the GPU kept busy the way play keeps it (one frame in flight, back to back), so

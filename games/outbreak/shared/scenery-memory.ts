@@ -55,7 +55,8 @@ export class SceneryMemory {
       if(this.rooms.has(key)) continue
       const inside=vision.x>rx0 && vision.x<rx1 && vision.y>top && vision.y<bottom
       const midY=(top+bottom)/2
-      if(!inside && !vision.visible((rx0+rx1)/2,midY) && !vision.visible(Math.min(rx1-1.0,x+5.7),midY) && !vision.visible(rx1-2.5,midY) && !vision.visible(rx0+2.5,midY)) continue
+      // Your own sight only: a teammate's beam shows a room for as long as it lights it, but you haven't been there.
+      if(!inside && !vision.ownVisible((rx0+rx1)/2,midY) && !vision.ownVisible(Math.min(rx1-1.0,x+5.7),midY) && !vision.ownVisible(rx1-2.5,midY) && !vision.ownVisible(rx0+2.5,midY)) continue
       this.rooms.add(key); changed=true
       this.stampRoom(b, room)
     }

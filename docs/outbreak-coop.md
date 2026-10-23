@@ -35,7 +35,7 @@ Game-agnostic pieces, so Blackout and Getaway can adopt them later (their own be
   a dry tick repeats the last movement without its one-shot edges; when two inputs are consumed in a tick, or a late
   input arrives after its stand-in, its one-shot edges are merged forward instead of dropped (the Blackout/Getaway
   `splice` bug). Small sequence gaps (`≤ 6` ticks) from upstream packet drops keep the stream primed so stand-ins
-  bridge the gap without stalling movement. Wings itself is an independent project and keeps its copy.
+  bridge the gap without stalling movement.
 - `seats.ts`: join, leave, reconnect. Each seat has a public `id` (seen by everyone) and a private `token` (only the
   owner sees it, used to reclaim the seat within the grace window).
 - `bytes.ts`: a small little-endian `ByteWriter`/`ByteReader` (with unsigned/ZigZag LEB128 varints `uvar`/`ivar`,
@@ -56,7 +56,13 @@ Game-agnostic pieces, so Blackout and Getaway can adopt them later (their own be
 
 Each client renders its own line of sight and fog from `shared/vision.ts` (owned by the look/fog work; co-op only
 calls `Vision.visible`). Remote survivors are drawn only when inside your sight, but their flashlights always light
-the world. Every seat has a colour and a name tag. Lab tuning stays local in co-op: AI and generation controls only
+the world. Since the Oct 21 playtest ("Why can't I see your flashlight?") a teammate's beam is the same light as your
+own (`src/teammates/beams.ts`, cone.w 3 in the scene's light hooks: full range and profile about their lens, wall
+shadows, a faint shaft; its own cone and tint whatever your battery), what it lands on shows through your shroud, the
+zombies it lights are drawn (`Vision.setBeams`: not through closed windows, not under a roof drawn for you, and never
+added to what you have explored), and whoever holds a lit torch shows wherever you have a clear line to them. Backquote › Flashlight › Teammates'
+flashlights keeps Today's dim 6 m hint one setting away. Clip: `bun scripts/team-beams-clip.ts` (via
+`hivemind run --kind browser`). Every seat has a colour and a name tag. Lab tuning stays local in co-op: AI and generation controls only
 change the offline session.
 
 ## Wire format

@@ -14,10 +14,10 @@ import { EXTERIOR_WET, TERRAIN_MAT } from "./surface-materials"
 
 /** The CI smoke (`?smoke`, software GPU) keeps the street lamps at Today, so its shaders leave the street path out. */
 const STREET_SHADERS = !new URLSearchParams(globalThis.location?.search ?? "").has("smoke")
-const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, wet: vec4f, interior: vec4f, forest: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f, streetA: vec4f, streetB: vec4f, streetC: vec4f, finish: vec4f }
+const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, wet: vec4f, interior: vec4f, forest: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f, streetA: vec4f, streetB: vec4f, streetC: vec4f, finish: vec4f, storm: vec4f, stormB: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
 /** Floats in the Night uniform (`main.ts` packs it). */
-export const NIGHT_FLOATS = 60
+export const NIGHT_FLOATS = 68
 // Wet reflections follow the materials: every physical surface tags its roughness in the HDR alpha, and the asphalt's
 // wet/puddle term (kit reflections/wet) sets that roughness, so puddles mirror and the film between them smears.
 /** The lot's fog volume; `atmosphere` compiles the fog bank and cloud deck in, `street` the lens airlight (the CI smoke leaves both out). */
@@ -26,6 +26,58 @@ export const fogVolume = (atmosphere: boolean, street = STREET_SHADERS) => fogSc
   reflectionSamples:4, reflectionCap:"N.look.z",
 })
 export const reflectionVolume = ssrVolume({ wetMaterial: WET_ASPHALT })
+
+/**
+ * Weather (Backquote › Weather; all zero in Today). `N.storm`: lightning irradiance and the unit direction toward the
+ * strike. `N.stormB`: rain on glass, weather clock (s), sky glow toward the strike, shared sky active.
+ */
+const stormWgsl = /* wgsl */ `
+fn lotFlash(p: vec3f, n: vec3f) -> vec3f {
+  if (N.storm.x <= 0.0) { return vec3f(0.0); }
+  // A broad sky source: wrapped toward the strike, with the open sky's share from above.
+  let toward = max(dot(n, N.storm.yzw) * 0.75 + 0.25, 0.0);
+  let sky = 0.35 * max(n.y * 0.5 + 0.5, 0.0);
+  return vec3f(0.78, 0.83, 1.0) * N.storm.x * (toward + sky) * (1.0 - 0.88 * lotIndoor(p));
+}
+fn lotSkyFlash(ray: vec3f) -> vec3f {
+  if (N.stormB.z <= 0.0) { return vec3f(0.0); }
+  let c = max(dot(ray, normalize(vec3f(N.storm.y, max(N.storm.z, 0.15), N.storm.w))), 0.0);
+  let up = smoothstep(-0.02, 0.25, ray.y);
+  // Broad and faint, near the lit deck's own brightness: the deck hides the sky behind it, so a strong lobe there
+  // would outline the deck's edge as a hard slab.
+  return vec3f(0.62, 0.66, 1.0) * N.stormB.z * (pow(c, 3.0) * 0.7 + 0.3) * up;
+}
+// Rain on glass: rivulets wander down each pane and beads ride them; static droplets fill the gaps. Returns the
+// normal tilt (xy in the pane's frame) and coverage (z). Filtered out where a pane is under a pixel.
+fn lotRainGlass(p: vec3f, n: vec3f, t: f32, amount: f32, footprint: f32) -> vec3f {
+  if (amount <= 0.0 || abs(n.y) > 0.6) { return vec3f(0.0); }
+  let fade = 1.0 - smoothstep(0.004, 0.02, footprint);
+  if (fade <= 0.0) { return vec3f(0.0); }
+  let side = normalize(vec3f(-n.z, 0.0, n.x));
+  let u = dot(p, side); let v = p.y;
+  let col = floor(u / 0.045);
+  let h = fract(sin(col * 127.1 + 311.7) * 43758.5453);
+  var tilt = vec2f(0.0); var cover = 0.0;
+  if (h < 0.55 * amount + 0.1) {
+    let x = (col + 0.2 + 0.6 * h) * 0.045 + 0.006 * sin(v * 9.0 + h * 40.0) + 0.003 * sin(v * 23.0 + h * 13.0);
+    let d = (u - x) / 0.0035;
+    let wet = exp(-d * d);
+    let speed = 0.12 + 0.25 * h;
+    let bead = fract(v * 2.2 + t * speed * 2.2 + h * 7.0);
+    let b = smoothstep(0.0, 0.08, bead) * (1.0 - smoothstep(0.08, 0.2, bead));
+    tilt += vec2f(-d * wet * 0.35, b * wet * 0.5);
+    cover += wet * (0.35 + b);
+  }
+  let cell = floor(vec2f(u, v) / 0.018);
+  let r = fract(sin(dot(cell, vec2f(12.9898, 78.233))) * 43758.5453);
+  if (r < 0.32 * amount) {
+    let c = (fract(vec2f(u, v) / 0.018) - 0.5) / (0.18 + 0.2 * r);
+    let q = dot(c, c);
+    if (q < 1.0) { tilt += c * 0.5 * (1.0 - q); cover += (1.0 - q) * 0.6; }
+  }
+  return vec3f(tilt, min(cover, 1.0)) * amount * fade;
+}
+`
 
 const nightHooks: SceneHooks = {
   lampGrid: false,
@@ -38,8 +90,8 @@ const nightHooks: SceneHooks = {
     o.world+=vec3f(side.x*v.normal.x*v.normal.z*0.5,v.normal.y,side.y*v.normal.x*v.normal.z*0.5)*v.matAux.y;
     o.normal=normalize(vec3f(toCam.x,0.55,toCam.y));
   }`,
-  declarations: nightUniform + fogSceneWgsl + interiorWgsl + finishWgsl + wetSurfaceWgsl + "\nvar<private> wetFootprint: f32 = 0.0;",
-  bounce: "lotBounce(o.world,n)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
+  declarations: nightUniform + fogSceneWgsl + interiorWgsl + finishWgsl + wetSurfaceWgsl + stormWgsl + "\nvar<private> wetFootprint: f32 = 0.0;",
+  bounce: "lotBounce(o.world,n)", directional: "lotFlash(o.world,n)", lightLeak: "0.0", wallDirectScale: "1.0",
   ambient: "fogAmbient(n)*mix(1.0,0.12,lotIndoor(o.world))",
   material: /* wgsl */ `
     pbrRough=0.8;
@@ -56,7 +108,8 @@ const nightHooks: SceneHooks = {
       col=mix(vec3f(1.0,0.55,0.18),vec3f(1.0,0.66,0.26),core*0.25)*o.aux*11.0*N.streetB.z;
     }
     if(mat==3 && o.aux<0.0) {
-      col=fogSky(F.cam.xyz,ray);
+      if(N.stormB.w>0.5) { discard; }
+      col=fogSky(F.cam.xyz,ray)+lotSkyFlash(ray);
     } else {
       col=mix(fogApply(col,F.cam.xyz,o.world),col,lotIndoor(o.world)*lotIndoor(F.cam.xyz)*(1.0-N.interior.z));
     }
@@ -110,9 +163,23 @@ export const glassHooks: SceneHooks = { ...hooks,
 
 const glassKnobs = ["N.glassA", "N.glassB", "N.glassC"] as const
 /** Booth, entrance and interior glass: inner faces mirror local fixture light instead of the outdoor sky. */
-export const thinGlassHooksLot = thinGlassHooks(hooks, { knobs: glassKnobs,
+const thinGlass = thinGlassHooks(hooks, { knobs: glassKnobs,
   roomSide: "select(0.0, 1.0, (dot(n.xz, vec2f(9.0, 127.5) - p.xz) > 0.0 && abs(p.x - 9.0) < 1.9 && abs(p.z - 127.5) < 1.6) || lotIndoor(p+n*0.15)>0.5)",
   roomAlbedo: "vec3f(0.5, 0.45, 0.38)" })
+/** Rain running down the panes (Weather › Rain on glass): the water tilts the normal and thickens the pane a little. */
+export const thinGlassHooksLot: SceneHooks = { ...thinGlass,
+  fragmentStart: `${thinGlass.fragmentStart ?? ""}\nwetFootprint=max(length(dpdx(o.world)),length(dpdy(o.world)));`,
+  material: `${thinGlass.material}
+    if(N.stormB.x>0.0) {
+      let rg=lotRainGlass(o.world,normalize(o.normal),N.stormB.y,N.stormB.x,wetFootprint);
+      // Only walls of glass run with water (lotRainGlass returns 0 where |n.y| > 0.6); a flat pane has no side axis.
+      if(rg.z>0.0 && length(o.normal.xz)>1e-3) {
+        let gside=normalize(vec3f(-o.normal.z,0.0,o.normal.x));
+        n=normalize(n+gside*rg.x+vec3f(0.0,rg.y,0.0));
+        kitGlassAlpha=min(1.0,kitGlassAlpha+rg.z*0.06);
+      }
+    }`,
+}
 /** Facility lit windows as interior-mapped rooms behind front glass (Glass › Lit windows › Rooms). */
 // Ashwood shell.ts bays: 3 lights (70 mm bars), a transom 0.47 m above the pane on storeys 1–4.
 // Its panes sit 3 cm proud of the glow proxies, which take one offset: twice that keeps them in front.

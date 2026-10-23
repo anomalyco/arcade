@@ -2,8 +2,11 @@ import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * Zombie behaviour montage (AR-91): each staged behaviour (`behaviour.stage`) in the real game, then the same night

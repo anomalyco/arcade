@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
 import { DEFAULT_PACING_TUNING, type AIConfig } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, SPAWN_POINTS, type SurvivorSlot } from "../shared/coop-sim"
@@ -418,9 +417,21 @@ assert.equal(soloAfter.behindPlayerSpawns, 0, "Zero behind-player spawns allowed
 assert.equal(coopAfter.inViewSpawns, 0, "Zero in-view spawns allowed in 4p co-op")
 assert.equal(coopAfter.behindPlayerSpawns, 0, "Zero behind-player spawns allowed in 4p co-op")
 
-// Headless Metal WebGPU captures
+// The four deterministic ten-minute sweeps run in Bun. Pixels are an explicit follow-up.
+const simPayload = {
+  solo: { before: soloBefore, after: soloAfter },
+  coop4p: { before: coopBefore, after: coopAfter },
+}
+writeFileSync(resolve(out, "pacing-10m-proof.json"), JSON.stringify(simPayload, null, 2) + "\n")
+console.log(JSON.stringify(simPayload, null, 2))
+
+if (process.argv.includes("--capture")) {
+const { browserBudget } = await import("../../../scripts/browser-budget")
+// Optional headless Metal WebGPU captures.
 const build = Bun.spawnSync(["bun", "run", "build"], { cwd: game, stdout: "inherit", stderr: "inherit" })
 assert.equal(build.exitCode, 0)
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(game, "dist/arcade/outbreak")
 const fixture = Bun.serve({
@@ -592,4 +603,5 @@ try {
 } finally {
   await browser.close()
   fixture.stop(true)
+}
 }

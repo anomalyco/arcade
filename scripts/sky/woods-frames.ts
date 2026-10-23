@@ -1,8 +1,11 @@
 /** Actual woods frames, fixed cameras, headless and muted. Run under HiveMind browser admission. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 const out = resolve("captures/sky-baseline")
 await mkdir(out, { recursive: true })
 const url = process.argv[2] ?? "https://studio.taila8e7c7.ts.net:5298/arcade/woods/?bench=1"

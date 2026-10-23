@@ -1,7 +1,9 @@
 # Outbreak map
 
-Press **N** (physical `KeyN`, labelled with its QWERTY name on every layout) to open a full-screen survey sheet of
-what your survivor has seen. N or Esc closes it. The game keeps running while it is open, offline and in co-op:
+Press **M** (physical `KeyM`, labelled with its QWERTY name on every layout; `KeyN` also works) to open a full-screen
+survey sheet of what your survivor has seen. M or Esc closes it. Until the Oct 21 playtest the map was on N and M
+muted, and a player pressing M for the map muted the game instead; mute is now on the speaker button (Lab › Controls ›
+Map key "Today" puts it back). The game keeps running while it is open, offline and in co-op:
 movement keys still move you, and only the mouse over the sheet is taken, so you don't aim or fire at the map. Code:
 `games/outbreak/src/map/`. Proof: `games/outbreak/scripts/map-proof.ts`. Lab station: `outbreak-map`.
 
@@ -35,15 +37,15 @@ Two looks: Survey paper (default) and Noir survey (Lab › Map › Map look).
 
 | Action | Input |
 | --- | --- |
-| Open / close | `KeyN` (`Escape` also closes) |
+| Open / close | `KeyM` or `KeyN` (`Escape` also closes) |
 | Pan | Drag, or two-finger swipe on a trackpad. The sheet moves with the fingers in the system's scroll direction |
 | Zoom | Trackpad pinch (ctrl+wheel), mouse wheel, `+` / `−` keys, or the buttons; zoom keeps the point under the cursor |
 | Centre on you | The ◎ button |
 | Mark | Click; click a mark to clear it |
 
 A mouse wheel is told apart from a trackpad swipe by its deltas: line or page deltas, or whole steps of 50 px or more
-with no sideways part, zoom; smaller pixel deltas pan. In the Lab, a station embedding the game leaves N to the page
-(`<html data-page-keys="KeyN">`), so it opens the map rather than starting a voice note.
+with no sideways part, zoom; smaller pixel deltas pan. In the Lab, a station embedding the game leaves M and N to the
+page (`<html data-page-keys="KeyM KeyN">`), so they open the map rather than the Lab's own key.
 
 ## On-screen helpers (off by default)
 

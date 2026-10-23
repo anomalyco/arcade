@@ -3,7 +3,7 @@ import "@fontsource/ibm-plex-mono/400.css"
 import "@fontsource/ibm-plex-mono/500.css"
 import { EQUIP_IDS, type Equip, GUN_IDS, type Gun } from "../shared/config"
 import type { MapChoice } from "../shared/maps"
-import { cleanName } from "../shared/protocol"
+import { cleanName, NAME_MAX } from "../shared/protocol"
 import { modeChoices, type ModeId, modeOf } from "../shared/sim/modes"
 import { Sound } from "./audio/sound"
 import { Game, SandboxSession } from "./game/game"
@@ -13,18 +13,18 @@ import { LocalSession, type Session } from "./game/session"
 import { Camera } from "./render/camera"
 import { Renderer } from "./render/renderer"
 import { Hud } from "./ui/hud"
-import { Menus } from "./ui/menus"
+import { LandingPicks, Menus } from "./ui/menus"
 import { ModeHud } from "./ui/modes-hud"
-import { DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
+import { cameraShakeSettings, DebugOverlay, juiceSettings, LOOK_LABELS } from "./ui/debug-overlay"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
-import { GameQuality } from "@arcade/kit/client/quality"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
+import { createGameShell, createShellQuality, type GameShell } from "@arcade/kit/shell"
 import { BLACKOUT_QUALITY } from "./quality"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import { Rng } from "../shared/rng"
 import { SpellHud } from "./ui/spell-hud"
 
-const NAME_KEY = "blackout.name"
 const GUN_KEY = "blackout.gun"
 const EQUIP_KEY = "blackout.equip"
 
@@ -59,15 +59,19 @@ async function main() {
   const automatedLook = params.get("mux") === "1" || params.has("bench") || params.has("manualVideo")
   if (automatedLook && params.get("look") === "0") for (const key of Object.keys(LOOK_LABELS) as (keyof typeof LOOK_LABELS)[]) settings[key] = false
   if (params.has("monitors")) settings.monitors = params.get("monitors") === "1"
-  const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) }, [], sound)
-  // Resolution, bloom and smoke volumes follow the quality tier (Auto by default; View → Quality in the Lab).
-  const quality = new GameQuality({
+  const debug = new DebugOverlay(settings, params, () => { input.release(); input.forward({ type: "mux-release" }) })
+  // Resolution, bloom and smoke volumes follow the quality tier: Auto starts High and steps down only on slow frames (Settings).
+  let shell: GameShell | null = null
+  const quality = createShellQuality({
     game: "blackout",
     tiers: BLACKOUT_QUALITY,
     params,
     gpuMs: () => telemetry.gpuMs ?? renderer.lastGpuMs,
-    onChange: (tier) => renderer.setBloomLevels(tier.bloomLevels),
-  }).addTo(debug).expose()
+    onChange: (tier) => {
+      renderer.setBloomLevels(tier.bloomLevels)
+      shell?.settings.changed()
+    },
+  }).expose()
   renderer.setBloomLevels(quality.profile.bloomLevels)
   input.onWheel = (delta) => {
     if (game?.snap?.spells) { if (delta) game.selectedSpell = game.selectedSpell === "moon" ? "necromancy" : "moon"; return }
@@ -82,7 +86,6 @@ async function main() {
 
   const begin = (name: string, s: (name: string) => Session) => {
     const clean = cleanName(name)
-    localStorage.setItem(NAME_KEY, clean)
     sound.start()
     session?.close()
     input.release()
@@ -91,18 +94,23 @@ async function main() {
     menus.hide()
     hud.show(true)
   }
-  const fatal = (message: string) => {
+  const stop = () => {
     session?.close()
     session = null
     game = null
+    scores = false
     hud.show(false)
-    history.replaceState(null, "", location.pathname)
-    menus.landing(null, message)
+    menus.hide()
+  }
+  const fatal = (message: string) => {
+    shell?.flow.leave()
+    stop()
+    shell?.lobby?.setRoom(null)
+    shell?.lobby?.setConnection("offline", message)
   }
   const base = location.pathname.replace(/[^/]*$/, "")
   const api = (path: string) => fetch(`${base}api/${path}`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
   const enter = (name: string, room: string, priv = false, mode: ModeId | null = null, maps: MapChoice | null = null) => {
-    history.replaceState(null, "", `?room=${room}`)
     begin(name, (n) => new NetSession(room, n, gun, equip, fatal, priv, mode, maps))
   }
   const vote = (mode: ModeId) => session?.send({ type: "vote", mode })
@@ -119,27 +127,78 @@ async function main() {
     cam.update(innerWidth / innerHeight)
   }
   let scores = false
-  const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
-  const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
-    quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
-    practice: (name, mode) => begin(name, (n) => new LocalSession(n, gun, equip, mode)),
-    sandbox,
-    create: (name, mode, maps) => api("create").then((r) => enter(name, r.room, true, mode, maps), failed),
-    join: (name, room) => enter(name, room),
+  const menus = new Menus(menuEl, {
     vote,
     team: (id, team) => session?.send({ type: "team", id, team }),
     shuffle: () => session?.send({ type: "shuffle" }),
     maps: (maps) => session?.send({ type: "host", action: "maps", maps }),
     host: (mode, newFloor) => session?.send(mode ? { type: "host", action: "mode", mode, newFloor } : { type: "host", action: "reset", newFloor }),
   })
-  if (!params.has("practice") && params.get("peaceful") !== "1" && params.get("sandbox") !== "1" && !input.mux) fetch(`${base}api/stats`)
+  // Back from a version reload: straight into the same room.
+  const rejoin = sessionStorage.getItem(REJOIN_KEY)
+  sessionStorage.removeItem(REJOIN_KEY)
+  const direct = params.get("peaceful") === "1" || params.get("sandbox") === "1" || input.mux || params.has("practice") || Boolean(rejoin && rejoin === roomParam)
+  // The title, lobby, Escape menu and Settings are the kit game shell; mode and map picks sit in its title slot.
+  // Creating a room passes the picks to the server with the first join.
+  let creating = false
+  const picks = new LandingPicks(() => {
+    sandbox(gameShell.lobby!.playName)
+    gameShell.flow.play()
+  })
+  const gameShell = createGameShell({
+    game: "blackout", title: "BLACKOUT", subtitle: "Firefights at night: office floors and downtown streets.",
+    quickLabel: "Quick join", soloLabel: "Bot practice", friendsNote: "a private room",
+    askName: true, quality, channels: ["master", "effects", "ambience"],
+    hidden: input.mux ? true : undefined,
+    keysBlocked: () => debug.hasFocus(),
+    start: direct ? "playing" : "title",
+    controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Mouse0", "Shoot"), keyPromptHtml("Mouse2", "Look"), keyPromptHtml("Tab", "Scores"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
+    lobby: {
+      friends: true, quick: true, maxName: NAME_MAX, fallbackName: "stranger",
+      createRoom: () => {
+        creating = true
+        return api("create").then((r) => r.room)
+      },
+      onSolo: (name) => {
+        begin(name, (n) => new LocalSession(n, gun, equip, picks.mode))
+        gameShell.flow.play()
+      },
+      onJoin: (room, name) => {
+        enter(name, room, creating, creating ? picks.mode : null, creating ? picks.maps : null)
+        creating = false
+        gameShell.flow.play()
+      },
+    },
+    onLeave: () => {
+      stop()
+      gameShell.lobby!.setRoom(null)
+    },
+  })
+  shell = gameShell
+  // Keys and the mouse drive only in play: not behind the title or menu, nor while the Lab panel holds input.
+  input.blocked = () => !gameShell.playing || debug.holdsInput
+  gameShell.flow.subscribe(() => {
+    if (!gameShell.playing) input.release()
+  })
+  const lobby = gameShell.lobby!
+  gameShell.view?.titleSlot.append(picks.el)
+  // The shell owns volume, mute and Reduce camera motion (the shake settings' switch).
+  const syncSound = () => {
+    sound.setVolumes(gameShell.settings.volumes)
+    sound.setMuted(gameShell.settings.muted)
+    cameraShakeSettings.reduceMotion = gameShell.settings.reduceMotion ? 1 : 0
+    debug.refresh()
+  }
+  gameShell.settings.subscribe(syncSound)
+  syncSound()
+  if (!direct) fetch(`${base}api/stats`)
     .then((r) => r.json() as Promise<{ players: number; games: number }>)
-    .then((s) => menus.stats(s.players, s.games))
+    .then((s) => picks.stats(s.players, s.games))
     .catch(() => {})
   input.onKey = (code) => {
     if (code === "Backquote") debug.toggle()
+    if (!gameShell.playing) return
     if (code === "KeyB" && params.get("peaceful") !== "1" && session instanceof SandboxSession) session.toggleBots()
-    if (code === "KeyM") { sound.setMuted(!sound.muted); debug.refresh() }
     // T keeps the scoreboard open (the host picks teams there) until pressed again.
     if (code === "KeyT") scores = !scores
     // Between floors the number keys vote for the next mode.
@@ -167,14 +226,13 @@ async function main() {
       session.send({ type: "equip", equip })
     }
   }
-  if (!input.mux && params.get("peaceful") !== "1" && !params.has("practice")) menus.landing(roomParam)
-  // Back from a version reload: straight into the same room.
-  const rejoin = sessionStorage.getItem(REJOIN_KEY)
-  sessionStorage.removeItem(REJOIN_KEY)
-  if (rejoin && rejoin === roomParam) enter(localStorage.getItem(NAME_KEY) ?? "", rejoin)
+  if (rejoin && rejoin === roomParam) {
+    enter(lobby.name, rejoin)
+    lobby.setRoom(rejoin)
+  }
   // Dev and screenshots: a local match against bots, no server.
-  if (params.get("peaceful") === "1" || params.get("sandbox") === "1" || input.mux) sandbox(localStorage.getItem(NAME_KEY) ?? "you")
-  else if (params.has("practice")) begin(localStorage.getItem(NAME_KEY) ?? "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa", params.get("map")))
+  if (params.get("peaceful") === "1" || params.get("sandbox") === "1" || input.mux) sandbox(lobby.name || "you")
+  else if (params.has("practice")) begin(lobby.name || "you", (n) => new LocalSession(n, gun, equip, modeOf(params.get("mode")) ?? "ffa", params.get("map")))
 
   let blackoutBlastTimer = 0
   registerGameCommands(commands => {
@@ -275,13 +333,16 @@ async function main() {
     last = now
     const w = innerWidth
     const h = innerHeight
-    if (manual) quality.pause()
+    gameShell.tick(now)
+    if (manual || !gameShell.playing) quality.pause()
     else quality.frame(now)
     if (quality.fit(canvas, w, h)) renderer.resize(canvas.width, canvas.height)
     if (game && session) {
       cam.pitch = game.snap?.spells ? settings.wizardPitch : 1.1
-      input.enabled = game.snap?.phase === "play"
-      if (!input.mux) game.update(dt, input, cam, w, h, now)
+      // Paused bot practice and the sandbox stop the clock; a room keeps playing behind the menu.
+      const frozen = !gameShell.playing && !session.room
+      input.enabled = gameShell.playing && game.snap?.phase === "play"
+      if (!input.mux && !frozen) game.update(dt, input, cam, w, h, now)
       const body = game.body ? game.drawn : null
       const alive = game.alive
       // Out for the round in search and destroy: watch a teammate.
@@ -298,14 +359,18 @@ async function main() {
       const lz = lead ? lead.y : alive && body ? Math.max(-cap * 0.7, Math.min(cap * 0.7, (game.cursor.y - body.y) * k)) : 0
       cam.follow(fx, fz, input.mux ? 0 : lx, input.mux ? 0 : lz, dt, !body, alive && !!game.riding)
       if (input.mux && body) { cam.snap(body.x, body.y); cam.dist = 24 + cam.zoomOffset }
-      const scene = game.build(cam, w, h, manual ? manualRenderDt : dt)
+      const scene = game.build(cam, w, h, manual ? manualRenderDt : frozen ? 0 : dt)
       if (!quality.profile.volumes) scene.smokeEnabled = false
       renderer.render(scene)
       manualRenderDt=0
-      hud.update(game, cam, w, h, input.mouse, session.status())
+      const status = session.status()
+      // The HUD shows the idle warning itself; the shell's pill shows connection trouble.
+      const idle = status && /idle/i.test(status) ? status : null
+      if (session.room) lobby.setSocketStatus(idle ? null : status)
+      hud.update(game, cam, w, h, input.mouse, idle)
       spellHud.draw(game)
       modeHud.update(game, cam, w, h)
-      menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab") || scores, (id) => game!.colorOf(id))
+      menus.update(game.snap, game.roster, session.myId, session.room, gameShell.playing && (input.held("Tab") || scores), (id) => game!.colorOf(id))
       telemetry.enabled = debug.visible || input.mux || quality.wantsGpuTiming
       const chunks = renderer.drawnChunks
       const perf = debug.sample(now, elapsed, telemetry, chunks, game.lightCount)

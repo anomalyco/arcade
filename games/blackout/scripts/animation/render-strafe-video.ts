@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "../compare"
 import { parseArgs, repoRoot } from "./common"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Top-down Outbreak clip of the survivor circle-strafing a target while aiming at it (muted).
 // Capture each checkout's frames, then stitch before | after:
@@ -74,7 +77,7 @@ if (!flags.has("stitch")) {
     await server.close()
   }
   console.log(`Captured ${FRAMES} frames in ${framesDir(tag)}`)
-  process.exit(0)
+  await budget.exit(0)
 }
 
 for (const t of ["before", "after"]) if (!existsSync(framesDir(t))) throw new Error(`Missing ${framesDir(t)}; capture it first`)
@@ -105,8 +108,8 @@ for i in range(n):
     out.save(os.path.join(out_dir, f"{i:04d}.png"))
 `
 const py = spawnSync("python3", ["-c", stitch, framesDir("before"), framesDir("after"), pairsDir, String(count)], { stdio: "inherit" })
-if (py.status !== 0) process.exit(py.status ?? 1)
+if (py.status !== 0) await budget.exit(py.status ?? 1)
 const mp4 = join(OUT_DIR, "strafe-circle-topdown.mp4")
 const ff = spawnSync("ffmpeg", ["-y", "-framerate", "60", "-i", join(pairsDir, "%04d.png"), "-an", "-c:v", "h264_videotoolbox", "-b:v", "5M", "-pix_fmt", "yuv420p", mp4], { stdio: "inherit" })
-if (ff.status !== 0) process.exit(ff.status ?? 1)
+if (ff.status !== 0) await budget.exit(ff.status ?? 1)
 console.log(`Saved ${mp4}`)

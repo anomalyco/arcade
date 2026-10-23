@@ -1,7 +1,7 @@
 import { createRemoteControls, type ChangeMeta, type ControlDescriptor, type HostHistory, type PanelKeys, type RemoteControls, type StoragePort, type Value } from "@arcade/knobs"
 import { mountPanel, type Panel } from "@arcade/knobs/panel"
 import { commandsFrom, type Command, type CommandsFromOptions } from "@arcade/knobs/ui"
-import { isRampControl, type LabControl, type LabNavigation, type LabRow, type LabSettings, type LabTab, type LabValue } from "./lab-navigation"
+import { holdsValue, isRampControl, type LabButton, type LabControl, type LabNavigation, type LabRow, type LabSettings, type LabTab, type LabValue } from "./lab-navigation"
 import { describe, fromKnobs, isSpawnTime, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
 
 /**
@@ -90,6 +90,8 @@ export class LabKnobsView {
   private store: RemoteControls
   private panel: Panel
   private rows = new Map<string, Row>()
+  /** Buttons of the `buttons` rows on show, by item key (knobs' toolbar reports the item pressed). */
+  private buttons = new Map<string, { row: Row; button: LabButton }>()
   private shown: Record<string, Value> = {}
   private shape = ""
   private mixed = ""
@@ -252,6 +254,13 @@ export class LabKnobsView {
     return this.options.tabs?.length ? this.panel.tab() : undefined
   }
 
+  /** Shows a tab by its label (a view with tabs); false when it has no such tab. */
+  selectTab(label: string): boolean {
+    if (!this.options.tabs?.some(t => t.label === label)) return false
+    if (this.panel.tab() !== label) this.panel.tab(label)
+    return true
+  }
+
   /** Whether a knobs gesture (a drag, a key held on a slider, an inline number edit) is in progress. */
   get interacting() {
     const active = document.activeElement
@@ -305,7 +314,7 @@ export class LabKnobsView {
 
   /** The knobs value of a row: its setting, or `[low, high]` for a pair. */
   private value(row: Row, settings: Readonly<LabSettings>): Value | undefined {
-    if (row.control.type === "action") return undefined
+    if (!holdsValue(row.control)) return undefined
     const low = toKnobs(row.control, settings[row.control.key])
     if (!row.upper) return low
     const high = toKnobs(row.upper, settings[row.upper.key])
@@ -336,6 +345,7 @@ export class LabKnobsView {
     this.shape = shape
     this.rows = kept
     this.aliases = aliases
+    this.buttons = new Map([...kept.values()].flatMap(row => row.control.type === "buttons" ? row.control.items.map(button => [button.key, { row, button }] as const) : []))
     this.shown = {}
     for (const [key, row] of kept) {
       const value = this.value(row, nav.settings)
@@ -420,7 +430,7 @@ export class LabKnobsView {
   /** knobs skips disabled rows and then reports the rest key by key: they join one transaction. */
   private onReset(target: { key?: string; group?: string }) {
     const nav = this.host.navigation
-    const rows = [...this.rows.values()].filter(r => r.control.type !== "action" && (target.key ? r.control.key === target.key : target.group ? r.group === target.group : true))
+    const rows = [...this.rows.values()].filter(r => holdsValue(r.control) && (target.key ? r.control.key === target.key : target.group ? r.group === target.group : true))
     if (!rows.length) return
     this.host.begin(`Reset ${target.key ? (rows[0]!.upper ? rows[0]!.control.pair!.label : rows[0]!.control.label) : target.group ?? "all"}`)
     for (const r of rows) {
@@ -433,6 +443,8 @@ export class LabKnobsView {
   }
 
   private async onAction(key: string) {
+    const pressed = this.buttons.get(key)
+    if (pressed) return this.onButton(pressed.button)
     const c = this.rows.get(key)?.control
     if (!c || c.type !== "action") return
     const button = this.rowElement(key)?.querySelector<HTMLButtonElement>("button") ?? document.createElement("button")
@@ -442,6 +454,17 @@ export class LabKnobsView {
     catch (error) { console.error(error); button.textContent = "Failed" }
     finally {
       button.disabled = false
+      this.host.end()
+      this.host.edited(this)
+    }
+  }
+
+  private async onButton(button: LabButton) {
+    if (button.enabled?.(this.host.navigation.settings) === false) return
+    this.host.begin(button.label)
+    try { await button.run() }
+    catch (error) { console.error(error) }
+    finally {
       this.host.end()
       this.host.edited(this)
     }
@@ -463,7 +486,7 @@ export class LabKnobsView {
   private copyText() {
     const nav = this.host.navigation
     const out: Record<string, unknown> = {}
-    for (const [key, row] of this.rows) if (row.control.type !== "action") {
+    for (const [key, row] of this.rows) if (holdsValue(row.control)) {
       out[key] = nav.settings[key]
       if (row.upper) out[row.upper.key] = nav.settings[row.upper.key]
     }
@@ -477,7 +500,7 @@ export class LabKnobsView {
     const row = this.rows.get(key)
     if (!row) return null
     const spawn = isSpawnTime(row.control)
-    const pin = this.host.pin && row.control.type !== "action" ? this.host.pin : null
+    const pin = this.host.pin && holdsValue(row.control) ? this.host.pin : null
     if (!spawn && !pin) return null
     const box = document.createElement("span")
     box.className = "lab-knobs-accessory"

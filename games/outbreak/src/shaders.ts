@@ -55,6 +55,10 @@ export const outbreakSceneHooks: SceneHooks = {
       let lb = L.cone.w - 7.0;
       att = power * L.cone.z * win * streetProfile(-ldir, L.cone.xy, OL.street0, OL.street1.y) / (d3 * d3 + lb * lb);
       if (att <= 0.0035) { continue; }
+    } else if (L.cone.w > 2.5) {
+      // A teammate's flashlight (teammates/beams.ts): the same beam about their own lens axis.
+      att = mateBeamAttenuation(ldir, d3, power, L.cone.xy, L.extra.x, r, L.cone.z);
+      if (att <= 0.02) { continue; }
     } else if (L.cone.w > 1.5) {
       att = flashAttenuation(ldir, d3, power);
       if (att <= 0.02) { continue; }
@@ -86,7 +90,24 @@ export const outbreakSceneHooks: SceneHooks = {
       }
       if (att <= 0.0035) { continue; }
     }`,
-  lightAccumulate: "if (L.cone.w > 1.5 && L.cone.w < 2.5) { outbreakFlashIrr = att * diffuse * vis; }",
+  // Teammates' beams (cone.w 3) add their irradiance and, for the shaft in the air, the closed form of looking down
+  // through their cone (as evalFlashlight does for the local beam), in the beam's own colour, stopped where walls shadow
+  // it. Only front-facing surfaces below the eaves take the shaft: the loop skips shadows on back faces, so walls and
+  // roofs facing away would otherwise glow through.
+  lightAccumulate: `if (L.cone.w > 1.5 && L.cone.w < 2.5) { outbreakFlashIrr = att * diffuse * vis; }
+    else if (L.cone.w > 2.5 && L.cone.w < 3.5) {
+      outbreakMateIrr += att * diffuse * vis;
+      let mShaft = mateShaft(L.cone.w);
+      let mRel = world.xz - L.pos.xz;
+      let mAlong = dot(mRel, L.cone.xy);
+      if (mShaft > 0.001 && mAlong > 0.0 && diffuse > 0.0001 && world.y < 2.8) {
+        let mCos = cos(L.cone.z);
+        let mc = mAlong * inverseSqrt(max(dot(mRel, mRel), 1e-6));
+        let mCone = smoothstep(mix(mCos, 1.0, 0.1), mix(mCos, 1.0, 0.75), mc);
+        let mFade = smoothstep(0.05, 0.45, mAlong) * clamp(1.0 - mAlong / r, 0.0, 1.0);
+        outbreakMateAir += L.color.rgb * (mShaft * power * mCone * mFade * vis / (1.0 + mAlong * 1.4));
+      }
+    }`,
   // Soft character shadows (AR-113, soft-shadows/): each light's capsule visibility and the contact shadow as AO.
   lightVisibility: "vis *= capsuleLightVis(i);",
   occlusion: "capsuleOcclusion",
@@ -114,7 +135,7 @@ export const outbreakSceneHooks: SceneHooks = {
       * select(1.0, 0.68, n.y < -0.5 && o.world.y > 2.2);
     albedo *= vTone;
     outbreakAlbedo = albedo;
-    outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * outbreakFlashIrr) * GAIN;`,
+    outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * (outbreakFlashIrr + outbreakMateIrr)) * GAIN;`,
   fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); outbreakPlanJ = vec4f(dWorldX.xz, dWorldY.xz); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl}`,
   vertex: /* wgsl */ `
   if ((v.matAux.x > 21.5 && v.matAux.x < 22.5) || (v.matAux.x > 23.5 && v.matAux.x < 24.5 && v.matAux.y > ${FOLIAGE_LIMB_AUX - 0.5})) {
@@ -563,7 +584,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       }
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
-    col += beamAdd * outbreakSeen * select(1.0, 0.16, mat == 12);
+    col += (beamAdd + outbreakMateAir * 0.5) * outbreakSeen * select(1.0, 0.16, mat == 12);
     ${outbreakWetSheenWgsl}
     if (mat == 0 || mat == 3 || mat == 10 || mat == 12 || (mat == 20 && nightLamps > 0.2)) {
       // Soft shoulder roll-off so near-lens flashlight glare does not bleach the survivor, props, or dark macadam asphalt

@@ -1,5 +1,5 @@
 import { registerOutbreakClientFeature } from "../feature-registry"
-import { DEFAULT_MIST_SETTINGS, mistControls } from "./settings"
+import { DEFAULT_MIST_SETTINGS, mistControls, mistOn, resolveMist } from "./settings"
 
 /**
  * Low mist in yards and gutters (Lab › Look · Low mist, Today one setting away): the kit fog bank on the shared fog
@@ -10,5 +10,8 @@ export const outbreakMistFeature = registerOutbreakClientFeature({
   order: 33,
   settingsGroup: { subsystem: "mist", defaults: DEFAULT_MIST_SETTINGS },
   labControls: () => mistControls,
-  harnessState: (host) => ({ mist: { on: host.settings.mist.mistStyle > 0.5 } }),
+  harnessState: (host) => {
+    const s = resolveMist(host.settings.mist, host.qualityController.getProfile(), { ...host.settings.mist })
+    return { mist: { on: mistOn(s), downscale: s.mistDownscale } }
+  },
 })

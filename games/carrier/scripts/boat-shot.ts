@@ -8,9 +8,13 @@
 //   mp: the real game, two pages in one fresh room on opposite teams: A launches the boat from DEPLOY (B
 //   watches the crane), drives at B's carrier and strafes it (B's hull drops, B sees the boat and its tracers, Tab lists
 //   A as BOAT), then B's Hornet strafes the boat until it sinks; A is back at the helm and the boat recharges.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -741,4 +745,4 @@ for (const name of only) {
 await browser.close()
 if (logs.length) console.log(`\n${[...new Set(logs)].slice(0, 30).join("\n")}`)
 console.log(failures ? `\n${failures} FAILED` : "\nall ok")
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

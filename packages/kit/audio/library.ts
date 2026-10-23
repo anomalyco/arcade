@@ -13,6 +13,7 @@ export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
   | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "radio" | "vehicle"
   | "flare" | "dog" | "creature" | "crowd" | "cooking" | "bow" | "weather"
+  | "aircraft" | "missile" | "bomb" | "explosion" | "ship"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
@@ -77,6 +78,7 @@ const step = (surface: string, gait: "walk" | "run") =>
 const OUTBREAK = ["outbreak"] as const
 const BRAWL = ["brawl"] as const
 const ARCHERS = ["archers"] as const
+const LOT = ["lot"] as const
 
 const SURFACE_PHRASE: Record<SfxSurface, string> = { concrete: "a gritty concrete sidewalk", grass: "short dry grass and soft earth", wood: "old wooden floorboards inside a house" }
 
@@ -159,6 +161,30 @@ const CRAFT: Record<CraftKind, { label: string; loop: string; done: string }> = 
     done: `Finishing a spiked club: one last heavy hammer blow driving a nail home into wood, ringing briefly. Short. ${NO_SPEECH}`,
   },
 }
+
+
+/** Carrier's recorded slots (`games/carrier/src/audio/sfx-slots.ts`) as library ids, reusing in place the takes Carrier
+ *  plays with its shipped picks (`public/sfx/picks.json`: the pick, or a pooled slot's whole pool). Carrier keeps its own
+ *  spatial chain (`sfx-bank.ts`); the library entries let the Lab and other games audition and play the same files.
+ *  `games/carrier/tests/sfx-library.test.ts` keeps the two in step. */
+const CARRIER = ["carrier"] as const
+const carrierTakes = (
+  id: string, label: string, group: SfxGroup, bus: MixCategory, slot: string, takes: readonly number[],
+  o: { target: number; loop?: boolean; range: { ref: number; max: number }; wet: number; durationRange: readonly [number, number]; cooldown?: number },
+): SfxSpec => ({
+  id, label, group, bus, variants: takes.length, ...(o.loop ? { loop: true } : {}), target: o.target, gain: 1,
+  pitchJitter: o.loop ? 0 : 0.02, gainJitter: o.loop ? 0 : 0.05, ...(o.cooldown ? { cooldown: o.cooldown } : {}),
+  range: o.range, wet: o.wet, usedBy: CARRIER, durationRange: o.durationRange,
+  reuse: takes.map(t => ({
+    path: `games/carrier/public/sfx/v3/${slot}-${t}.ogg`,
+    license: "ElevenLabs commercial sound-generation license (Anomaly)",
+    provenance: `Carrier's "${slot}" take ${t} (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)`,
+  })),
+})
+const ALL4 = [1, 2, 3, 4] as const
+const near = { ref: 20, max: 400 }
+const far = { ref: 60, max: 3000 }
+const bed = { ref: 0, max: 0 }
 
 export const SFX_SPECS: readonly SfxSpec[] = [
   // Weapons
@@ -572,6 +598,78 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     generate: { prompt: `Distant thunder: a long low rolling rumble of thunder far away across the sky, slowly swelling and fading. Outdoors, deep and soft, no sharp crack. ${NO_SPEECH}`, duration: 7, candidates: 5, influence: 0.55 },
   },
 
+  // Lot storm (Backquote › Weather): thunder by distance, positional rain beds, wind and edge drips
+  {
+    id: "weather.thunder.close", label: "Thunder, close strike", group: "weather", bus: "ambience", variants: 3, target: -16, gain: 0.9, pitchJitter: 0.03, gainJitter: 0.06,
+    cooldown: 0.3, maxVoices: 2, priority: 85, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [3, 9.5],
+    generate: { prompt: `A lightning strike very close by, a hundred metres away: an instant sharp tearing crack like ripping canvas and splitting wood, then one heavy concussive boom that rolls away and rumbles for several seconds. Outdoors at night in light rain, huge, powerful and natural. ${NO_SPEECH}`, duration: 8, candidates: 5, influence: 0.6 },
+  },
+  {
+    id: "weather.thunder.mid", label: "Thunder, mid distance", group: "weather", bus: "ambience", variants: 3, target: -20, gain: 0.85, pitchJitter: 0.04, gainJitter: 0.08,
+    cooldown: 0.4, maxVoices: 2, priority: 75, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [4, 10],
+    generate: { prompt: `Thunder from a lightning strike about a kilometre away: a crack softened and dulled by distance, then a long rolling rumble that grumbles and echoes off hills and buildings and fades slowly. Outdoors at night. ${NO_SPEECH}`, duration: 9, candidates: 5, influence: 0.55 },
+  },
+  {
+    id: "weather.thunder.far", label: "Thunder, far roll", group: "weather", bus: "ambience", variants: 3, target: -24, gain: 0.8, pitchJitter: 0.05, gainJitter: 0.1,
+    cooldown: 0.5, maxVoices: 2, priority: 65, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [4, 10],
+    generate: { prompt: `Very distant thunder many kilometres away: only a low soft muffled rolling rumble, no crack at all, deep and dark, swelling and fading slowly across the horizon. ${NO_SPEECH}`, duration: 8, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "weather.thunder.sky", label: "Thunder, cloud to cloud", group: "weather", bus: "ambience", variants: 2, target: -21, gain: 0.85, pitchJitter: 0.04, gainJitter: 0.08,
+    cooldown: 0.5, maxVoices: 2, priority: 70, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [6, 13],
+    generate: { prompt: `Cloud-to-cloud lightning high overhead: a long continuous grumbling thunder that crackles faintly and rolls across the whole sky from one side to the other for many seconds, no single sharp crack. ${NO_SPEECH}`, duration: 12, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "weather.rain.asphalt", label: "Rain on open asphalt", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Field recording of steady rain falling on an open asphalt parking lot at night: an even fine hiss of drops on wet pavement and shallow puddles. No roofs, no gutters, no trees, no thunder, no wind, no traffic. Close and detailed. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.rain.car", label: "Rain on a car roof", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 1.5, max: 10 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Rain falling on the metal roof and bonnet of a parked car, recorded close from outside the car: bright dense pinging patter on sheet metal and on the windscreen glass, steady. No thunder, no wind, no engine. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.rain.hut", label: "Rain on a booth roof", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 2, max: 12 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Rain drumming on the flat sheet-metal roof of a tiny guard booth, heard standing right under its edge: hollow resonant metallic drumming, and water running off the roof edge and splattering onto pavement. Steady, no thunder. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.rain.glass", label: "Rain from inside, on glass", group: "weather", bus: "ambience", variants: 1, loop: true, target: -32, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Rain heard from inside a quiet building lobby: drops tapping and streaming on a large plate-glass window, a muffled drumming on the flat roof above, the outdoor rain dulled by the glass. Calm, intimate, close to the window. No thunder, no voices, no air conditioning hum. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.gutter", label: "Downpipe gush", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 1.5, max: 14 }, wet: 0, usedBy: LOT, durationRange: [8, 17],
+    generate: { prompt: `Rainwater gushing out of a metal downpipe onto concrete at the corner of a building: a steady splashing, gurgling stream with trickles and spatter, recorded close. No thunder. ${NO_SPEECH}`, duration: 15, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.wind.moan", label: "Wind around the building", group: "weather", bus: "ambience", variants: 1, loop: true, target: -32, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Storm wind moaning and whistling around the corners of a large concrete building at night: low hollow howling that rises and falls in gusts. No rain, no thunder. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.wind.gust", label: "Gust through pines", group: "weather", bus: "ambience", variants: 3, target: -26, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.12,
+    cooldown: 2, maxVoices: 2, steal: "drop", range: { ref: 0, max: 0 }, wet: 0.1, usedBy: LOT, durationRange: [2.5, 7],
+    generate: { prompt: `A single strong gust of wind sweeping through tall pine trees at night: a rising rush of needles and swaying branches that peaks and then eases off. Natural, outdoors, no rain. ${NO_SPEECH}`, duration: 6, candidates: 5, influence: 0.55 },
+  },
+  {
+    id: "weather.fence.rattle", label: "Fence and sign rattle", group: "weather", bus: "foley", variants: 3, target: -26, gain: 0.75, pitchJitter: 0.06, gainJitter: 0.12,
+    cooldown: 1.5, maxVoices: 2, steal: "drop", range: { ref: 3, max: 30 }, wet: 0.08, usedBy: LOT, durationRange: [0.8, 4],
+    generate: { prompt: `A loose chain-link fence and a metal sign rattling and clanking in a sudden gust of wind outdoors: a short burst of metallic shaking that settles. ${NO_SPEECH}`, duration: 3, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "weather.glass.rattle", label: "Thunder rattling glass", group: "weather", bus: "foley", variants: 3, target: -24, gain: 0.75, pitchJitter: 0.05, gainJitter: 0.1,
+    cooldown: 1, maxVoices: 2, steal: "drop", range: { ref: 3, max: 20 }, wet: 0.05, usedBy: LOT, durationRange: [0.6, 3.2],
+    generate: { prompt: `The shock wave of a close thunderclap rattling a large plate-glass window and the body panels of a parked car: a brief low buzzing vibration and glassy rattle that dies away quickly. No thunder itself. ${NO_SPEECH}`, duration: 2.5, candidates: 4, influence: 0.6 },
+  },
+  {
+    id: "weather.drip", label: "Edge drip into puddle", group: "weather", bus: "foley", variants: 6, target: -30, gain: 0.7, pitchJitter: 0.12, gainJitter: 0.25,
+    cooldown: 0.05, maxVoices: 4, steal: "drop", range: { ref: 1, max: 9 }, wet: 0.05, usedBy: LOT, durationRange: [0.08, 0.8],
+    generate: { prompt: `Single large water drops falling from a roof edge into a shallow puddle on concrete, one at a time with clear silent gaps between them: plinks, plops and small splashes, close and dry. No rain. ${NO_SPEECH}`, duration: 10, candidates: 2, influence: 0.55, slice: { minGapSeconds: 0.35, maxSeconds: 0.6 } },
+  },
+
   // Party brawler powers
   {
     id: "creature.bees.swarm", label: "Bee swarm", group: "creature", bus: "foley", variants: 3, target: -24, gain: 0.8, pitchJitter: 0.08, gainJitter: 0.1,
@@ -685,6 +783,46 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     cooldown: 0.05, range: { ref: 0, max: 0 }, wet: 0, usedBy: ["carrier", "outbreak"], durationRange: [0.03, 1],
     reuse: [{ path: "games/carrier/public/sfx/v3/ui-click-1.ogg", license: "ElevenLabs commercial sound-generation license (Anomaly)", provenance: "Carrier's picked interface click take (eleven_text_to_sound_v2)" }],
   },
+
+  // Carrier: carrier ops, weapons, explosions, ships, sea and weather (see `carrierTakes`)
+  carrierTakes("aircraft.carrier.trap", "Arrested landing", "aircraft", "foley", "trap", [4], { target: -14, range: near, wet: 0.25, durationRange: [4, 5.2] }),
+  carrierTakes("impact.bullet.water", "Rounds into water", "impact", "impact", "impact-water", [1, 2, 3], { target: -16, range: near, wet: 0.3, durationRange: [1.5, 2.2], cooldown: 0.15 }),
+  carrierTakes("impact.cannon.metal", "Cannon rounds into metal", "impact", "impact", "impact-metal", [1, 2, 3], { target: -16, range: near, wet: 0.3, durationRange: [1.5, 2.2], cooldown: 0.12 }),
+  carrierTakes("missile.launch", "Missile launch", "missile", "weapon", "missile-launch", [1], { target: -14, range: far, wet: 0.35, durationRange: [3.5, 4.2] }),
+  carrierTakes("missile.motor", "Missile motor", "missile", "weapon", "missile-motor", [2], { target: -20, loop: true, range: far, wet: 0.35, durationRange: [3.5, 4.2] }),
+  carrierTakes("missile.flares", "Countermeasure flares", "missile", "weapon", "flares", ALL4, { target: -15, range: near, wet: 0.35, durationRange: [2.5, 3.2] }),
+  carrierTakes("missile.sam.launch", "SAM launch from a ship", "missile", "weapon", "sam-launch", [2], { target: -14, range: far, wet: 0.35, durationRange: [4.5, 5.2] }),
+  carrierTakes("bomb.release", "Bomb release", "bomb", "weapon", "bomb-release", [1], { target: -16, range: near, wet: 0.3, durationRange: [1, 1.7] }),
+  carrierTakes("bomb.whistle", "Falling bomb whistle", "bomb", "weapon", "bomb-whistle", [2], { target: -18, range: near, wet: 0.3, durationRange: [3.5, 4.2] }),
+  carrierTakes("explosion.geyser", "Water geyser", "explosion", "impact", "water-geyser", [1], { target: -15, range: far, wet: 0.5, durationRange: [4.5, 5.2] }),
+  carrierTakes("explosion.jet.air", "Jet shot down", "explosion", "impact", "boom-air", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.missile.air", "Missile airburst", "explosion", "impact", "boom-missile", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [3.4, 4.2], cooldown: 0.08 }),
+  carrierTakes("explosion.bomb.land", "Bomb on land", "explosion", "impact", "boom-bomb-land", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.bomb.water", "Bomb on water", "explosion", "impact", "boom-bomb-water", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.crash.sea", "Jet crashing into the sea", "explosion", "impact", "boom-crash-sea", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [4.5, 5.2], cooldown: 0.08 }),
+  carrierTakes("explosion.crash.land", "Jet crashing into land", "explosion", "impact", "boom-crash-land", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.far", "Explosion far away", "explosion", "impact", "boom-far", ALL4, { target: -16, range: far, wet: 0.6, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("gun.ciws", "CIWS gatling", "gun", "weapon", "ciws", [1], { target: -18, loop: true, range: far, wet: 0.3, durationRange: [4.5, 5.2] }),
+  carrierTakes("gun.naval.five-inch", "Five-inch naval gun", "gun", "weapon", "naval-gun", [1], { target: -12, range: far, wet: 0.4, durationRange: [3.5, 4.2] }),
+  carrierTakes("vehicle.boat.engine", "Patrol boat engine", "vehicle", "engine", "boat-engine", [3], { target: -22, loop: true, range: near, wet: 0.15, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.carrier.deck", "Carrier deck at sea", "ship", "ambience", "carrier-bed", [4], { target: -26, loop: true, range: bed, wet: 0.15, durationRange: [7.5, 8.2] }),
+  carrierTakes("ship.horn", "Carrier horn", "ship", "ambience", "ship-horn", [1], { target: -16, range: far, wet: 0.5, durationRange: [4.5, 5.2] }),
+  carrierTakes("ship.hull.slam", "Hull slam", "ship", "ambience", "hull-slam", ALL4, { target: -16, range: near, wet: 0.15, durationRange: [2.5, 4.2], cooldown: 2 }),
+  carrierTakes("ship.hull.creak", "Hull creak", "ship", "ambience", "hull-creak", [1], { target: -20, range: near, wet: 0.15, durationRange: [4.5, 5.2], cooldown: 6 }),
+  carrierTakes("ship.fire", "Deck fire", "ship", "ambience", "deck-fire", [2], { target: -22, loop: true, range: near, wet: 0.15, durationRange: [5.5, 6.2] }),
+  carrierTakes("ship.sinking", "Ship sinking", "ship", "ambience", "sinking", [1], { target: -16, range: far, wet: 0.4, durationRange: [5.5, 6.2] }),
+  carrierTakes("ambience.ocean.calm", "Open ocean, calm", "ambience", "ambience", "ocean-calm", [1], { target: -26, loop: true, range: bed, wet: 0, durationRange: [7.5, 8.2] }),
+  carrierTakes("ambience.ocean.rough", "Open ocean, rough", "ambience", "ambience", "ocean-rough", [4], { target: -26, loop: true, range: bed, wet: 0, durationRange: [7.5, 8.2] }),
+  carrierTakes("ambience.ocean.storm", "Open ocean, storm", "ambience", "ambience", "ocean-storm", [3], { target: -24, loop: true, range: bed, wet: 0, durationRange: [7.5, 8.2] }),
+  carrierTakes("ambience.wind.light", "Light sea breeze", "weather", "ambience", "wind-light", [1], { target: -28, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.wind.gale", "Gale over the ocean", "weather", "ambience", "wind-gale", [1], { target: -24, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.rain.sea.light", "Light rain on the sea", "weather", "ambience", "rain-light", [1], { target: -30, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.rain.sea.heavy", "Heavy rain on the sea", "weather", "ambience", "rain-heavy", [3], { target: -27, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.rain.canopy", "Rain on a jet canopy", "weather", "ambience", "rain-canopy", [1], { target: -27, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("weather.thunder.sea.near", "Thunder over the sea, near", "weather", "ambience", "thunder-near", ALL4, { target: -16, range: far, wet: 0.4, durationRange: [5, 7.2] }),
+  carrierTakes("weather.thunder.sea.far", "Thunder over the sea, far", "weather", "ambience", "thunder-far", ALL4, { target: -22, range: far, wet: 0.4, durationRange: [7, 8.2] }),
+  carrierTakes("weather.lightning.crack", "Lightning crack", "weather", "ambience", "lightning-crack", [1], { target: -16, range: far, wet: 0.3, durationRange: [1.5, 2.2] }),
+  carrierTakes("ui.kill-confirm", "Kill confirm", "ui", "ui", "ui-kill", [1], { target: -22, range: bed, wet: 0, durationRange: [1, 1.7] }),
 ]
 
 export const SFX_LIBRARY: readonly SfxEntry[] = SFX_SPECS.map(spec => ({ ...spec, files: LIBRARY_FILES[spec.id] ?? [] }))

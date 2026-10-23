@@ -5,7 +5,11 @@
 import { existsSync, mkdtempSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { chromium, type Browser } from "playwright-core"
+import { type Browser } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const runs = Number(args[args.indexOf("--runs") + 1] || 5) || 5

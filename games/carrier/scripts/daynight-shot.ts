@@ -14,9 +14,13 @@
 //          --fx=1  (weapon effects over the chase view: a gun burst's tracers, a missile with its trail, an explosion)  --aim=1 (the sun view faces the painted disc)
 // The game views pass ?tod=<h>. The flight harness (jet view) has no day-night wiring of its own, so the script imports
 // the day-night modules into it and hooks them onto its passes.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -276,7 +280,7 @@ const adapter = await page.evaluate(async () => {
 console.log(`adapter: ${adapter}`)
 if (/swiftshader/i.test(adapter) || adapter === "no adapter") {
   console.log("no hardware adapter: refusing to trust these captures")
-  process.exit(2)
+  await budget.exit(2)
 }
 await load(`${base}?seed=${seed}&t=${t0}&weather=clear${query}`, gameReady)
 isles = await page.evaluate(() => (globalThis as unknown as { carrier: { arch: { islands: Isle[] } } }).carrier.arch.islands.map((i) => ({ kind: i.kind, x: i.x, z: i.z, radius: i.radius, peak: i.peak })))

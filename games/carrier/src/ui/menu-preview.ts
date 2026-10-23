@@ -1,24 +1,17 @@
 // Menu previews with fake data, over the real offline sea (menu.html loads main.ts too).
-//   menu.html?seed=7&show=menu     the load screen (fake lobby: never leaves)
 //   menu.html?seed=7&show=teams    the Tab menu, pinned open, a busy room seen by a captain (?as=N: another player)
 //   menu.html?seed=7&show=ops      DEPLOY, pinned open: one Hornet up, one recharging
 import { joinCrew, joinShip, makeCrew, playerOf, recover, runOp, scuttle, shipOf, teamCss } from "../../shared/crew"
 import { shipOps } from "../../shared/ops"
 import { setLock } from "../../shared/squad"
-import type { LobbyClient } from "./lobby"
-import { showMenu } from "./menu"
 import { OpsMenu } from "./ops-menu"
 import { type JetStatus, TeamMenu } from "./team-menu"
 
 const params = new URLSearchParams(location.search)
-const show = params.get("show") ?? "menu"
+const show = params.get("show") ?? "teams"
 const NAMES = ["ada", "bo", "mika", "jonas", "rhea", "sol", "kit", "nadia", "otto", "pia", "quinn", "ravi", "suki"]
 
-if (show === "menu") {
-  const never = () => new Promise<string>(() => {})
-  const lobby: LobbyClient = { quick: never, create: never, info: async () => null, stats: async () => ({ players: 37, games: 4 }) }
-  void showMenu(document.body, { lobby })
-} else {
+{
   const now = 1_000_000
   const c = makeCrew(2026)
   NAMES.forEach((n, i) => joinCrew(c, i + 1, n, now + i))

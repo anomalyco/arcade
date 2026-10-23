@@ -10,7 +10,7 @@ game's own `AGENTS.md`.
   verify` (below) runs the checks.
 - `bunfig.toml` selects hoisted dependencies for shared tooling and historical benchmark exports. Keep Vite,
   Wrangler, TypeScript and Playwright versions aligned across workspace games.
-- `landing/`, `redirects/` and `games/wings/` are independent projects with their own lockfiles and install/check
+- `landing/` and `redirects/` are independent projects with their own lockfiles and install/check
   commands; do not add them to the workspace implicitly.
 - While iterating, run `hivemind run --kind browser -- bun run verify`: it checks only the targets whose CI workflow
   paths match your changes (vs `origin/main`, including uncommitted files), in parallel, with incremental typecheck,
@@ -25,6 +25,7 @@ game's own `AGENTS.md`.
 - Every `tests/` and `scripts/` file is typechecked (Getaway's `tsconfig.scripts.json` also covers root `scripts/`).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
 - Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
+- Browser scripts use `scripts/browser-budget.ts` with `await using`: 180 s per script, `ARCADE_BROWSER_BUDGET_S` override ≤300 s; CPU-only sweeps run directly in Bun (`--kind cargo`).
 
 ## Routing and deploy
 
@@ -44,6 +45,8 @@ game's own `AGENTS.md`.
 - Adding a game: put it in `games/<name>`, give its Worker the name `arcade-<name>` with the routes above, set Vite's
   outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, add it to the root
   `package.json` workspaces and `WORKSPACE_GAMES` in `scripts/verify.ts`, and add a panel to `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).
+  Put it on the shared game shell from the first commit ([docs/game-shell.md](docs/game-shell.md#checklist-for-a-new-game)):
+  title, Escape menu, Settings and lobby from `@arcade/kit/shell`, quality from `createShellQuality`.
 - New game ideas start as a single-screen low-res toy prototype (`bun scripts/new-toy.ts <name>`, [docs/prototyping.md](docs/prototyping.md)) on `@arcade/kit` primitives to prove the feel of movement, camera and the core verb before adding custom meshes, shaders or multiplayer. Cheap presentation, shared feel on by default: test models, but the kit's camera shake, hit-stop, effects, sounds, rig and bots from day one; add missing pieces to the kit, not the toy.
 - Prototypes are unlisted: deploy normally, skip the landing panel, add `noindex`, and list the game in the README's
   prototypes section. Promote a game by adding the landing panel and removing `noindex`.
@@ -57,16 +60,29 @@ game's own `AGENTS.md`.
   `packages/kit/`; [docs/architecture.md](docs/architecture.md) shows which kit modules each game already uses. Check
   both before writing something a game already has. `games/*/shared/` imports only pure kit modules (`sim/`, `net/`,
   `limits`).
+- Read [docs/assets.md](docs/assets.md) before adding or generating assets: CC0 or credited CC BY only, a
+  `CREDITS.md` per game, hashed sources, compressed files under 25 MiB.
 - Read [docs/game-notes.md](docs/game-notes.md) and [docs/rendering-techniques.md](docs/rendering-techniques.md)
   before rendering, performance, input, multiplayer or feel work, and read [docs/netcode.md](docs/netcode.md) before any
   multiplayer or net work. Add a technique to `docs/game-notes.md` once it is proven in a game, with where it lives and
   what it measured (animation techniques go in `docs/animation.md`).
+
+## Game shell
+
+- Read [docs/game-shell.md](docs/game-shell.md) before touching a title screen, lobby, pause menu, settings, volume,
+  mute, graphics quality or loading screen. Every game uses `@arcade/kit/shell` for settings, pause, title and lobby.
+  Default graphics is High (Auto starts High and steps down only on slow frames). Volume and mute are always reachable
+  from the title and the Escape menu. No game ships its own volume or quality UI.
 
 ## Rendering
 
 - Rendering techniques, their status and cost are catalogued in
   [docs/rendering-techniques.md](docs/rendering-techniques.md); proven rendering notes are in the Rendering and Art
   direction sections of [docs/game-notes.md](docs/game-notes.md).
+- Read [docs/realism.md](docs/realism.md) before lighting, shadow, fog, smoke, weather, material, camera or ambience
+  work: what reads as real, what it costs, and what Kit picked or turned down.
+- New realism techniques go in `packages/kit/` with the game supplying hooks, not in a game folder, unless they are
+  truly game-specific. Once one is proven, give it a `docs/realism.md` entry with its cost and Kit's decision.
 
 ## Animation
 

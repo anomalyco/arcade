@@ -1,6 +1,7 @@
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { BoneFrameLike, CapsuleShadows } from "@arcade/kit/gpu/shadows/capsule-shadows"
 import { takeLyingBodies } from "./lying-bodies"
+import type { OutbreakQualityProfile } from "../quality"
 import { capsuleSettings, softShadowsOn, type OutbreakSoftShadowSettings } from "./settings"
 
 type Rig = Partial<Record<string, BoneFrameLike | null | undefined>>
@@ -8,6 +9,8 @@ type Rig = Partial<Record<string, BoneFrameLike | null | undefined>>
 /** What one frame hands the soft shadows, after every body is posed and every light is packed. */
 export type SoftShadowFrame = {
   settings: OutbreakSoftShadowSettings
+  /** The active quality tier, for settings left on "Quality tier". */
+  quality: Pick<OutbreakQualityProfile, "softShadowLights">
   /** Plan rect the camera sees (x0, z0, x1, z1). */
   rect: readonly [number, number, number, number]
   lights: Float32Array
@@ -49,7 +52,7 @@ export class SoftShadowPresenter {
       f.zombies((bones, off, hidden, scale, origin) => s.addBoneFrames(bones, off, hidden, scale, origin))
       takeLyingBodies((x, y, z, yaw) => s.addLyingBody(x, y, z, yaw))
     } else takeLyingBodies(() => {})
-    s.upload(f.lights, f.lightCount, capsuleSettings(f.settings), f.sun)
+    s.upload(f.lights, f.lightCount, capsuleSettings(f.settings, f.quality), f.sun)
     this.stats.on = on
     this.stats.bodies = on ? s.characterCount : 0
     this.stats.capsules = on ? s.capsuleCount : 0

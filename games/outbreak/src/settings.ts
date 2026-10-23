@@ -1,4 +1,5 @@
 import { cameraShakeDefaults, type CameraShakeSettings } from "@arcade/kit/client/camera"
+import { SKY_DEFAULTS, type SkySettings } from "@arcade/kit/sky/settings"
 import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
@@ -64,8 +65,9 @@ import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather/settings"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
+import { DEFAULT_TEAM_BEAM_SETTINGS, type TeamBeamSettings } from "./teammates/beams"
 
-export type OutbreakFlashlightSettings = FlashlightTuning & FlashlightBeamSettings
+export type OutbreakFlashlightSettings = FlashlightTuning & FlashlightBeamSettings & TeamBeamSettings
 /** `zombieLook`: 0 today's boxes, 1 refined (chamfered parts, seeded clothing palettes, torn hems; Look · Zombies). */
 export type OutbreakZombieSettings = ZombieTuning & { humanProfile: number; zombieLook: number }
 
@@ -105,6 +107,7 @@ export type OutbreakDayCycleSettings = DayNightCurveSettings & {
 export type OutbreakViewSettings = CameraShakeSettings &
   CameraLeadSettings &
   PeekViewSettings &
+  SkySettings &
   AntiAliasingSettings & {
   zoom: number
   diagnostic: number
@@ -136,6 +139,7 @@ export type OutbreakBotSettings = PacingTargetConfig & {
 export const DEFAULT_OUTBREAK_FLASHLIGHT: OutbreakFlashlightSettings = {
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...DEFAULT_FLASHLIGHT_BEAM,
+  ...DEFAULT_TEAM_BEAM_SETTINGS,
 }
 
 export const DEFAULT_OUTBREAK_ZOMBIES: OutbreakZombieSettings = {
@@ -187,6 +191,7 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   ...DEFAULT_CAMERA_LEAD,
   ...DEFAULT_PEEK_VIEW,
   ...DEFAULT_ANTI_ALIASING_SETTINGS,
+  ...SKY_DEFAULTS,
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {

@@ -1,6 +1,7 @@
 import { mat4d } from "wgpu-matrix"
 import type { Vec3 } from "../../shared/plane"
-import { FAR, NEAR } from "../render/camera"
+import { TraumaShake, shakeWave } from "@arcade/kit/client/camera"
+import { FAR, NEAR, SHAKE } from "../render/camera"
 
 const DEG = Math.PI / 180
 
@@ -29,7 +30,8 @@ export class TurretCam {
   readonly forward: Vec3 = [0, 0, -1]
   readonly up: Vec3 = [0, 1, 0]
   fov = TURRET_CAM.fov
-  trauma = 0
+  /** Recoil shake (the host adds; it drains linearly in `place`). */
+  readonly shake = new TraumaShake(SHAKE)
   readonly viewProj = new Float32Array(16)
   readonly viewProj64 = new Float64Array(16)
   private view = new Float64Array(16)
@@ -37,15 +39,14 @@ export class TurretCam {
   private target = new Float64Array(3)
   private upv = new Float64Array(3)
   private eyev = new Float64Array(3)
-  private time = 0
 
   /** Places the camera: sight (world), aim (unit, world), the ship's up (world), zoom 0..1 toward `scopeFov`. */
   place(dt: number, eye: Vec3, aim: Vec3, up: Vec3, zoomFov: number, aspect: number): void {
-    this.time += dt
+    this.shake.tick(dt)
     this.fov += (zoomFov - this.fov) * (1 - Math.exp(-dt / TURRET_CAM.zoomLag))
-    this.trauma = Math.max(0, this.trauma - TURRET_CAM.decay * dt)
-    const s = this.trauma * this.trauma
-    const n = (k: number) => Math.sin(this.time * (31 + k * 7.3) + k * 1.7) * 0.6 + Math.sin(this.time * (53 + k * 3.1) + k) * 0.4
+    this.shake.drain(dt, TURRET_CAM.decay)
+    const s = this.shake.intensity()
+    const n = (k: number) => shakeWave(this.shake.time, 31 + k * 7.3, k * 1.7, 53 + k * 3.1, k)
     for (let i = 0; i < 3; i++) this.eye[i] = eye[i]! + n(i) * TURRET_CAM.shake * s
     const wob = TURRET_CAM.shakeAngle * s
     this.forward[0] = aim[0] + n(4) * wob

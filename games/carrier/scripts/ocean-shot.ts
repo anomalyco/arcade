@@ -8,9 +8,12 @@
 //          --motion=a   (three frames 0.5 s apart, plus a 4 m pan, as motion-<view>-<i>.png)
 //          --perf=a     (GPU time per frame from timestamp queries, median of 40 sampled frames)
 //          --eval='js'  (run in the page before each capture, e.g. "carrier.ocean.look.glitter = 50")
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -314,7 +317,7 @@ cliffT = await page.evaluate(async ([cam, t0]) => {
 isles = await page.evaluate(() => (globalThis as unknown as { carrier: { arch: { islands: Isle[] } } }).carrier.arch.islands.map((i) => ({ kind: i.kind, x: i.x, z: i.z, radius: i.radius })))
 if (/swiftshader/i.test(adapter)) {
   console.log("SwiftShader adapter: refusing to trust these captures")
-  process.exit(2)
+  await budget.exit(2)
 }
 
 for (const v of views) {

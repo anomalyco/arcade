@@ -145,6 +145,8 @@ export type CrewEvent =
   | { k: "launch"; player: number; ship: number; slot: number }
   /** A pilot's jet is gone (landed or destroyed) and they wait on deck; the slot is ready at `readyAt`. */
   | { k: "recover"; player: number; ship: number; slot: number; how: RecoverHow; readyAt: number }
+  /** A jet parked on deck (shared/deck-jets.ts) was destroyed: its slot recharges until `readyAt`, as after a crash. */
+  | { k: "wreck"; ship: number; slot: number; readyAt: number }
   /** A player manned gun `mount` of their ship (shared/ops.ts `gun` operations). */
   | { k: "gun"; player: number; ship: number; mount: number }
   /** Who has the helm now; null: nobody (hold the throttle, centre the rudder). */
@@ -484,6 +486,20 @@ export function recover(c: Crew, id: number, how: RecoverHow, now: number): Outc
     return done(ev)
   }
   return done(ev)
+}
+
+/**
+ * A jet parked on ship `shipId`'s deck in slot `slot` was destroyed (shared/deck-jets.ts): the slot recharges for its
+ * operation's `recharge`, exactly as if the jet had crashed. Refused unless that slot is ready (a jet in its bay).
+ */
+export function wreckParked(c: Crew, shipId: number, slot: number, now: number): Outcome {
+  const s = shipOf(c, shipId)
+  if (!s) return fail("no-ship")
+  const a = s.aircraft[slot]
+  const op = a && opById(a.op)
+  if (!a || !op || op.kind !== "vehicle" || a.pilot !== null || a.readyAt > now) return fail("in-use")
+  a.readyAt = now + op.recharge * 1000
+  return done([{ k: "wreck", ship: s.id, slot, readyAt: a.readyAt }])
 }
 
 /** Drops free slots past a ship's catalogue (extra ones made for rescued airborne pilots) from the end. */

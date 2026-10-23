@@ -1,5 +1,6 @@
 import { mulberry32 } from "../sim/rng"
 import { CUE_BY_ID, DEFAULT_CUES } from "./cues"
+import { buildMixGraph, type MixGraph, type MixSpec } from "./mix"
 export { mulberry32 } from "../sim/rng"
 import { DEFAULT_SAMPLE_MANIFEST, defaultSfxBaseUrl, SampleBank } from "./manifest"
 import { clamp, fallTime, holdParam, scheduleSynthLayer, smoothParam, type ScheduledLayerNodes } from "./synth"
@@ -173,6 +174,10 @@ export type AudioRuntimeOptions = {
   manifest?: readonly SampleAssetMeta[]
   baseUrl?: string
   cues?: readonly CueRecipe[]
+  /** A game-defined mix (named buses, muffle, per-bus ducks, sends, output chain) instead of the default graph. */
+  mix?: MixSpec
+  /** The real-time `onTick` pacer (a silent ScriptProcessor on live contexts). Defaults to true. */
+  pacer?: boolean
 }
 
 export class AudioRuntime {
@@ -225,6 +230,11 @@ export class AudioRuntime {
   private interruptListeners = new Set<(dispose: boolean) => void>()
   private pacerNode: ScriptProcessorNode | null = null
   private loadPromise: Promise<number> | null = null
+  private readonly mixSpec: MixSpec | null
+  private readonly usePacer: boolean
+  private contextListeners: ((ctx: AudioContext | OfflineAudioContext) => void)[] = []
+  /** The game-defined mix graph (`mix` option), null with the default graph. */
+  mix: MixGraph | null = null
 
   listener: ListenerState = {
     x: 0,
@@ -246,6 +256,8 @@ export class AudioRuntime {
     this.reverbWetValue = options.reverbWet ?? 0.5
     this.storageKey = options.storageKey
     this.visibilityQuery = options.visibilityQuery
+    this.mixSpec = options.mix ?? null
+    this.usePacer = options.pacer ?? true
 
     this.sampleBank = new SampleBank(options.manifest ?? DEFAULT_SAMPLE_MANIFEST, options.baseUrl ?? defaultSfxBaseUrl())
     this.sampleBank.seedFallbacks()
@@ -303,8 +315,86 @@ export class AudioRuntime {
   attachContext(ctx: AudioContext | OfflineAudioContext): void {
     if (this.disposed) throw new Error("AudioRuntime has been disposed")
     this.ctx = ctx
-    this.buildGraph(ctx)
+    if (this.mixSpec) this.buildMix(ctx, this.mixSpec)
+    else this.buildGraph(ctx)
     this.sampleBank.seedFallbacks(ctx.sampleRate)
+    for (const fn of this.contextListeners) fn(ctx)
+  }
+
+  /** Runs `fn` on every context the runtime attaches (live from `unlock`, or offline), and now if one is attached. */
+  onContext(fn: (ctx: AudioContext | OfflineAudioContext) => void): () => void {
+    this.contextListeners.push(fn)
+    if (this.ctx) fn(this.ctx)
+    return () => {
+      const idx = this.contextListeners.indexOf(fn)
+      if (idx >= 0) this.contextListeners.splice(idx, 1)
+    }
+  }
+
+  private buildMix(ctx: AudioContext | OfflineAudioContext, spec: MixSpec): void {
+    const mix = (this.mix = buildMixGraph(ctx, spec, this.muted ? 0 : this.volume))
+    this.master = mix.master
+    this.analyser = mix.analyser
+    this.buses = Object.fromEntries(MIX_CATEGORIES.map(c => [c, mix.buses[spec.route[c]]!])) as Record<MixCategory, GainNode>
+    const reverb = mix.sends[spec.reverb]!
+    this.verb = reverb.input
+    this.verbOut = reverb.output
+    this.reverbWetValue = spec.sends[spec.reverb]!.wet
+    this.roomOut = null
+    this.attachPacer(ctx)
+  }
+
+  /** A named bus of the `mix` graph (null without one, or before a context is attached). */
+  mixBus(name: string): GainNode | null {
+    return this.mix?.buses[name] ?? null
+  }
+
+  /** A named send's input on the `mix` graph. */
+  mixSend(name: string): GainNode | null {
+    return this.mix?.sends[name]?.input ?? null
+  }
+
+  /** Sets a named `mix` bus level. */
+  setMixBusGain(name: string, level: number, tau = 0.03): void {
+    const bus = this.mix?.buses[name]
+    if (this.ctx && bus) smoothParam(bus.gain, Math.max(0, level), this.now, tau)
+  }
+
+  /** Closes the `mix` muffle low-pass over its buses: 0 open (20 kHz) .. 1 closed (`muffle.closedHz`). */
+  setMuffle(amount: number, tau = this.mixSpec?.muffle?.tau ?? 0.08): void {
+    const f = this.mix?.muffle
+    const spec = this.mixSpec?.muffle
+    if (!this.ctx || !f || !spec) return
+    smoothParam(f.frequency, 20000 * Math.pow(spec.closedHz / 20000, clamp(amount, 0, 1)), this.now, tau)
+  }
+
+  /**
+   * Dips every ducked `mix` bus (except `spare`) to `depth` (0..1) after `delay` seconds, holds for `hold` seconds,
+   * then recovers. Exponential approach: `attack` and `release` are time constants.
+   */
+  duckBuses(depth: number, hold: number, opts: { delay?: number; spare?: readonly string[]; attack?: number; release?: number } = {}): void {
+    if (!this.ctx || !this.mix) return
+    const at = this.now + (opts.delay ?? 0)
+    for (const [name, g] of Object.entries(this.mix.ducks)) {
+      if (opts.spare?.includes(name)) continue
+      const p = g.gain
+      p.cancelScheduledValues(at)
+      p.setTargetAtTime(depth, at, opts.attack ?? 0.015)
+      p.setTargetAtTime(1, at + hold, opts.release ?? 0.35)
+    }
+  }
+
+  private peakBuf: Float32Array<ArrayBuffer> | null = null
+
+  /** Peak of the output over the analyser's window (0..1+), 0 without an analyser. */
+  peak(): number {
+    const a = this.analyser
+    if (!this.ctx || !a) return 0
+    if (!this.peakBuf || this.peakBuf.length !== a.fftSize) this.peakBuf = new Float32Array(a.fftSize)
+    a.getFloatTimeDomainData(this.peakBuf)
+    let m = 0
+    for (let i = 0; i < this.peakBuf.length; i++) m = Math.max(m, Math.abs(this.peakBuf[i]!))
+    return m
   }
 
   async attachOffline(ctx: OfflineAudioContext, loadNetworkSamples = false): Promise<void> {
@@ -332,6 +422,8 @@ export class AudioRuntime {
     }
     const ctx = this.ctx
     if (!ctx) return false
+    // An offline context is driven by whoever renders it (suspend/resume lockstep); a gesture must not run it ahead.
+    if (this.isOffline) return true
     if ("resume" in ctx && ctx.state === "suspended") {
       try {
         await ctx.resume()
@@ -347,6 +439,9 @@ export class AudioRuntime {
     return ctx.state === "running"
   }
 
+  /** M toggles mute in `bindDomLifecycle` (off where the game shell owns mute). */
+  muteKey = true
+
   bindDomLifecycle(): void {
     if (typeof window === "undefined") return
     const signal = this.domEvents.signal
@@ -360,7 +455,7 @@ export class AudioRuntime {
     window.addEventListener(
       "keydown",
       e => {
-        if ((e.code !== "KeyM" && e.key.toLowerCase() !== "m") || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+        if (!this.muteKey || (e.code !== "KeyM" && e.key.toLowerCase() !== "m") || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
         const t = e.target as HTMLElement | null
         if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
         this.setMuted(!this.muted)
@@ -469,6 +564,10 @@ export class AudioRuntime {
       this.roomOut.connect(this.duckNode)
       this.applySpace(0)
     }
+    this.attachPacer(ctx)
+  }
+
+  private attachPacer(ctx: BaseAudioContext): void {
     if (this.pacerNode) {
       try {
         this.pacerNode.disconnect()
@@ -477,6 +576,7 @@ export class AudioRuntime {
       this.pacerNode = null
     }
     if (
+      this.usePacer &&
       typeof AudioContext !== "undefined" &&
       ctx instanceof AudioContext &&
       typeof ctx.createScriptProcessor === "function"
@@ -526,9 +626,9 @@ export class AudioRuntime {
     for (const fn of this.muteListeners) fn(muted)
   }
 
-  /** Master volume while unmuted; muting still ramps to silence and back to this level. */
+  /** Master volume while unmuted (0..1; up to 2 for a designer boost); muting still ramps to silence and back. */
   setVolume(level: number, tau = 0.03): void {
-    this.volume = clamp(level, 0, 1)
+    this.volume = clamp(level, 0, 2)
     if (this.ctx && this.master && !this.muted) smoothParam(this.master.gain, this.volume, this.now, tau)
   }
 
@@ -560,6 +660,10 @@ export class AudioRuntime {
 
   duck(seconds: number, depth = 0.45): void {
     this.duckCurrent = clamp(depth, 0.05, 1)
+    if (this.mix) {
+      this.duckBuses(this.duckCurrent, Math.max(0.02, seconds), { attack: 0.025, release: 0.4 })
+      return
+    }
     if (!this.ctx || !this.duckNode) return
     const g = this.duckNode.gain
     const t = this.now
@@ -568,10 +672,12 @@ export class AudioRuntime {
     g.setTargetAtTime(1, t + Math.max(0.02, seconds), 0.4)
   }
 
+  /** A short dull-hearing low-pass sweep. With a `mix`, it sweeps the muffle low-pass (and needs one). */
   daze(seconds: number, cutoffHz = 750): void {
     this.dazeCurrentHz = clamp(cutoffHz, 200, 20000)
-    if (!this.ctx || !this.dazeNode) return
-    const f = this.dazeNode.frequency
+    const node = this.mix ? this.mix.muffle : this.dazeNode
+    if (!this.ctx || !node) return
+    const f = node.frequency
     const t = this.now
     f.cancelScheduledValues(t)
     f.setValueAtTime(Math.max(200, f.value || 20000), t)
@@ -1130,7 +1236,7 @@ export class AudioRuntime {
   }
 
   async resume(): Promise<void> {
-    if (this.disposed || !this.ctx) return
+    if (this.disposed || !this.ctx || this.isOffline) return
     if ("resume" in this.ctx && this.ctx.state === "suspended" && !this.muted) {
       try {
         await this.ctx.resume()
@@ -1145,11 +1251,15 @@ export class AudioRuntime {
     this.dazeCurrentHz = 20000
     if (this.ctx) {
       const t = this.now
-      if (this.duckNode) {
+      for (const g of this.mix ? Object.values(this.mix.ducks) : []) {
+        g.gain.cancelScheduledValues(t)
+        g.gain.setValueAtTime(1, t)
+      }
+      if (this.duckNode && !this.mix) {
         this.duckNode.gain.cancelScheduledValues(t)
         this.duckNode.gain.setValueAtTime(1, t)
       }
-      if (this.dazeNode) {
+      if (this.dazeNode && !this.mix) {
         this.dazeNode.frequency.cancelScheduledValues(t)
         this.dazeNode.frequency.setValueAtTime(20000, t)
       }
@@ -1215,6 +1325,7 @@ export class AudioRuntime {
     }
     this.domEvents.abort()
     this.muteListeners.length = 0
+    this.contextListeners.length = 0
     if (this.ctx && "close" in this.ctx && !this.isOffline) {
       void this.ctx.close().catch(() => {})
     }

@@ -5,8 +5,11 @@ import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { STYLE_LIST } from "../src/styles"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, "../../..")
 const outDir = resolve(root, "captures/style-playground")

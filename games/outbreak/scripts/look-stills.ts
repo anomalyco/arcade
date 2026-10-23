@@ -4,9 +4,13 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { HERO_STYLES } from "../src/look/hero"
 import { OUTBREAK_LOOK_PRESETS } from "../src/look/presets"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const out = resolve(process.env.LOOK_OUT ?? resolve(game, "../../captures/outbreak-look-stills"))

@@ -1,4 +1,4 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
@@ -6,6 +6,9 @@ import type { FirstPerson } from "@arcade/kit/client/first-person"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { Call } from "../shared/call"
 import type { Settings } from "../src/settings"
+
+await using budget = browserBudget()
+const { chromium } = budget
 declare global { interface Window { nightshift: { camera:FirstPerson;renderer:Renderer;call:Call;settings:Settings;cradle:unknown;frames:number;ready:boolean;paused:boolean;time:number;setCamera(view:"wide"|"phone"):void;action():void } } }
 const out=resolve(process.env.NIGHTSHIFT_CAPTURE_DIR??process.env.LEASE_OUT??"captures/nightshift")
 await mkdir(out,{recursive:true})

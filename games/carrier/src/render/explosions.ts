@@ -5,6 +5,7 @@ import { type Sea, seaHeight } from "../../shared/sea"
 import type { VehicleKind } from "../../shared/vehicles"
 import { ExplosionFx, type MeshRef, type PuffSpec } from "./explosion-fx"
 import { EXPLOSION_PRESETS, spawnExplosion } from "@arcade/kit/fx/explosion"
+import { attenuateShake } from "@arcade/kit/client/camera"
 import { type ChunkPart, type JetChunk, jetChunks } from "./jet-chunks"
 import type { Rgb } from "./mesh"
 import type { PlaneModels } from "./plane-glb"
@@ -689,8 +690,7 @@ export class Explosions {
   private bang(x: number, y: number, z: number, size: number): void {
     const e = this.fx.eye
     const d = Math.hypot(x - e[0]!, y - e[1]!, z - e[2]!)
-    const k = Math.max(0, 1 - d / (420 * Math.sqrt(size)))
-    this.trauma = Math.min(1, Math.max(this.trauma, k * k * Math.min(1, size)))
+    this.trauma = Math.min(1, Math.max(this.trauma, attenuateShake(d, 420 * Math.sqrt(size)) * Math.min(1, size)))
   }
 
   // ---- pieces --------------------------------------------------------------------------------------------------------

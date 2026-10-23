@@ -25,10 +25,10 @@ crest-to-trough 6-7 m typical and 10-12 m on sets; faint chop 8-28 m. Islands 15
 | boat | `shared/boat.ts`, `src/boat/**`, `src/render/boat-*.ts`, `src/audio/boat*.ts`, `tests/boat*.test.ts`, `scripts/boat-shot.ts`, `captures/boat/**`; integration edits to `shared/ops.ts`, `shared/crew.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/game/game.ts`, `src/main.ts`, `src/ui/{ops-menu,hud,team-menu}.ts`, `src/dev/ship-viewer.ts`, combat hooks only in phase B (after ship health, then gunnery, finish) |
 | gunnery | `shared/gunnery.ts`, `src/gunnery/**`, `src/render/turret-*.ts`, `src/audio/turret*.ts`, `tests/gunnery*.test.ts`, `scripts/gunnery-shot.ts`, `captures/gunnery/**`; integration edits to `shared/ops.ts`, `shared/crew.ts`, `shared/combat.ts`, `shared/weapons.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/game/game.ts`, `src/main.ts`, `src/render/ship-pass.ts`, `src/ui/ops-menu.ts`, `src/ui/hud.ts` only in phase B (after the ship-health agent finishes) |
 | jet audio | `src/audio/jet*.ts`, `src/audio/mixer*.ts`, `public/sfx/**` (or `src/audio/assets/**`), `scripts/sfx-*.ts`, `tests/audio*.test.ts`, `captures/audio/**`; integration edits to `src/flight/**` / `src/weapons/weapons.ts` / `src/game/game.ts` / `src/main.ts` / `src/audio/weapon-audio.ts` only additive hook calls (re-read first) |
-| day-night | `shared/daycycle.ts`, `src/render/daynight*.ts`, `src/render/stars*.ts`, `src/render/lights*.ts`, `tests/daycycle*.test.ts`, `scripts/daynight-shot.ts`, `captures/daynight/**`, `concept/night-*.png` / `concept/time-*.png`; a "TIME" tab in the debug menu via `debugMenu.addTab`; integration edits to `src/render/{atmosphere,sky,clouds,post,lit,ship-pass,ocean*}.ts`, `src/render/weather-*.ts`, `src/main.ts`, protocol/server/net only in phase B (orchestrator go-ahead) |
+| day-night | `shared/daycycle.ts`, `src/render/daynight*.ts`, `src/render/stars*.ts`, `src/render/lights*.ts`, `tests/daycycle*.test.ts`, `scripts/daynight-shot.ts`, `captures/daynight/**`, `concept/night-*.png` / `concept/time-*.png`; a Time section on the dev panel's World tab (`src/dev/dev-tools.ts`); integration edits to `src/render/{atmosphere,sky,clouds,post,lit,ship-pass,ocean*}.ts`, `src/render/weather-*.ts`, `src/main.ts`, protocol/server/net only in phase B (orchestrator go-ahead) |
 | weapons | `shared/weapons.ts`, `shared/combat.ts`, `shared/fleet.ts`, `src/weapons/**`, `src/render/weapon*.ts`, `src/audio/weapon*.ts`, `tests/weapon*.test.ts`, `tests/combat*.test.ts`, `scripts/weapons-shot.ts`, `captures/weapons/**`; integration edits to `src/flight/**` (input, hud, seam), `shared/plane.ts` (health/crash cause only), `shared/protocol.ts`, `server/core.ts`, `src/net.ts`, `src/game/game.ts`, `src/main.ts` only in phase B (after the roles change and the jet paint finish) |
 | flight | `shared/plane.ts`, `shared/launch.ts`, `src/flight/**`, `src/render/plane*.ts`, `tests/plane*.test.ts`, `tests/launch*.test.ts`, `scripts/flight-shot.ts`, `captures/flight/**`; integration edits to `src/game/**`, camera, hud, input, main, protocol/server/net only in phase B (after the driving agent finishes) |
-| weather | `shared/weather.ts`, `src/render/rain*.ts`, `src/render/weather*.ts`, `src/audio/**`, `src/dev/debug-menu.*`, `src/dev/weather-lab.*`, `tests/weather*.test.ts`, `scripts/weather-shot.ts`, `captures/weather/**`; storm tuning in `shared/ship.ts` (SHIP.storm*); additive weather wiring in `src/main.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts` |
+| weather | `shared/weather.ts`, `src/render/rain*.ts`, `src/render/weather*.ts`, `src/audio/**`, `src/dev/dev-panel.ts`, `src/dev/weather-lab.ts`, `tests/weather*.test.ts`, `scripts/weather-shot.ts`, `captures/weather/**`; storm tuning in `shared/ship.ts` (SHIP.storm*); additive weather wiring in `src/main.ts`, `shared/protocol.ts`, `server/core.ts`, `src/net.ts` |
 | phase 2 ocean + sky | `src/render/ocean*.ts`, `src/render/sky.ts`, `src/render/clouds.ts`, `scripts/ocean-shot.ts`, `captures/ocean/**`; additive edits to `src/main.ts`, `src/render/atmosphere.ts` and post grade constants; may add detail-wave packing to `shared/sea.ts` without changing existing behaviour |
 
 Do not edit `package.json`; if you need a dependency, say so in your report. `shared/` must stay free of DOM and Worker
@@ -85,6 +85,15 @@ struct plus `@group(0) @binding(0) var<uniform> F: Frame;`). `atmosphere.ts` exp
 scope): `skyColor(dir)`, `hazeColor(dir)` (the fog colour, equal to the sky at the horizon) and `applyFog(color, world)`.
 `renderer.module(code, label)` compiles WGSL and logs errors with line numbers. Static chunks open the opaque slot.
 `Grade` (`post.ts`, `DEFAULT_GRADE`): exposure, bloom, threshold, saturation, vignette, grain, warmth.
+
+## Camera shake (`@arcade/kit/client/camera`, `SHAKE` in `src/render/camera.ts`)
+
+- Every rig owns a kit `TraumaShake` (trauma², presentation only) reading the one `SHAKE` (`cameraShakeDefaults()`:
+  `shakeScale`, `reduceMotion`; the OS reduced-motion setting also stops it; the dev panel's Game tab edits both, Camera group). The rigs
+  keep their own magnitudes and `shakeWave` frequencies: chase (`src/game/chase.ts`, the ship's grounding/slam passed
+  in per frame), boat (`BoatCam.shake`, hits and slams, decay 3/s), turret (`TurretCam.shake`, recoil, linear 2.4/s),
+  flight and crash (`FlightCam.shake`, catapult, trap, buffet floor, hits, explosions, decay 2.2/s). No hit-stop: the
+  frame draws a room-synced world.
 
 ## Sea (`shared/sea.ts`, `shared/sea.wgsl.ts`)
 
@@ -261,11 +270,23 @@ points), server `chat { from, name, team, text, crew? }` stamped from the room's
 (over it dropped silently; `Net.sendChat` refuses first and the feed says TOO FAST), crew lines only to the sender's
 team (`hearsChat`). `Net.chat` queues lines for `src/ui/chat.ts`; offline they echo locally.
 Offline (`?seed`) the same crew rules run locally on a crew of one.
+Wire format (`shared/protocol.ts` `encode`/`decodeClient`/`decodeServer`, codecs in `shared/wire.ts` on
+`@arcade/kit/net/bytes`): the high-rate messages travel as binary frames (first byte a `WIRE` kind; client `plane`,
+`aim`, `boat`, `gun`, `hits`, `shiphits`, `thits`, `tshiphits`, `bhits`, `deckhits`; room `planes`, `ships`, `boats`, `turrets`,
+`gun`), everything else (hello/welcome, crew, chat, ops, objective, hulls, combat events, errors) as JSON text on the
+same socket (`binaryType = "arraybuffer"`). A binary frame decodes to the same message object JSON would and passes the
+same checks; malformed, truncated, trailing or oversized frames (512 B client, 64 KiB room) decode to null. Grids: jets
+1 ms, 1 cm, quaternion 1/32767 (landing angles 1e-4 rad), velocity 0.1 m/s, controls 1/100 (`compactPlane` is that
+grid, so the room's combat sim sees exactly the jet its clients draw); ships and boats keep the room's own rounding
+(lossless). Each timed list carries one f64 of whole ms plus a varint offset per entry. `scripts/net-bandwidth.ts`
+measures a full 32-player room (JSON before: 32.0 KB/s down per client; binary: 10.7 KB/s).
 
-## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,menu,team-menu,ops-menu}.ts`)
+## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,team-menu,ops-menu}.ts`)
 
-- Load screen (`menu.ts`, over an offline sea, seed 7): name, QUICK JOIN, CREATE GAME, JOIN GAME by code. `?room=X`
-  joins straight away, `?seed=N` plays offline; both skip it. The chosen room goes into the address bar as `?room=`.
+- Title (the kit game shell in `src/main.ts`, over an offline sea, seed 7): callsign (required), Quick join, Play with
+  friends (Create game, private), Join by code or invite link. `?room=X` with a saved callsign joins straight away
+  (without one the title offers "Join room X"), `?seed=N` plays offline; both skip it. The room is in the address bar
+  as `?room=`; Escape's Leave room returns to the title.
 - Lobby Durable Object (`Lobby`, binding `LOBBY`, singleton, room reports persisted): `GET /api/quick` (fullest open
   public room, else a shared fresh code), `POST /api/create` (fresh private code; quick join never hands it out),
   `GET /api/room/:code`, `GET /api/stats`. Rooms report `{ code, players, private }` (1 s throttle, 10 s heartbeat,
@@ -346,7 +367,7 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
   around the ship's centre (`CHASE.sensitivity` rad/px both axes, no invert, pitch 6-80°, fixed distance, back behind
   the ship after 4.5 s without movement). In the air the same lock is the flight stick (`FlightInput.grab = false` in
   the game; `?invert` flips only the stick), so ship ↔ jet hand-offs, crashes and recoveries keep it. Esc releases it
-  (the browser's), the next click takes it again. Tab, DEPLOY and the debug menu `input.suspend()` it (free
+  (the browser's), the next click takes it again. Tab, DEPLOY and the dev panel `input.suspend()` it (free
   cursor); when the last one closes, `input.resume()` takes it back only if it was held when they opened (allowed
   without a click because the page released it). The free camera (C) unlocks and keeps drag-orbit, wheel and WASD;
   if Pointer Lock is denied, dragging orbits the chase camera. LMB at the helm only takes the lock.
@@ -359,10 +380,10 @@ Offline (`?seed`) the same crew rules run locally on a crew of one.
 URL params (read in `main.ts`): `?room=name` (join that room, skipping the menu), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea
 time at S), `?cam=x,z,yaw,pitch,dist` (initial camera; yaw and pitch in degrees, yaw 0 looks north (-z), 90 east,
 pitch is the eye's elevation seen from the focus, 8-85), `?weather=clear|light|medium|heavy` (local manual weather from
-the start, for scripted captures: the room's physics keep the room's weather), `?lab=weather` (debug menu open on the
-weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is untouched).
+the start, for scripted captures: the room's physics keep the room's weather), `?lab=weather` (dev panel open on the
+weather section; any section id works: `time`, `audio`, `sounds`, `sight`, `radar`, `bots`, `zones`, `view`), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is untouched).
 
-## Bots (dev only: `shared/bots.ts`, `server/bots.ts`, `src/dev/{bots-tab,local-room}.ts`, `tests/bots.test.ts`)
+## Bots (dev only: `shared/bots.ts`, `server/bots.ts`, `src/dev/{bots-lab,local-room}.ts`, `tests/bots.test.ts`)
 
 - Bots are crew players without a socket, run by the room (dev rooms only, `RoomCore.dev`). A bot's `role` is a ship
   operation id (`hornet`, `f35`, `boat`, a gun op, `helm`): it joins the chosen carrier (`joinCrew`, `joinShip`) and
@@ -380,11 +401,12 @@ weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is 
   flares, ammo, invulnerable, respawn, target player, target ship.
 - Wire: client `{ type: "bot", cmd }` (`BotCmd`: spawn, set, kill, remove, clear; `botCmdOf` validates and clamps);
   server `bots` (`BotInfo[]`, ~2 Hz while any exist) and `welcome.dev`.
-- BOTS tab: scenarios (1v1 dogfight · 2 km, bomber run on my carrier, swarm of 4, carrier battle, target practice ×3,
-  boat attack ×2, remove all), a spawner and behavior on the shared Lab panel, the live list (LOAD, APPLY, SHOOT DOWN,
-  REMOVE, per group APPLY/REMOVE). Real-GPU check: `scripts/bots-shot.ts` (captures in `captures/bots/`).
+- Bots tab of the dev panel (`bots-lab.ts`): scenario buttons (1v1 dogfight · 2 km, bomber run on my carrier, swarm
+  of 4, carrier battle, target practice ×3, boat attack ×2, remove all), a spawner and behavior as typed settings, the
+  room status, and the live list as a table readout; Act on picks every bot, a group or one bot for LOAD, APPLY,
+  SHOOT DOWN and REMOVE. Offline it offers Reload with an in-page room. Real-GPU check: `scripts/bots-shot.ts` (captures in `captures/bots/`).
 
-## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{debug-menu,weather-lab}.ts`)
+## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{dev-panel,weather-lab}.ts`)
 
 - Weather is a pure function of (room seed, sea time, room override), like the sea. `weatherAt(seed, t)` is the seeded
   timeline: ~270 s slots (±50 s), a neighbour-only Markov chain over clear/light/medium/heavy evaluated exactly by
@@ -411,7 +433,13 @@ weather tab), `?tod=H` (local clock frozen at hour H, 0-24; the room's clock is 
   cumulus into a low, slate, faceted deck with dark undersides and lightning glow near the strike; the ocean look's
   `stormFoam`, `rain`, `wind`, `windX/Z` (look slots 10-11) draw wind-streak foam (crests torn into streaks, densest on
   crests and swell backs) and rain dimples near the camera. All zero / absent: the sunny look exactly.
-- Debug menu: ` / F2, `DebugMenu.addTab`, `wantsInput` pauses the game's input while the pointer is over it. Captures:
+- Dev panel (dev builds only, `src/dev/dev-panel.ts`): the shared floating `LabPanel` (Backquote), drawn with knobs, one
+  tab per subject (World: weather, time; Audio; Sounds; Flight: bombsight, radar; Bots; Game: zones, quality, volume,
+  key labels, camera shake). Each `DevSection` (`dev-tools.ts`) binds typed settings, `buttons` rows (presets, strike now, broadcast,
+  copy/paste JSON, spawns, auditions) and `readout` rows; `frame` runs while its tab shows. `wantsInput` pauses the
+  game's input while the pointer is over the panel or it has focus. Weather section: Mode (timeline/manual), presets,
+  transition, every parameter (moving one switches to manual), Strike now, sea time pause/speed/sync, readouts, the
+  Upcoming schedule, Broadcast to room / Back to timeline, Copy / Paste (clipboard, else a prompt) / Save preset. Captures:
   `scripts/weather-shot.ts` (kinds, low storm, lab, chase-camera storm sequence, rain benchmark).
 
 ## Day-night (`shared/daycycle.ts`, `src/render/{daynight,daynight-wgsl,daynight-lab,stars,lights}.ts`)
@@ -457,8 +485,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
     at night. A new model (the F-35C) gets its lights from its own geometry.
   - Create `Lights` before the game: `ShipPass` and `PlaneFx` find it through `lightsFor(renderer)` and add every ship
     and jet they draw.
-- TIME debug tab (`daynight-lab.ts`): readouts, local hour scrub, presets, speed/freeze, BROADCAST TO ROOM / ROOM TO
-  TIMELINE.
+- Time section of the dev panel (`daynight-lab.ts`, World tab): readouts, local hour scrub, presets, clock speed
+  (room clock, freeze, x1-x60), Broadcast to room / Room to timeline with a fade.
 
 ## Flight (`shared/{plane,launch,vehicles}.ts`, `src/flight/**`, `src/render/plane*.ts`)
 
@@ -527,8 +555,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - Target markers (flying): corner brackets on enemy carriers in view, diamonds on enemy jets (within `markerJets`
   km) and boats (4 km), each with its distance; a chevron at the screen edge toward the nearest enemy carrier when it
   is out of view, kept clear of the radar's corner (`Radar.box`).
-- Settings: `RADAR` (`RadarSettings`, `RADAR_DEFAULTS`, `RADAR_CONTROLS`) on the Lab panel in the debug menu's RADAR
-  tab; read live. Real-GPU check: `scripts/radar-shot.ts` (fresh rooms: offline draws only our own carrier); captures
+- Settings: `RADAR` (`RadarSettings`, `RADAR_DEFAULTS`, `RADAR_CONTROLS`) on the dev panel's Flight tab (the
+  shared Lab panel); read live. Real-GPU check: `scripts/radar-shot.ts` (fresh rooms: offline draws only our own carrier); captures
   in `captures/radar/`.
 
 ## Capture zones (`shared/objective.ts`, `server/core.ts`, `src/objective/**`)
@@ -545,7 +573,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - Authority: the room's `Objective` steps with the ships and sends `obj` (`packObjective`, a flat number array) at
   ~4 Hz while a zone is being taken or held, at once on a capture, reveal, relocation or round end, 1 Hz otherwise,
   and to joiners. Offline the client runs its own on the local ship. Dev rooms take `objective` (rules, clamped;
-  the round restarts) from the debug menu's ZONES tab (rules + look, APPLY TO ROOM).
+  the round restarts) from the dev panel's Game tab (Zones: rules + look, Apply to room).
 - Client: `Zones` (`src/objective/zones.ts`) draws `ZonePass` (a glowing boundary on the displaced sea with the
   capture arc and turning dash marks, a faint tint, a low light curtain on the boundary; no centre beam) and the
   top-centre `ObjectiveHud` (zone pips, scores in carrier colours with bars to the target, MOVE countdown, a capture
@@ -574,7 +602,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `bombLaunch` (shared/combat.ts, also what `Weapons.tick` releases) then `bombImpact`, which flies `fall` at the
   world's step against the sea at each step's sea time, the islands and every carrier drifted along its course
   (`driftShip`); `tests/bombsight.test.ts` checks it against released bombs in a `CombatWorld`. Near a moving enemy the
-  pipper is drawn in that enemy's frame (where it is now). Tunables: SIGHT tab of the debug menu (the shared Lab panel:
+  pipper is drawn in that enemy's frame (where it is now). Tunables: the dev panel's Flight tab (the shared Lab panel:
   `SIGHT_CAM` in `src/flight/camera.ts`, `SIGHT_STYLE` in `src/weapons/bombsight.ts`). GPU check:
   `scripts/bombsight-shot.ts` (captures in `captures/bombsight/`).
 - Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
@@ -638,7 +666,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
     and keep burning (on a deck they ride the ship, in its frame), flung earth or deck debris, dust, sparks, a scorch.
   - `blast(seed, x, y, z, size, surface)` and `boatKill(seed, x, y, z, vx, vz, heading, size)` for anything else.
   - Fireballs throw a short light (an additive glow and a pool on the surface, strong at night); nearby bursts add
-    camera trauma (`takeTrauma`, the seam shakes the chase and crash cameras). Puffs are opaque alpha-to-coverage
+    camera trauma (`takeTrauma`, the seam shakes the chase and crash cameras; falloff `attenuateShake` from
+    `@arcade/kit/client/camera`). Puffs are opaque alpha-to-coverage
     icospheres (no blended overdraw), pieces opaque, trail smoke one premultiplied ribbon, sparks additive; fixed pools.
 - Dev harness (not built): `weapons.html` (`src/weapons/harness.ts`), offline with AI drones (`src/weapons/drones.ts`).
   Params: `?drone=N`, `?hostile`, `?flares`, `?air`, `?f35`. Real-GPU checks: `scripts/weapons-shot.ts`; captures go
@@ -718,12 +747,13 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   It steps with the ships and broadcasts every hull as `hulls` (`HullTuple[]`, `packHull`), at most every 100 ms when one
   changes, and to joiners. Clients keep `net.hulls`, unpacked at their sea time (`unpackHull`).
 - Health is 1,000. Damage (`shipDamage`):
-  - Gun: 0.25 per round, so a 160-round overheat run takes ~4%.
-  - Missile: 50 (5%).
-  - Direct bomb hit: 175 (17.5%), so an F-35C's four bombs take ~70%.
-  - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 70 at the hull, falling to 15 at
+  - Aircraft are a nuisance more than a death sentence, so ships live long enough to fight over the zones:
+  - Gun: 0.12 per round, so a 160-round overheat run takes ~2%.
+  - Missile: 25 (2.5%).
+  - Direct bomb hit: 80 (8%), so an F-35C's four bombs take ~32%.
+  - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 35 at the hull, falling to 8 at
     25 m.
-  - Enemy jet crashing into the ship: 50.
+  - Enemy jet crashing into the ship: 30.
   - Ramming (`"ram"`, see "Carrier collisions" below): 6 · (closing speed − 1.5 m/s)^1.5, at most 650; the hull that
     brought the speed takes up to 40% less. A 15 m/s T-bone: ~300 to the rammed side, ~180 to the rammer.
   - Friendly fire is off: `Fleet.hit` refuses the ship's own team (its own crew; every other carrier is an enemy).
@@ -776,6 +806,33 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - Real-GPU check: `scripts/ships-shot.ts`. Three pages on three carriers: A's F-35C bombs B's carrier (direct hit, near
   miss), C's Hornet strafes it and fires dumbfires, A's bombs finish it, B moves to its replacement. Captures go to `captures/ships/damage/`.
 
+## Parked jets (`shared/deck-jets.ts`, `server/core.ts`, `src/flight/seam.ts`, `tests/deck-jets.test.ts`)
+
+- Every ready aircraft slot (`slotReady`: no pilot, not recharging) is a jet standing in its own bay on its carrier's
+  apron: the carrier-spec `PARKING` jet spots in catalogue order (Hornet, Hornet, F-35C; the boat's slot and extra
+  rescue slots have none), angled nose-in toward the runway, clear of the runway, catapult track, landing path, island
+  and elevator (tested on the hit boxes' corners). `parkedJets(ship, now)` is the set; clients draw it from the crew
+  they already have (`FlightModule.drawParked`: the real models in the ship's colour, gear down, glued to the drawn,
+  settled deck every frame; the models have no folding wings). A launch empties the bay (the catapult run is the
+  pilot's jet as before), a landing refills it at once, a loss leaves it empty while the slot recharges.
+- Health `DECK_JET.hp` 60, room-only (`DeckJets`), repaired after 20 s without a hit, forgotten when the slot leaves
+  its bay. Damage: a jet gun round 2, a CIWS round 1.6, a boat 25 mm round 4 (each what it does to a flying jet), and
+  bursts by distance to the bay's centre 2 m above the deck: bombs `bombDamage`, missiles `blastDamage` (not stores
+  shot down in flight: `boom.intercepted`), 5-inch shells `shellDamage`, SAMs `samDamage`, and an enemy jet crashing
+  within 16 m destroys it. Friendly fire is off (the ship's `team`).
+- Rounds are shooter-authoritative like hull rounds: a round that strikes the deck inside a parked jet's box
+  (`parkedAt`, ship-local, 14 × 19 m, up to 5.5 m above the deck; wired into `Weapons`, `Gunnery` and `BoatModule` as
+  `deckJet`) is reported as `deckhits { w: 0 gun | 1 ciws | 2 cannon, ship, slot, n }` (binary) instead of a hull hit.
+  The room checks an enemy ship, the slot parked, and the weapon's own budget and reach exactly as for that hull
+  (`spendRounds` within 1.8 km, `GunneryWorld.ciwsDeckRounds`, `BoatBudget` with a boat on the water in reach).
+- Destroyed: the room sends `deckkill { ship, slot, by, w }` (JSON, rare) and runs `wreckParked` (crew event `wreck`:
+  the slot's normal loss recharge, Hornet 30 s, F-35C 45 s, as after a crash); the crew that follows empties the bay.
+  Clients blow it apart in its bay with the jet crash breakup on a deck (`Explosions.crash(.., "ship", ..)`: fireball,
+  burning pieces riding the deck, scorch), and the kill feed reads "RAIDER ✕ HORNET ON DECK" (DESTROYED confirmation for
+  the attacker). Kill/death tallies are for players only and do not count it.
+- Capture check: `scripts/deck-jets-shot.ts` (dev server, in-page dev room; a second player RAIDER bombs one parked
+  Hornet with an F-35C and strafes the other; `--swiftshader` without a GPU).
+
 ## Carrier collisions (`shared/ship-collide.ts`, hook in `server/core.ts` `collideShips`, `src/game/game.ts`)
 
 - Carriers don't pass through each other. The colliding shape is the flight deck's plan (330 × 76 m, notched bow
@@ -796,13 +853,20 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 
 ## Sound (`src/audio/{mixer,mixer-lab,sfx-*,sounds-lab,jet-*,ship-audio,ui-audio,weapon-audio,weather-audio}.ts`, `public/sfx/`, `scripts/{sfx-cinematic,sfx-picks-plugin,audio-demo,audio-render}.ts`)
 
-- **One mix** (`mixer()` in `src/audio/mixer.ts`), started on the first gesture: buses `engines` (other jets), `flyby`,
-  `weather` (sea, weather, ship ambience) behind a canopy low-pass that closes in the cockpit; `own` (your engine and
-  cockpit), `sfx`, `weapons`, `ui` (dry). Sends: `reverb` (a synthesized 3.4 s open-air ocean impulse), `echo` (a dark
-  140 ms slapback off the water), `room` (a small metal cockpit). Then a gentle glue compressor, a -3 dB peak limiter,
-  an output trim (loudness: the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()`
-  dips engines, flybys and ambience under explosions and passes. `mixer.listener` (camera pose, set by jet-audio.ts each
-  frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v4`); **M mutes**.
+- **One mix** (`mixer()` in `src/audio/mixer.ts`) on the kit's `AudioRuntime` (`@arcade/kit/audio/runtime`, the
+  `mix` option; graph in `@arcade/kit/audio/mix`): `CARRIER_MIX` declares buses `engines` (other jets), `flyby`,
+  `weather` (sea, weather, ship ambience) behind the muffle low-pass (the canopy, 1.3 kHz closed; `setCockpit` →
+  `runtime.setMuffle`); `own` (your engine and cockpit), `sfx`, `weapons`, `ui` (dry). Sends: `reverb` (a synthesized
+  3.4 s open-air ocean impulse, `impulseResponse`), `echo` (a dark 140 ms slapback off the water, feeding the reverb),
+  `room` (a small metal cockpit). Then a gentle glue compressor, a -3 dB peak limiter, an output trim 0.9 (loudness:
+  the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()` → `runtime.duckBuses` dips
+  engines, flybys, ambience and your engine under explosions and passes. The runtime owns the context: started on the
+  first gesture, suspended with the tab, **M mutes** (`bindDomLifecycle`); Carrier keeps its designer levels and mute
+  (`carrier.audio.v4`, toast on M) and the kit's player volumes (`arcade.volume.carrier.v1`). Library cues
+  (`runtime.playCue`) land on Carrier's buses through `CARRIER_MIX.route`. The procedural noise bank is the kit's
+  `noiseBank`. `mixer.listener` (camera pose, set by jet-audio.ts each frame) lets anything place a sound in the world.
+  The port to the kit was null-tested against the old graph: every demo scene renders within one 16-bit step (null
+  RMS -120 to -135 dBFS, the same as two renders of the old build; `captures/audio/kit-port/`).
 - **Live, state-driven sounds are procedural, by design** (user decision): everything that follows a jet's live state
   (engines, afterburner, cockpit engine, canopy wind, buffet, breathing, creaks, wind rush, flybys, the sonic crack, the
   stall warning) or the trigger (the M61, rounds cracking past) is synthesized every frame from rpm, throttle,
@@ -842,13 +906,17 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `sfx().play(slot, { at: worldXYZ | local | dist, gain, rate, delay, travel, reverb, echo, ref, rolloff, bus })` and
   `sfx().loop(slot, …)` → `{ set({ gain, rate, at, tc }), stop(fade) }`. Pooled one-shots (explosions, impacts, thunder,
   hull slams, flares) play a random 4-5★ take (else any not rated down).
-- **Picks**: `public/sfx/picks.json` (shipped defaults: take, trim dB, ratings per slot), overridden live by the SOUNDS
+- **Picks**: `public/sfx/picks.json` (shipped defaults: take, trim dB, ratings per slot), overridden live by the Sounds
   tab in localStorage (`carrier.sfx.picks`). The dev server's `POST /__sfx/picks` (`scripts/sfx-picks-plugin.ts`)
-  writes picks.json; the SOUNDS tab's SAVE does that, COPY PICKS exports the JSON anywhere.
-- **SOUNDS tab** (`sounds-lab.ts`, ` menu, `?sounds=1` opens it): every slot, its takes (▶ dry or in context at 40 m,
-  300 m, 1.5 km with the reverb, from the chase view or behind the canopy; ★ pick, live; level trim; 1-5 rating),
-  category filter, COPY / SAVE / RESET. The AUDIO tab keeps the bus levels, engine/cockpit tuning, a recorded on/off
-  switch and test buttons.
+  writes picks.json; the Sounds tab's Save picks.json does that, Copy picks exports the JSON anywhere.
+- **Shared library**: every slot is also a library id (`SLOT_LIBRARY_ID`, e.g. `explosion.jet.air`) reusing the takes
+  Carrier plays, so the Lab's Audio › Sound library auditions them beside every other game's sounds
+  ([sfx-library.md](../../docs/sfx-library.md#carrier)); `tests/sfx-library.test.ts` keeps picks and library in step.
+- **Sounds tab** of the dev panel (`sounds-lab.ts`, `?sounds=1` opens it): one folded group per slot, its takes (▶
+  buttons, dry or in context at 40 m, 300 m, 1.5 km with the reverb, from the chase view or behind the canopy; the take
+  the game plays, live; level trim; 0-5 ★ rating per take, Reset restores the shipped picks), a category filter, Stop,
+  Copy picks / Save picks.json / Reset to shipped. Nothing plays until a ▶ is pressed. The Audio tab keeps the bus
+  levels, engine/cockpit tuning, a recorded on/off switch, test buttons and a peak meter.
 - **Procedural jets**: the engine (`jet-engine.ts`, Wings-style): a soft triangle whine with a ×2.76 overtone (front of
   the cone), pink roar behind a throttle-opened low-pass (rear; your own Hornet's two engines decorrelated left/right),
   brown body and a deep sub, an afterburner rumble that breathes plus a soft crackle and sub; spool inertia
@@ -870,6 +938,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
   `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
-  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel) on hailmary into
+  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel; seeded, WAVs by the kit's
+  `encodeWavPcm16`) in headless Chrome on hailmary or Playwright's Chromium anywhere (no GPU needed);
+  `scripts/audio-compare.ts <before> <after> --mp3=<dir>` compares two render folders (kit LUFS per scene and per 2 s
+  section, peak, spectral centroid, high-band share, null test). Earlier renders went into
   `captures/audio/v5-gun-*` (the M61), `v4-*` (engines and flybys) and `v3-*` (recorded slots); `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
   `v3-candidates.md`). `public/sfx/boom/{far-1,bomb-water-2}.mp3` stay only for `scripts/video-epic.ts`.

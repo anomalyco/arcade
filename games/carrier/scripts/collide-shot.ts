@@ -7,9 +7,13 @@
 //   ssh hailmary 'cd /tmp/carrier-collide && ~/.bun/bin/bun collide-shot.ts --out=/tmp/carrier-collide/out'
 //
 // Options: --base=URL  --size=1536x960
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -265,4 +269,4 @@ check(a.hp < 1000 && a.hp > b.hp, `A (rammer) took less (hp ${a.hp.toFixed(0)})`
 check(Math.hypot(a.ox - a.x, a.oz - a.z) > 150, `hulls apart, not through each other (centres ${Math.hypot(a.ox - a.x, a.oz - a.z).toFixed(0)} m)`)
 for (const l of logs.slice(0, 20)) console.log(l)
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

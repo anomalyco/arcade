@@ -56,6 +56,12 @@ links to those instead of repeating them.
 
 ## Lights
 
+**Catalogue night sky.** `packages/kit/sky` draws Yale catalogue stars with atmospheric
+extinction and a pixel-integrated point spread, plus a NASA-textured lunar disk. The
+host supplies scene radiance calibration and owns exposure. `moonLight()` supplies
+direction and lux for lighting. Today remains the default. See [night-sky ledger](../perf/night-sky.md)
+for the isolated +0.204 ms mini/Metal measurement and its scope.
+
 **Physical lights and surfaces.** GGX with height-correlated Smith, Karis sphere-light widening so a fixture
 mirrors as a patch, geometric specular AA, and a split-sum sky reflection with a fitted env BRDF. Reads as wet
 asphalt, car paint and metal instead of Blinn hot spots.

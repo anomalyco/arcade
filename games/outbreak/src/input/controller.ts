@@ -4,12 +4,15 @@ import type { FrameClock } from "../../shared/clock"
 import { HOLD_DURATION } from "../../shared/interact"
 import { LocalSession, type Command } from "../../shared/session"
 import type { BotsLabController } from "../bots-lab"
+import { CROUCH_CTRL, crouchCodes, mapCodes, type ControlSettings } from "../controls/settings"
 import { CRAFT_KEY } from "../crafting/settings"
 import type { InventoryHud } from "../inventory-hud"
 import { inventoryPresenter } from "../inventory/hooks"
 import { BOARD_UP } from "../prompt-clarity/board"
-import { MAP_KEY, type OutbreakMap } from "../map/map"
+import type { OutbreakMap } from "../map/map"
 import type { NetSession } from "../net-session"
+import { INTERACT_MENU_RADIAL, type RadialSettings } from "../radial/settings"
+import { radialInteract, radialOptions } from "../radial/state"
 import type { OutbreakSettings } from "../settings"
 import { applyVehicleStunt } from "../vehicle-lab"
 
@@ -31,8 +34,8 @@ export interface OutbreakInputHost {
 
 /**
  * Translates keyboard, mouse, wheel, and tap-vs-hold (`KeyG`) input into fixed-tick `Command` substeps for
- * `session.update`, while routing HUD/map shortcuts (`Digit1`–`Digit9`, `Tab`, `Escape`, `KeyN`, `KeyC` recipes,
- * `KeyQ` ping).
+ * `session.update`, while routing HUD/map shortcuts (`Digit1`–`Digit9`, `Tab`, `Escape`, `KeyM` map, `KeyC`
+ * recipes, `KeyQ` ping). Crouch and map keys follow Backquote › Controls (`controls/settings.ts`).
  */
 export class OutbreakInputController {
   readonly input: Input
@@ -40,17 +43,21 @@ export class OutbreakInputController {
   private pendingHotbarDelta = 0
   private pendingBarricade = false
   private pendingVerbs: Partial<Command> = {}
+  /** E went down on a target with a radial: the input's tap edge is the radial's, not an interaction. */
+  private swallowInteract = false
   // KeyG is tap-or-hold: the tap fires on release, the hold once it has lasted HOLD_DURATION.
   private readonly holds = new Map<string, { at: number; fired: boolean }>()
 
   constructor(private readonly host: OutbreakInputHost) {
-    const { canvas, inventoryHud, map } = host
+    const { canvas, inventoryHud, map, cam } = host
     this.input = new Input(canvas, ["KeyE"])
     this.input.enabled = true
-    // Ctrl is crouch: keep the browser's Ctrl shortcuts (save, bookmark, find) from firing while sneaking.
+    // With Today's Ctrl crouch, keep the browser's Ctrl shortcuts (save, bookmark, find) from firing while sneaking.
+    // Ctrl+W, Ctrl+T and Ctrl+N never reach the page, which is why crouch moved to Z.
     window.addEventListener("keydown", (e) => {
       const t = e.target as HTMLElement | null
       if (
+        this.keys().crouchKey === CROUCH_CTRL &&
         e.ctrlKey &&
         !e.metaKey &&
         /^(Key[A-Z]|Digit\d|Space)$/.test(e.code) &&
@@ -63,6 +70,23 @@ export class OutbreakInputController {
     this.input.onKey = (code) => {
       const session = this.host.session()
       const digit = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9"].indexOf(code)
+      // The open radial takes its numbers and Esc.
+      if (radialInteract.isOpen && (digit >= 0 || code === "Escape")) {
+        if (code === "Escape") radialInteract.cancel()
+        else this.sendRadial(radialInteract.choose(digit))
+        return
+      }
+      // Shift+E is the target's alternative, as Today: no radial for it.
+      if (code === "KeyE" && this.radialOn() && !this.input.sprinting) {
+        const p = session.view.player
+        const target = cam.unproject(this.input.mouse.x, this.input.mouse.y, innerWidth, innerHeight)
+        const options = p.vehicleId ? [] : radialOptions(session.view, session.view.prompt)
+        const aim = Math.atan2(target.y - p.y, target.x - p.x)
+        if (radialInteract.press(performance.now(), options, session.view.prompt?.id ?? "", this.input.mouse, aim)) {
+          this.swallowInteract = true
+          return
+        }
+      }
       if (digit >= 0) {
         const meant = inventoryHud.digit(digit, session.view)
         if (meant.hotbarSlot !== undefined) this.pendingHotbarSlot = holsterToggle(meant.hotbarSlot, session.view.inventory.selectedSlot)
@@ -87,7 +111,7 @@ export class OutbreakInputController {
       if (code === "KeyQ") this.pendingVerbs.ping = true
       if (code === "Tab") inventoryHud.togglePack()
       if (code === "Escape") inventoryHud.close()
-      if (code === MAP_KEY) map.toggle()
+      if (mapCodes(this.keys()).includes(code)) map.toggle()
       else if (code === "Escape") map.close()
       else map.key(code)
       // The open bag (AR-94) takes G for what the cursor is over, before G's drop-held and bundle.
@@ -107,6 +131,32 @@ export class OutbreakInputController {
     })
   }
 
+  private keys(): ControlSettings {
+    return this.host.settings.hud as unknown as ControlSettings
+  }
+
+  private radialOn(): boolean {
+    return (this.host.settings.hud as unknown as RadialSettings).interactMenu === INTERACT_MENU_RADIAL
+  }
+
+  /** A radial choice becomes this tick's interaction, with the HUD's notes and the workbench's recipe board as E does. */
+  private sendRadial(send: Partial<Command> | null): void {
+    if (!send) return
+    const { inventoryHud } = this.host
+    const prompt = this.host.session().view.prompt
+    if (send.interactAction === "barricade") {
+      this.pendingBarricade = true
+      if (prompt && (prompt.kind === "door" || prompt.kind === "window")) inventoryHud.noteAction(prompt.kind, BOARD_UP)
+      return
+    }
+    inventoryHud.noteUse(prompt, send.interactAction !== undefined && send.interactAction === prompt?.alt?.id)
+    if (prompt?.kind === "bench" && (send.interactAction ?? prompt.primary.id) === "board" && prompt.primary.id === "board") {
+      if (inventoryHud.craftOpen) inventoryHud.close()
+      else inventoryHud.openBench()
+    }
+    Object.assign(this.pendingVerbs, send)
+  }
+
   liveMove(): { mx: number; my: number; sprint: boolean } {
     return { ...this.input.move(), sprint: this.input.sprinting }
   }
@@ -118,6 +168,8 @@ export class OutbreakInputController {
     this.pendingHotbarSlot = undefined
     this.pendingHotbarDelta = 0
     this.pendingBarricade = false
+    this.swallowInteract = false
+    radialInteract.reset()
   }
 
   private pollHolds(now: number): void {
@@ -135,13 +187,30 @@ export class OutbreakInputController {
 
   /** Steps all due fixed-tick simulation substeps for `wallNow` and returns the total stepped `dt` in seconds. */
   stepSubsteps(wallNow: number, clock: FrameClock): number {
+    if (radialInteract.busy && !this.radialOn()) radialInteract.reset()
+    // The release that closes the radial resets it below; this tick's aim and trigger still belong to it.
+    const wasBusy = radialInteract.busy
+    this.sendRadial(
+      radialInteract.frame(
+        wallNow,
+        this.input.interactHeld,
+        this.input.mouse,
+        this.host.session().view.prompt?.id,
+        (this.host.settings.hud as unknown as RadialSettings).radialDelay,
+      ),
+    )
     const substeps = clock.frame(
       wallNow,
       this.liveMove(),
-      () => this.input.takeEnter(),
+      () => {
+        const edge = this.input.takeEnter()
+        if (!this.swallowInteract) return edge
+        this.swallowInteract = false
+        return false
+      },
       () => this.input.takeSecondary(),
       () => this.input.takeJump(),
-      () => this.input.interactHeld,
+      () => this.input.interactHeld && !radialInteract.busy,
     )
     if (!substeps.length) return 0
     const { cam, settings, botsLab } = this.host
@@ -149,12 +218,20 @@ export class OutbreakInputController {
     const target = cam.unproject(this.input.mouse.x, this.input.mouse.y, innerWidth, innerHeight)
     const hotbarSlot = this.pendingHotbarSlot
     const hotbarDelta = this.pendingHotbarDelta
-    const fireEdge = this.input.takeFirePress()
+    let fireEdge = this.input.takeFirePress()
+    // While the radial is up a click picks the wedge under the cursor, the aim holds and nothing fires.
+    const radialBusy = wasBusy || radialInteract.busy
+    if (radialBusy && fireEdge) {
+      if (radialInteract.isOpen) this.sendRadial(radialInteract.choose(radialInteract.hover))
+      fireEdge = false
+      // The click was a pick: holding the button on afterwards must not start firing.
+      this.input.firing = false
+    }
     const reloadEdge = this.input.takeReload()
     const meleeEdge = this.input.takeMelee()
     const seatEdge = this.input.takeSeat()
     const hornHeld = this.input.held("KeyH")
-    const crouchHeld = this.input.enabled && (this.input.held("ControlLeft") || this.input.held("ControlRight"))
+    const crouchHeld = this.input.enabled && crouchCodes(this.keys()).some((code) => this.input.held(code))
     const spaceHeld = Boolean(session.view.player.vehicleId) && this.input.held("Space")
     const barricadeEdge = this.pendingBarricade
     this.pollHolds(wallNow)
@@ -170,13 +247,13 @@ export class OutbreakInputController {
         mx: step.mx,
         my: step.my,
         sprint: step.sprint || spaceHeld,
-        aim: Math.atan2(target.y - p.y, target.x - p.x),
+        aim: radialBusy ? radialInteract.aim : Math.atan2(target.y - p.y, target.x - p.x),
         interact: step.interact,
         flashlight: step.flashlight,
         jump: step.jump,
         interactHeld: step.interactHeld,
         fire: idx === 0 ? fireEdge : false,
-        fireHeld: this.input.firing,
+        fireHeld: this.input.firing && !radialBusy,
         reload: idx === 0 ? reloadEdge : false,
         melee: idx === 0 ? meleeEdge : false,
         barricade: idx === 0 ? barricadeEdge : false,

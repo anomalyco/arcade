@@ -10,8 +10,8 @@ import { PALETTES } from "./style"
 import { MapTiles } from "./tiles"
 import "./map.css"
 
-/** The map's binding: physical KeyN on every layout (labelled N via keyLabel). */
-export const MAP_KEY = "KeyN"
+/** Every code that can open the map (Backquote › Controls › Map key picks which; `mapCodes`). */
+const MAP_PAGE_KEYS = ["KeyM", "KeyN"]
 
 export type MapFrame = {
   /** performance.now() in milliseconds. */
@@ -52,7 +52,7 @@ const pct = (xs: Sample, p: number) => {
 }
 
 /**
- * Outbreak's map: per-chunk exploration memory, a cached tile pyramid, the full-screen sheet on `KeyN` and an optional
+ * Outbreak's map: per-chunk exploration memory, a cached tile pyramid, the full-screen sheet on `KeyM` (or `KeyN`) and an optional
  * compass ring or corner minimap. `main.ts` calls `update` once per drawn frame; everything else is internal.
  */
 export class OutbreakMap {
@@ -83,9 +83,9 @@ export class OutbreakMap {
     this.screen.onMarkers = () => this.saveMarkers()
     this.compass = new MapCompass(parent)
     this.minimap = new MapMinimap(parent)
-    // Tells a Lab station embedding the game that N opens the map here, not a voice note.
+    // Tells a Lab station embedding the game that M and N open the map here, not the Lab's mute or a voice note.
     const keys = new Set((document.documentElement.dataset.pageKeys ?? "").split(" ").filter(Boolean))
-    keys.add(MAP_KEY)
+    for (const code of MAP_PAGE_KEYS) keys.add(code)
     document.documentElement.dataset.pageKeys = [...keys].join(" ")
   }
 
@@ -105,6 +105,18 @@ export class OutbreakMap {
 
   close(): void {
     this.screen.close()
+  }
+
+  /** The key the sheet's legend shows for closing it. */
+  setKey(code: string): void {
+    if (code === this.screen.closeKey) return
+    this.screen.closeKey = code
+    this.screen.renderLegend()
+  }
+
+  /** Redraws the legend's key caps (the keyboard layout changed). */
+  refreshLegend(): void {
+    this.screen.renderLegend()
   }
 
   /** Keys while the sheet is open: + and − zoom. Returns true when the key was used. */

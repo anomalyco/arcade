@@ -10,7 +10,9 @@ import {
   muzzleWorld,
   unpackBoat,
 } from "../../shared/boat"
-import type { Ground } from "../../shared/combat"
+import type { Ground, GroundShip } from "../../shared/combat"
+import { DECK_ROUND } from "../../shared/deck-jets"
+import { worldToShip } from "../../shared/plane"
 import { type Crew, type RecoverHow, teamCss, playerOf } from "../../shared/crew"
 import type { Archipelago } from "../../shared/islands"
 import type { Sea } from "../../shared/sea"
@@ -33,7 +35,7 @@ import { BoatInput } from "./input"
 import { RemoteBoats } from "./remote-boats"
 
 /** What the boat module needs from the connection. */
-export type BoatNetLike = Pick<Net, "state" | "id" | "boats" | "sendBoat" | "sendBoatHits">
+export type BoatNetLike = Pick<Net, "state" | "id" | "boats" | "sendBoat" | "sendBoatHits" | "sendDeckHits">
 
 /** The predicted boat glides onto the room's pose over this lag (s); further apart than SNAP m, it jumps. */
 const CORRECT_LAG = 0.8
@@ -92,7 +94,7 @@ export class BoatModule {
   private targetList: Target[] = []
   private boatTargets: BoatTarget[] = []
   private ground: Ground = { sea: null, arch: null, ships: [] }
-  private pending = new Map<string, { k: number; on: number; n: number }>()
+  private pending = new Map<string, { k: number; on: number; n: number; slot?: number }>()
   private hitIn = 0
   private ctl: [number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0]
   private target = { x: 0, z: 0, heading: 0 }
@@ -120,7 +122,7 @@ export class BoatModule {
       this.pass = new BoatPass(renderer, m)
       renderer.addPass("opaque", this.pass)
     })
-    this.driver.onHit = (kind, id, _x, _y, _z, ship) => this.hit(kind, id, ship?.id ?? -1, ship?.team ?? -1)
+    this.driver.onHit = (kind, id, x, y, z, ship) => this.hit(kind, id, ship?.id ?? -1, ship?.team ?? -1, this.parked(kind, ship, x, y, z))
     this.driver.onRecovered = () => this.end("landed")
     this.driver.onLost = () => this.end("crashed")
   }
@@ -176,8 +178,19 @@ export class BoatModule {
     if (!this.online) this.ctx.recover(how)
   }
 
+  /** Which parked jet (shared/deck-jets.ts slot) a round that struck a carrier's deck hit, or -1. */
+  private parked(kind: string, ship: GroundShip | null, x: number, y: number, z: number): number {
+    if (kind !== "ship" || !ship || ship.id === undefined || !this.deckJet) return -1
+    const l = worldToShip(ship, x, y, z, this.local)
+    return this.deckJet(ship.id, l[0], l[1], l[2])
+  }
+  private local: [number, number, number] = [0, 0, 0]
+
+  /** The parked jet (slot) at a ship-local point of carrier `ship`, or -1; the host wires it (shared/deck-jets.ts parkedAt). */
+  deckJet: ((ship: number, x: number, y: number, z: number) => number) | null = null
+
   /** What our rounds struck: batched for the room (online), applied to the local world (offline). */
-  private hit(kind: "jet" | "boat" | "sea" | "land" | "ship", id: number, ship: number, shipTeam: number): void {
+  private hit(kind: "jet" | "boat" | "sea" | "land" | "ship", id: number, ship: number, shipTeam: number, slot = -1): void {
     const team = this.driver.team
     let k = -1
     let on = -1
@@ -186,6 +199,15 @@ export class BoatModule {
     else if (kind === "ship" && ship >= 0 && shipTeam !== team) [k, on] = [BOAT_HIT.ship, ship]
     if (k < 0) return
     this.driver.hud.hit()
+    // Rounds on a jet parked on an enemy deck: reported for it, not the hull (online only: the room keeps its health).
+    if (k === BOAT_HIT.ship && slot >= 0) {
+      if (!this.online) return
+      const key = `d:${ship}:${slot}`
+      const p = this.pending.get(key)
+      if (p) p.n++
+      else this.pending.set(key, { k: -1, on: ship, slot, n: 1 })
+      return
+    }
     if (!this.online) {
       const w = this.weapons?.world
       if (w && k !== BOAT_HIT.ship) w.hurt(on, k === BOAT_HIT.jet ? BOAT_DAMAGE.cannonJet : BOAT_DAMAGE.cannonBoat, this.net.id, "cannon")
@@ -240,7 +262,7 @@ export class BoatModule {
     }
     // Health from the room (or the local world offline); a drop shakes the camera.
     const hp = this.weapons?.world.hp(this.net.id) ?? d.hp
-    if (hp < this.lastHp - 0.5) d.trauma = Math.min(1, d.trauma + (this.lastHp - hp > 20 ? 0.9 : 0.25))
+    if (hp < this.lastHp - 0.5) d.cam.shake.add(this.lastHp - hp > 20 ? 0.9 : 0.25)
     this.lastHp = hp
     d.hp = hp
     if (!this.online && hp <= 0 && d.phase === "drive") d.destroy()
@@ -260,7 +282,10 @@ export class BoatModule {
       this.hitIn -= dt
       if (this.hitIn <= 0 && this.pending.size) {
         this.hitIn = HIT_EVERY
-        for (const p of this.pending.values()) this.net.sendBoatHits(p.k, p.on, Math.min(60, p.n))
+        for (const p of this.pending.values()) {
+          if (p.k < 0) this.net.sendDeckHits(DECK_ROUND.cannon, p.on, p.slot ?? 0, Math.min(60, p.n))
+          else this.net.sendBoatHits(p.k, p.on, Math.min(60, p.n))
+        }
         this.pending.clear()
       }
     }

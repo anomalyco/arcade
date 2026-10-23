@@ -3,7 +3,6 @@ import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput, type VolumeInput 
 import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/limits"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { createLookSettings, type LookCompareMode } from "@arcade/kit/look"
-import type { AdaptiveQualityController } from "@arcade/kit/quality"
 import { dayCycle } from "../../shared/day-cycle"
 import { vaultLift } from "../../shared/interact"
 import { SIZE } from "../../shared/map"
@@ -51,7 +50,9 @@ import { PropDressing } from "../props/dressing"
 import type { OutbreakSettings } from "../settings"
 import { shaders } from "../shaders"
 import { applyLampFog } from "../air/lamp-fog"
-import { contactVolumeInput } from "../contact-shadows/settings"
+import { contactVolumeInput, DEFAULT_CONTACT_SHADOW_SETTINGS, resolveContactShadows } from "../contact-shadows/settings"
+import { DEFAULT_MIST_SETTINGS, resolveMist } from "../mist/settings"
+import type { OutbreakQualityController } from "../quality"
 import { Survivor } from "../survivor"
 import { evaluateUnseenFrame } from "../unseen"
 import type { OutbreakVehicleAudio } from "../vehicle-audio"
@@ -76,7 +77,7 @@ export interface OutbreakFrameRendererHost {
   readonly canvas: HTMLCanvasElement
   readonly cam: Camera
   readonly settings: OutbreakSettings
-  readonly qualityController: AdaptiveQualityController
+  readonly qualityController: OutbreakQualityController
   readonly coop: CoopView
   readonly audio: OutbreakAudio
   readonly vehicleAudio: OutbreakVehicleAudio
@@ -115,6 +116,9 @@ export class OutbreakFrameRenderer {
   private readonly lifeSounds = new LifeSounds()
   private readonly volumeSlots: (VolumeInput | null)[] = [null, null, null]
   private readonly contactParams = new Float32Array(8)
+  /** The mist and contact-shadow settings with "Quality tier" values filled in from the active tier, each frame. */
+  private readonly mist = { ...DEFAULT_MIST_SETTINGS }
+  private readonly contactShadows = { ...DEFAULT_CONTACT_SHADOW_SETTINGS }
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
   private readonly weatherAudio = new WeatherAudio()
@@ -414,7 +418,11 @@ export class OutbreakFrameRenderer {
     )
     const smoothPeek = (settings.view.peekStyle ?? 1) !== 0
     const peekSight = this.peekView.sight(activePeek, peek, p, effectiveVisionAim, settings.vision, settings.view)
+    // Teammates' flashlights show you what they light (teammates/beams.ts), from this frame's sight on.
+    const beamCutBlend = smoothPeek ? this.peekBlend : 1
     const { mode, windowMoved, visChanged } = this.sceneLevel.stepFrame({
+      beams: coop.beamSights(settings, town, this.sceneLevel.lightWalls),
+      roofCut: activePeek ? { x: look.x + (activePeek.cutX - look.x) * beamCutBlend, y: look.y + (activePeek.cutY - look.y) * beamCutBlend } : look,
       drawn: look,
       activePeek,
       visionPeek: smoothPeek ? (activePeek ? sightAsPeek(activePeek, peekSight) : null) : peek,
@@ -450,7 +458,7 @@ export class OutbreakFrameRenderer {
     )
     const { vision } = this.sceneLevel
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
-    const featureFrame = { session, coop, cam, renderer: this.renderer, settings, vision, dt: vdt, w, h }
+    const featureFrame = { session, coop, cam, renderer: this.renderer, settings, quality: qProfile, vision, dt: vdt, w, h }
     const localSlot = "local" in session ? session.local : session.slot
     const hideLocal = outbreakClientFeatures.hidesSurvivor(session.sim, localSlot)
     const beamState = this.frameLighting.beginFrameLights({
@@ -844,6 +852,7 @@ export class OutbreakFrameRenderer {
     render.lightCount = count
     this.softShadows.frame({
       settings: settings.softShadows,
+      quality: qProfile,
       rect: cam.groundRect(2.8),
       lights: this.frameLighting.lights,
       lightCount: count,
@@ -856,8 +865,8 @@ export class OutbreakFrameRenderer {
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
     // Volume slots (shaders.ts): contact shadows darken the lit scene before the beam and the fog add to it.
-    const fogSlot = applyLampFog(render, { mist: settings.mist, streetLamps: settings.streetLamps, sun: day.sun, time, torchPitch: beamState.flashlightPitch ?? -0.35 })
-    this.volumeSlots[0] = contactVolumeInput(settings.contactShadows, this.contactParams)
+    const fogSlot = applyLampFog(render, { mist: resolveMist(settings.mist, qProfile, this.mist), streetLamps: settings.streetLamps, sun: day.sun, time, torchPitch: beamState.flashlightPitch ?? -0.35 })
+    this.volumeSlots[0] = contactVolumeInput(resolveContactShadows(settings.contactShadows, qProfile, this.contactShadows), this.contactParams)
     this.volumeSlots[1] = volume
     this.volumeSlots[2] = fogSlot
     render.volume = this.volumeSlots

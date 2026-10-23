@@ -13,8 +13,11 @@ import {
   VITALS_STYLE,
 } from "./placement"
 import { STYLE_DIEGETIC, STYLES } from "./styles"
+import { DEFAULT_NIGHT_CLOCK_SETTINGS } from "../night-clock/settings"
+import { DEFAULT_CONTROL_SETTINGS } from "../controls/settings"
 import { DEFAULT_TRAINING_SETTINGS } from "../onboarding/state"
 import { DEFAULT_PROMPT_CLARITY_SETTINGS } from "../prompt-clarity/settings"
+import { DEFAULT_RADIAL_SETTINGS } from "../radial/settings"
 import { DEFAULT_SOUND_CUE_SETTINGS } from "../sound-cues/settings"
 import { DEFAULT_TEAMMATE_MARKER_SETTINGS } from "../teammates/settings"
 
@@ -80,7 +83,10 @@ export const DEFAULT_HUD_SETTINGS = {
   hudReducedMotion: false,
   ...DEFAULT_SOUND_CUE_SETTINGS,
   ...DEFAULT_TEAMMATE_MARKER_SETTINGS,
+  ...DEFAULT_NIGHT_CLOCK_SETTINGS,
+  ...DEFAULT_CONTROL_SETTINGS,
   ...DEFAULT_PROMPT_CLARITY_SETTINGS,
+  ...DEFAULT_RADIAL_SETTINGS,
   ...DEFAULT_TRAINING_SETTINGS,
 }
 

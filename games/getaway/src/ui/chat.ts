@@ -13,6 +13,9 @@ export class Chat {
   private log: HTMLElement
   private input: HTMLInputElement
 
+  /** T and Enter open chat only while this holds (in play): behind the title or menu, Enter presses the focused button. */
+  active: () => boolean = () => true
+
   constructor(
     root: HTMLElement,
     private controls: Controls,
@@ -26,7 +29,7 @@ export class Chat {
     this.input.autocomplete = "off"
     this.input.spellcheck = false
     addEventListener("keydown", (e) => {
-      if (this.isOpen() || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+      if (this.isOpen() || !this.active() || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.code !== "Enter" && e.code !== "NumpadEnter" && e.code !== "KeyT") return
       e.preventDefault()

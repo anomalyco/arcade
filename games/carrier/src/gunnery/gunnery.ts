@@ -57,6 +57,8 @@ export type GunneryNet = {
   hits(on: number, n: number): void
   /** Our CIWS rounds hit carrier `ship` `n` times since the last report. */
   shipHits(ship: number, n: number): void
+  /** Our CIWS rounds hit the jet parked in slot `slot` on carrier `ship`'s deck `n` times since the last report. */
+  deckHits(ship: number, slot: number, n: number): void
   /** Our CIWS shot down a store (missile or bomb: 0; SAM or shell: 1). */
   intercept(i: InterceptTuple): void
   /** Our SAM seeker: tracking jet `on` (-1 none), locked or not (the room warns that jet, like a missile lock). */
@@ -148,6 +150,10 @@ export class Gunnery {
   private gunFlash = -1
   private pendingHits = new Map<number, number>()
   private pendingShipHits = new Map<number, { n: number; x: number; y: number; z: number }>()
+  /** CIWS rounds on parked jets, by ship × 64 + slot. */
+  private pendingDeckHits = new Map<number, number>()
+  /** The parked jet (slot) at a ship-local point of carrier `ship`, or -1; the host wires it (shared/deck-jets.ts parkedAt). */
+  deckJet: ((ship: number, x: number, y: number, z: number) => number) | null = null
   private hitIn = 0
   private claimed = new Map<number, number>()
   private boomed: string[] = []
@@ -396,7 +402,7 @@ export class Gunnery {
       for (let i = 0; i < n; i++) this.rounds.fire(this.id, this.team, seat.ship, st.round++, mp[0], mp[1], mp[2], sv, md, (i / n) * dt)
       if (n > 0) {
         this.firedAt = this.time
-        this.cam.trauma = Math.min(0.45, this.cam.trauma + 0.05)
+        this.cam.shake.add(0.05, 0.45)
       }
     } else if (st.kind === "sam") {
       if (st.cells > 0 && armed) samLockStep(st.lock, dt, mp[0], mp[1], mp[2], md[0], md[1], md[2], this.team, this.subJets, (id) => this.combat?.blind(id) ?? false)
@@ -407,13 +413,13 @@ export class Gunnery {
           muzzleWorld(ship, seat.mount, this.turret.yaw, this.turret.pitch, mp, md, cell)
           const e = GUNNERY.sam.eject
           this.launch({ owner: this.id, seq: st.seq++, kind: "sam", ship: seat.ship, mount: seat.mount, t, x: mp[0], y: mp[1], z: mp[2], vx: sv[0] + md[0] * e, vy: sv[1] + md[1] * e, vz: sv[2] + md[2] * e, target: st.lock.locked ? st.lock.target : -1 })
-          this.cam.trauma = Math.min(1, this.cam.trauma + 0.35)
+          this.cam.shake.add(0.35)
         }
       }
     } else if (trigger && takeShell(st)) {
       const v = GUNNERY.gun.muzzle
       this.launch({ owner: this.id, seq: st.seq++, kind: "shell", ship: seat.ship, mount: seat.mount, t, x: mp[0], y: mp[1], z: mp[2], vx: sv[0] + md[0] * v, vy: sv[1] + md[1] * v, vz: sv[2] + md[2] * v, target: -1 })
-      this.cam.trauma = Math.min(1, this.cam.trauma + 0.75)
+      this.cam.shake.add(0.75)
       this.gunFlash = this.time
     }
     this.rounds.step(dt, t, this.subJets, this.stores, this.world.ground, (_o, kind, target, x, y, z, sh) => {
@@ -445,6 +451,13 @@ export class Gunnery {
       if (kind === "ship" && sh && sh.id !== undefined && sh.team !== undefined && sh.team !== this.team) {
         this.hud.hit()
         const l = worldToShip(sh, x, y, z, ld)
+        // A round into a jet parked on the deck counts for that jet (online: the room keeps its health).
+        const slot = this.deckJet ? this.deckJet(sh.id, l[0], l[1], l[2]) : -1
+        if (slot >= 0) {
+          const k = sh.id * 64 + slot
+          if (this.net) this.pendingDeckHits.set(k, (this.pendingDeckHits.get(k) ?? 0) + 1)
+          return
+        }
         if (this.net) {
           const p = this.pendingShipHits.get(sh.id)
           if (p) {
@@ -567,10 +580,12 @@ export class Gunnery {
 
     if (this.net) {
       this.hitIn -= v.dt
-      if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingShipHits.size)) {
+      if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingShipHits.size || this.pendingDeckHits.size)) {
         this.hitIn = HIT_EVERY
         for (const [on, n] of this.pendingHits) this.net.hits(on, n)
         for (const [ship, p] of this.pendingShipHits) this.net.shipHits(ship, p.n)
+        for (const [k, n] of this.pendingDeckHits) this.net.deckHits(Math.floor(k / 64), k % 64, n)
+        this.pendingDeckHits.clear()
         this.pendingHits.clear()
         this.pendingShipHits.clear()
       }

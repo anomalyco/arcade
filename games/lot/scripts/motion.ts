@@ -1,11 +1,14 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { build } from "vite"
 import { serveDist } from "./serve-dist"
 import { SurfaceQuery } from "../src/surface-query"
 import { matchedPaths } from "./motion-paths"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * Temporal stability of the lot in motion: scripted camera paths (walk, strafe, turn) rendered frame by frame on a
@@ -116,6 +119,11 @@ const VARIANTS: Record<string, string> = {
   "sharpen-0": "lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), sharpen: 0 })",
   "taa-hist-0.95": "lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), history: 0.95 })",
   "dressing-off": "Object.assign(lot.dressing, { look: 'today', weeds: 0, leaves: 0, gravel: 0, litter: 0 })",
+  // Weather (run weather-today first: it starts loading the weather chunk, which the harness's 300 ms pause covers).
+  "weather-today": "lot.setWeather('today'); void lot.loadStorm(); for (let i = 0; i < 900; i++) lot.step(1000 / 60)",
+  "weather-rain": "lot.setWeather('rain'); lot.weather.strikes = 0; for (let i = 0; i < 300; i++) lot.step(1000 / 60)",
+  "weather-rain-noglass": "lot.setWeather('rain'); lot.weather.strikes = 0; lot.weather.glass = 0; for (let i = 0; i < 300; i++) lot.step(1000 / 60)",
+  "weather-storm": "lot.setWeather('storm'); lot.weather.strikes = 0; for (let i = 0; i < 300; i++) lot.step(1000 / 60)",
 }
 const pathNames = (process.env.MOTION_PATHS ?? Object.keys(PATHS).join(",")).split(",").filter(Boolean)
 const variantNames = (process.env.MOTION_VARIANTS ?? Object.keys(VARIANTS).join(",")).split(",").filter(Boolean)

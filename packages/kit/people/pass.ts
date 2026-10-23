@@ -1,9 +1,10 @@
 /**
  * GPU skinning for people: one compute dispatch per visible person writes its skinned triangles, in world space,
  * straight into the kit's textured vertex layout, and the stock textured scene pipeline draws them. So people get the
- * game's own lights, beams, fog, shadows and temporal resolve with no second lighting path. They are `MAT.actor`, so
- * they also get the cool fill and rim every game gives its blocky actors to read in the dark. A `ScenePass` for the
- * renderer's opaque slot.
+ * game's own lights, beams, fog, shadows and temporal resolve with no second lighting path. They draw as `MAT.lit`
+ * by default: lit only by the scene, as dark as their surroundings when nothing lights them. A game that wants the
+ * blocky actors' cool fill and rim (to read in the dark at the cost of realism) passes `MAT.actor`. A `ScenePass` for
+ * the renderer's opaque slot.
  */
 import { imageTexture } from "../gpu/gltf"
 import type { PassContext, ScenePass } from "../gpu/pass-graph"
@@ -83,7 +84,7 @@ export class PeoplePass implements ScenePass {
   private readonly flat: GPUTexture
   private instances: PersonInstance[] = []
 
-  constructor(ctx: PassContext, hooks: SceneHooks) {
+  constructor(ctx: PassContext, hooks: SceneHooks, readonly material: number = MAT.lit) {
     const d = (this.device = ctx.device)
     this.pipes = texturedPipelines(ctx, hooks)
     this.computePipeline = d.createComputePipeline({ layout: "auto", compute: { module: d.createShaderModule({ code: SKIN_WGSL, label: "people skinning" }), entryPoint: "main" } })
@@ -145,7 +146,7 @@ export class PeoplePass implements ScenePass {
     const params = d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const p = new ArrayBuffer(16)
     new Uint32Array(p)[0] = g.lod.indices.length
-    new Float32Array(p)[1] = MAT.actor
+    new Float32Array(p)[1] = this.material
     d.queue.writeBuffer(params, 0, p)
     const compute = d.createBindGroup({ layout: this.computePipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: g.source } }, { binding: 1, resource: { buffer: g.indices } },

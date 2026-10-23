@@ -14,7 +14,7 @@ export const outbreakBounceLightFeature = registerOutbreakClientFeature({
   frame: {
     render: (ctx, input) => {
       const [x0, z0, x1, z1] = ctx.cam.groundRect(0)
-      input.planBounce = bounceInput(ctx.settings.bounce, (x0 + x1) / 2, (z0 + z1) / 2)
+      input.planBounce = bounceInput(ctx.settings.bounce, ctx.quality, (x0 + x1) / 2, (z0 + z1) / 2)
     },
   },
   harnessMethods: (host) => ({

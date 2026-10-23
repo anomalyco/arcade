@@ -1,4 +1,7 @@
-import { type Crew, type RecoverHow, teamCss, playerOf } from "../../shared/crew"
+import { type Crew, type RecoverHow, teamCss, playerOf, shipOf } from "../../shared/crew"
+import { DECK_ROUND, type ParkedJet, bayOf, DECK_BAYS, parkedJets } from "../../shared/deck-jets"
+import { DECK_Y } from "../../shared/carrier-spec"
+import { type Quat, quatAxis, quatMul, shipQuat, shipToWorld } from "../../shared/plane"
 import type { Archipelago } from "../../shared/islands"
 import { PLANE, makePlane, planeSpeed } from "../../shared/plane"
 import { PLANE_MODE, type PlaneTuple } from "../../shared/protocol"
@@ -22,8 +25,8 @@ import { WeaponInput } from "../weapons/input"
 import { Weapons, type WeaponsNet } from "../weapons/weapons"
 import { type KillWeapon, type Target, isKillWeapon, weaponOf } from "../../shared/weapons"
 import type { CombatWorld } from "../../shared/combat"
-import { playerVehicle } from "../../shared/ops"
-import { type VehicleKind, vehicleCode, vehicleOfCode } from "../../shared/vehicles"
+import { opById, playerVehicle } from "../../shared/ops"
+import { VEHICLES, type VehicleKind, vehicleCode, vehicleOfCode } from "../../shared/vehicles"
 import { Flight } from "./flight"
 import { landTarget } from "../../shared/landing"
 import { landingVehicle } from "../../shared/vehicles"
@@ -37,7 +40,7 @@ import { Radar, type RadarScene } from "./radar"
 import { TargetMarkers } from "./target-markers"
 
 /** What the flight module needs from the connection: the jet relay, the weapon events and the room's combat queue. */
-export type FlightNet = Pick<Net, "state" | "id" | "sendPlane" | "sendGun" | "sendHits" | "sendShipHits" | "sendFire" | "sendFlare" | "sendSeek" | "combat">
+export type FlightNet = Pick<Net, "state" | "id" | "sendPlane" | "sendGun" | "sendHits" | "sendShipHits" | "sendDeckHits" | "sendFire" | "sendFlare" | "sendSeek" | "combat" | "serverNow">
 
 const r1 = (v: number, k: number) => Math.round(v * k) / k
 
@@ -144,6 +147,7 @@ export class FlightModule {
       flare: (t, x, y, z, vx, vy, vz) => this.net.sendFlare([r1(t, 1e3), r1(x, 100), r1(y, 100), r1(z, 100), r1(vx, 100), r1(vy, 100), r1(vz, 100)]),
       lock: (target, locked) => this.net.sendSeek(target, locked),
       shipHits: (ship, n) => this.net.sendShipHits(ship, n),
+      deckHits: (ship, slot, n) => this.net.sendDeckHits(DECK_ROUND.gun, ship, slot, n),
     }
     this.weaponInput = new WeaponInput(canvas)
     this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), this.weaponInput, null)
@@ -436,6 +440,7 @@ export class FlightModule {
         fx.plane(id, m, pose.throttle, pose.burner, last[1] === 1 ? Math.max(0, Math.min(1, (g - 7) / 5)) : 0, kind)
       }
     }
+    if (pass) this.drawParked(pass, v)
     this.combat()
     this.audio.ships(drawnShips(v.crew?.ships ?? [], v.ship))
     this.audio.frame(v.dt, v.eye, this.camera.forward, this.camera.upDir)
@@ -465,6 +470,68 @@ export class FlightModule {
       pass.upload()
       fx.upload()
     }
+  }
+
+  /**
+   * Every jet parked on every drawn carrier (shared/deck-jets.ts: the ready slots, each in its bay), glued to the deck
+   * as drawn this frame, gear down, in its ship's colour. A launch takes it out of its bay (the catapult run is the
+   * pilot's jet), a landing puts it back, a loss leaves the bay empty while the slot recharges.
+   */
+  private drawParked(pass: PlanePass, v: FlightFrame): void {
+    const crew = v.crew
+    if (!crew || !v.ships) return
+    const now = this.net.serverNow()
+    for (const sh of v.ships) {
+      const s = shipOf(crew, sh.id)
+      if (!s) continue
+      for (const p of parkedJets(s, now, this.parked)) pass.add(this.parkedPose(sh, p, shipTeamColor(crew, sh.id)))
+    }
+  }
+  private parked: ParkedJet[] = []
+  private parkedDraw: PlaneDrawPose = { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, pitch: 0, roll: 0, gear: 1, throttle: 0, burner: 0 }
+  private pq: Quat = [0, 0, 0, 1]
+  private pa: Quat = [0, 0, 0, 1]
+  private pp: [number, number, number] = [0, 0, 0]
+
+  /** The draw pose of parked jet `p` on carrier pose `sh` (reused: add it before asking for the next). */
+  private parkedPose(sh: Ship, p: ParkedJet, accent: readonly [number, number, number]): PlaneDrawPose {
+    const d = this.parkedDraw
+    const at = shipToWorld(sh, p.bay.x, DECK_Y + VEHICLES[p.kind].gear + VEHICLES[p.kind].flight.centre, p.bay.z, this.pp)
+    // The bay's heading: the nose along (sin yaw, 0, cos yaw) ship-local, i.e. a turn of yaw about the deck's up.
+    const q = quatMul(shipQuat(sh, this.pq), quatAxis(0, 1, 0, p.bay.yaw, this.pa), this.pq)
+    d.x = at[0]
+    d.y = at[1]
+    d.z = at[2]
+    d.qx = q[0]
+    d.qy = q[1]
+    d.qz = q[2]
+    d.qw = q[3]
+    d.kind = p.kind
+    d.accent = accent
+    d.doors = 0
+    d.stores = undefined
+    return d
+  }
+
+  /** A parked jet was destroyed (the room's `deckkill`): blown apart in its bay on our copy of that deck, burning, and a
+   *  kill feed line "✕ HORNET ON DECK". The crew that follows empties the bay. */
+  private deckKill(shipId: number, slot: number, by: number): void {
+    const crew = this.crew
+    const s = crew && shipOf(crew, shipId)
+    const op = s ? opById(s.aircraft[slot]?.op ?? "") : undefined
+    const kind = op?.vehicle ?? "hornet"
+    const team = s?.team ?? -1
+    const victim = { name: `${op?.name ?? "JET"} ON DECK`, color: teamCss(team) }
+    const sh = this.drawnShips.find((x) => x.id === shipId)
+    const bay = s ? DECK_BAYS[bayOf(s, slot)] : undefined
+    if (!sh || !bay) return this.weapons.deckKill(by, victim)
+    const pose = this.parkedPose(sh, { slot, kind, bay }, shipTeamColor(crew, shipId))
+    // The deck's own motion (plan velocity) so the pieces ride it; a little upward kick from the blast.
+    const f = [Math.sin(sh.heading), -Math.cos(sh.heading)]
+    const vx = f[0]! * sh.u
+    const vz = f[1]! * sh.u
+    this.boom.crash(seedOf(shipId, slot, 0xdec), kind, shipTeamColor(crew, shipId), "ship", { x: pose.x, y: pose.y, z: pose.z, vx, vy: 6, vz, qx: pose.qx, qy: pose.qy, qz: pose.qz, qw: pose.qw })
+    this.weapons.deckKill(by, victim, pose)
   }
 
   /** The breakup seed of jet `id`'s current sortie: the same on every client. */
@@ -507,6 +574,9 @@ export class FlightModule {
           break
         case "sunk":
           w.sunk(m.ship, m.name, m.team, m.by)
+          break
+        case "deckkill":
+          this.deckKill(m.ship, m.slot, m.by)
           break
       }
     }

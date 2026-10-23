@@ -40,7 +40,7 @@ const repo = resolve(import.meta.dir, "..")
 const testWorkers = Math.max(2, Math.floor(availableParallelism() / 2))
 
 const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "woods"]
-const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects", wings: "games/wings" }
+const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
 
 type Target = { name: string; dirs: string[]; game?: string; independent?: boolean }
 

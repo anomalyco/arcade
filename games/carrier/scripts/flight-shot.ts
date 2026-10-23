@@ -10,9 +10,13 @@
 //          returns with R.
 //          --paint: paint and team-colour close-ups from the harness (jet in both team colours, chase and side views,
 //          two teams in one frame, a carrier of each team, a jet on deck), into <out>/paint-*.png.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -642,28 +646,28 @@ if (args.includes("--simple")) {
   await simpleShots()
   console.log(logs.length ? logs.join("\n") : "no console errors")
   await browser.close()
-  process.exit(failures ? 1 : 0)
+  await budget.exit(failures ? 1 : 0)
 }
 
 if (args.includes("--land")) {
   await landing()
   console.log(logs.length ? logs.join("\n") : "no console errors")
   await browser.close()
-  process.exit(failures ? 1 : 0)
+  await budget.exit(failures ? 1 : 0)
 }
 
 if (args.includes("--paint")) {
   await paint()
   console.log(logs.length ? logs.join("\n") : "no console errors")
   await browser.close()
-  process.exit(0)
+  await budget.exit(0)
 }
 
 if (args.includes("--mp")) {
   await multiplayer()
   console.log(logs.length ? logs.join("\n") : "no console errors")
   await browser.close()
-  process.exit(failures ? 1 : 0)
+  await budget.exit(failures ? 1 : 0)
 }
 
 const page = await open(`${base}flight.html?seed=${seed}${query}`)
@@ -674,7 +678,7 @@ const info = await page.evaluate(async () => {
 console.log(`adapter: ${info}`)
 if (/swiftshader/i.test(info)) {
   console.log("SwiftShader adapter: refusing to trust these captures")
-  process.exit(2)
+  await budget.exit(2)
 }
 await page.waitForTimeout(2500)
 if (only.includes("deck")) await shot(page, "01-deck")

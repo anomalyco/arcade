@@ -4,7 +4,7 @@ import type { Mixer } from "./mixer"
 /**
  * One jet's engine, fully procedural so it tracks the live jet exactly (no recorded loops: throttle, spool, afterburner,
  * Doppler and the listener's angle change every frame). After Wings' proven fighter voice
- * (games/wings/src/audio/engines.ts), richer but still smooth:
+ * (removed `games/wings/src/audio/engines.ts`, see git history), richer but still smooth:
  *
  *   whine     a quiet, low triangle turbine tone rising with core speed through a low-pass (no pure high tones, and
  *             only a third of the Doppler); the Hornet's second engine 0.6 cents off, quieter

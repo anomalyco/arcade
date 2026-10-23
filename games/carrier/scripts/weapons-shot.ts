@@ -7,9 +7,13 @@
 // Options: --base=URL  --size=1536x1024  --only=gun,missile,flares,f35,mp
 //   mp: the real game, two pages in one fresh room on rival carriers: A shoots B down with the gun, B flares A's first
 //   missile, A's missiles bring B down on B's next sortie; kill feed, Tab tallies and B's recharging slot checked.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

@@ -79,6 +79,8 @@ function grainTile(colour: string): HTMLCanvasElement {
  */
 export class MapScreen {
   readonly root: HTMLDivElement
+  /** The key the legend shows for closing the sheet (`OutbreakMap.setKey`). */
+  closeKey = "KeyM"
   private readonly sheet: HTMLDivElement
   private readonly base: HTMLCanvasElement
   private readonly live: HTMLCanvasElement
@@ -148,7 +150,7 @@ export class MapScreen {
 
   renderLegend(): void {
     this.legend.innerHTML =
-      `<span>${keyCapHtml("KeyN")} Close</span>` +
+      `<span>${keyCapHtml(this.closeKey)} Close</span>` +
       `<span>Drag or two-finger swipe to pan</span>` +
       `<span>Pinch or scroll to zoom</span>` +
       `<span>${keyCapHtml("Mouse0")} Mark · click a mark to clear it</span>`

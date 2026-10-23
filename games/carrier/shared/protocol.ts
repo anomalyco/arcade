@@ -1,4 +1,6 @@
-// Messages between the client (src/net.ts) and the Room Durable Object (server/core.ts), sent as JSON text frames.
+// Messages between the client (src/net.ts) and the Room Durable Object (server/core.ts). The high-rate ones (jets,
+// ships, boats, turrets, aims, boat orders, triggers, hit reports) travel as binary frames (shared/wire.ts), the rest as
+// JSON text frames on the same socket; both decode to the same messages, through the same checks.
 // Times: `epoch`, `now` and `s` are server Date.now() milliseconds; `c` is the client's performance.now(), echoed back.
 // To add a message: a variant in ClientMsg/ServerMsg and a case in decodeClient/decodeServer (unknown types decode to
 // null and are ignored, so old and new clients never break each other beyond the build handshake).
@@ -13,6 +15,8 @@ import { type BoatCtlTuple, type BoatTuple, isBoatCtl, isBoatTuple } from "./boa
 import { unpackObjective } from "./objective"
 import { type BotCmd, type BotInfo, botCmdOf, botInfoOf } from "./bots"
 import { cleanChat } from "./chat"
+import { DECK_JET_WEAPONS, type DeckJetWeapon, type DeckRound } from "./deck-jets"
+import { decodeClientWire, decodeServerWire, encodeWire, quantizePlane, wireBytes } from "./wire"
 import { type AimTuple, type GunBoomTuple, type GunFireTuple, type InterceptTuple, type TurretTuple, isAimTuple, isGunBoomTuple, isGunFireTuple, isInterceptTuple, isTurretTuple } from "./gunnery"
 
 export const DEFAULT_ROOM = "open-sea"
@@ -88,6 +92,9 @@ export type ClientMsg =
   /** The boat's 25 mm rounds hit something `n` times since its last report: `k` shared/boat.ts BOAT_HIT (0 a jet or
    *  1 a boat: player `on`; 2 a carrier: ship `on`). */
   | { type: "bhits"; k: number; on: number; n: number }
+  /** The sender's rounds hit parked jet `slot` on carrier `ship`'s deck `n` times since its last report (shared/deck-jets.ts):
+   *  `w` DECK_ROUND (0 the jet gun, 1 a CIWS, 2 the boat's 25 mm); checked against that weapon's budget and reach. */
+  | { type: "deckhits"; w: DeckRound; ship: number; slot: number; n: number }
   /** A chat line (shared/chat.ts: cleaned, rate-limited, stamped by the room); `crew`: only the sender's carrier hears it. */
   | { type: "chat"; text: string; crew?: true }
   /** Dev tools: a bot command from the BOTS panel (shared/bots.ts). Dev rooms only (`DEV_MESSAGES`). */
@@ -142,6 +149,9 @@ export type ServerMsg =
   | { type: "hulls"; h: HullTuple[] }
   /** A carrier started sinking: its id, name and team, and who dealt the final blow (-1 nobody). */
   | { type: "sunk"; ship: number; name: string; team: number; by: number }
+  /** A jet parked on carrier `ship`'s deck (aircraft slot `slot`) was destroyed by `by` (-1 nobody) with `w`
+   *  (shared/deck-jets.ts DeckJetWeapon); the crew that follows has its slot recharging. */
+  | { type: "deckkill"; ship: number; slot: number; by: number; w: DeckJetWeapon }
   /** Carriers a and b collided (shared/ship-collide.ts): how hard, 0..1. Damage comes as `hulls`. */
   | { type: "bump"; a: number; b: number; k: number }
   /** Every manned turret's aim and trigger, ~10 Hz while anyone mans one (then once empty). */
@@ -200,21 +210,15 @@ export const PLANE_TUPLE_FULL = 19
 export type PlaneEntry = [id: number, ...plane: PlaneTuple]
 export const PLANE_MODE = { deck: 0, flying: 1, crashed: 2, landing: 3 } as const
 
-const rk = (v: number, k: number) => Math.round(v * k) / k
 /**
- * Rounds a relayed jet for the `planes` broadcast (a 32-player room relays up to 12 jets 20 times a second to everyone):
- * time to the ms, position to 5 cm (catapult and landing poses are ship-local, the same precision), the quaternion (or
- * the landing yaw/pitch/bank) to 1e-3 (about 0.1°), velocity to 0.1 m/s, controls to 1/100. In place; returns it.
+ * Rounds a jet to the grid the wire carries it on (shared/wire.ts: a 32-player room relays up to 12 jets 20 times a
+ * second to everyone): time to the ms, position to 1 cm (catapult and landing poses are ship-local, the same
+ * precision), the quaternion to 1/32767 (the landing yaw/pitch/bank to 1e-4 rad, qw the carrier id), velocity to
+ * 0.1 m/s, throttle, burner, gear and doors to 1/100 in 0..1, the stick to 1/100. Exactly what a receiver decodes, so
+ * the room's combat sim sees the jet its clients draw. In place; returns it.
  */
 export function compactPlane(p: PlaneTuple): PlaneTuple {
-  p[0] = rk(p[0], 1e3)
-  for (const i of [2, 3, 4]) p[i] = rk(p[i]!, 20)
-  // Landing (mode 3): qw carries a ship id, an integer.
-  for (const i of p[1] === PLANE_MODE.landing ? [5, 6, 7] : [5, 6, 7, 8]) p[i] = rk(p[i]!, 1e3)
-  for (const i of [9, 10, 11]) p[i] = rk(p[i]!, 10)
-  for (let i = 12; i < 17; i++) p[i] = rk(p[i]!, 100)
-  if (p.length > 18) p[18] = rk(p[18]!, 100)
-  return p
+  return quantizePlane(p as number[]) as PlaneTuple
 }
 /** Plan coordinates and speeds beyond this are nonsense. */
 const POSE_LIMIT = 1e6
@@ -231,9 +235,10 @@ export function roomName(v: string | null | undefined): string {
   return s || DEFAULT_ROOM
 }
 
-export const encode = (msg: ClientMsg | ServerMsg): string => JSON.stringify(msg)
+/** A binary frame for the high-rate messages (shared/wire.ts), JSON text for the rest. */
+export const encode = (msg: ClientMsg | ServerMsg): string | Uint8Array => encodeWire(msg) ?? JSON.stringify(msg)
 
-/** Client frames are tiny; server frames carry the crew and every ship. */
+/** Client frames are tiny; server frames carry the crew and every ship (the same caps in bytes for binary frames). */
 const MAX_CLIENT_FRAME = 512
 const MAX_SERVER_FRAME = 1 << 16
 
@@ -245,7 +250,9 @@ const isUnit = (v: unknown, lo: number): v is number => typeof v === "number" &&
 const isStr = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max
 const isRole = (v: unknown): v is Role => v === "helm" || v === "pilot" || v === "gunner"
 
-function parse(raw: unknown, max: number): Record<string, unknown> | null {
+function parse(raw: unknown, max: number, wire: (b: Uint8Array) => Record<string, unknown> | null): Record<string, unknown> | null {
+  const bytes = wireBytes(raw)
+  if (bytes) return bytes.byteLength <= max ? wire(bytes) : null
   if (typeof raw !== "string" || raw.length > max) return null
   try {
     const v: unknown = JSON.parse(raw)
@@ -339,7 +346,7 @@ const HOW: readonly RecoverHow[] = ["landed", "crashed"]
 
 /** Validates an untrusted client frame. Returns null for anything malformed. */
 export function decodeClient(raw: unknown): ClientMsg | null {
-  const o = parse(raw, MAX_CLIENT_FRAME)
+  const o = parse(raw, MAX_CLIENT_FRAME, decodeClientWire)
   if (!o) return null
   switch (o.type) {
     case "ping":
@@ -403,6 +410,8 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       return isBoatCtl(o.c) ? { type: "boat", c: o.c } : null
     case "bhits":
       return (o.k === 0 || o.k === 1 || o.k === 2) && isCount(o.on) && isCount(o.n) && o.n > 0 && o.n <= 60 ? { type: "bhits", k: o.k, on: o.on, n: o.n } : null
+    case "deckhits":
+      return (o.w === 0 || o.w === 1 || o.w === 2) && isCount(o.ship) && isCount(o.slot) && o.slot < 64 && isCount(o.n) && o.n > 0 && o.n <= 300 ? { type: "deckhits", w: o.w, ship: o.ship, slot: o.slot, n: o.n } : null
     case "chat": {
       const text = cleanChat(o.text)
       if (!text) return null
@@ -431,7 +440,7 @@ export function decodeClient(raw: unknown): ClientMsg | null {
 
 /** Validates a server frame. Returns null for anything malformed. */
 export function decodeServer(raw: unknown): ServerMsg | null {
-  const o = parse(raw, MAX_SERVER_FRAME)
+  const o = parse(raw, MAX_SERVER_FRAME, decodeServerWire)
   if (!o) return null
   switch (o.type) {
     case "welcome": {
@@ -513,6 +522,8 @@ export function decodeServer(raw: unknown): ServerMsg | null {
     }
     case "bump":
       return isCount(o.a) && isCount(o.b) && isTime(o.k) && o.k >= 0 && o.k <= 1 ? { type: "bump", a: o.a, b: o.b, k: o.k } : null
+    case "deckkill":
+      return isCount(o.ship) && isCount(o.slot) && o.slot < 64 && isInt(o.by) && DECK_JET_WEAPONS.includes(o.w as DeckJetWeapon) ? { type: "deckkill", ship: o.ship, slot: o.slot, by: o.by, w: o.w as DeckJetWeapon } : null
     case "sunk":
       return isCount(o.ship) && isStr(o.name, 40) && isCount(o.team) && isInt(o.by) ? { type: "sunk", ship: o.ship, name: o.name, team: o.team, by: o.by } : null
     case "stats": {

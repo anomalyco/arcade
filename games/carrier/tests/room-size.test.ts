@@ -16,11 +16,12 @@ describe("a 32-player room on the wire", () => {
     const perShip = OPS.filter((o) => o.kind === "vehicle" && o.vehicle).reduce((n, o) => n + o.cap, 0)
     const jets = (CREW.roomMax / CREW.capacity) * perShip
     expect(jets).toBe(12)
-    const before = encode({ type: "planes", p: Array.from({ length: jets }, (_, i): PlaneEntry => [i + 1, ...sent(i)]) }).length
-    const after = encode({ type: "planes", p: Array.from({ length: jets }, (_, i): PlaneEntry => [i + 1, ...compactPlane(sent(i))]) }).length
-    console.log(`planes frame, ${jets} jets: ${before} B as sent, ${after} B compacted; x20 Hz x${CREW.roomMax} clients = ${((after * 20 * CREW.roomMax) / 1024).toFixed(0)} KB/s out of the room`)
-    expect(after).toBeLessThan(before)
-    expect(after / jets).toBeLessThan(110)
+    const frame = { type: "planes" as const, p: Array.from({ length: jets }, (_, i): PlaneEntry => [i + 1, ...compactPlane(sent(i))]) }
+    const json = JSON.stringify(frame).length
+    const after = encode(frame).length
+    console.log(`planes frame, ${jets} jets: ${json} B as JSON, ${after} B binary; x20 Hz x${CREW.roomMax} clients = ${((after * 20 * CREW.roomMax) / 1024).toFixed(0)} KB/s out of the room`)
+    expect(after).toBeLessThan(json / 3)
+    expect(after / jets).toBeLessThan(36)
     // Still a valid frame.
     expect(decodeServer(encode({ type: "planes", p: [[1, ...compactPlane(sent(1))]] }))?.type).toBe("planes")
   })

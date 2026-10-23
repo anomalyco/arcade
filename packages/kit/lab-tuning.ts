@@ -1,5 +1,5 @@
 import type { ControlDescriptor, Value } from "@arcade/knobs"
-import { inferControlUnit, isRampControl, type LabControl, type LabRow, type LabSettings, type LabValue } from "./lab-navigation"
+import { holdsValue, inferControlUnit, isRampControl, type LabControl, type LabRow, type LabSettings, type LabValue } from "./lab-navigation"
 import { parseCurve, parseGradient, type CurvePoint, type GradientStop } from "./ramps"
 
 /**
@@ -42,7 +42,7 @@ const BLACK_TO_WHITE: readonly GradientStop[] = [{ at: 0, color: "#000000" }, { 
 
 /** The knobs value for a LabControl's current setting. Ramps go from their JSON text to knobs' stops or points. */
 export function toKnobs(control: LabControl, value: LabValue | undefined): Value | undefined {
-  if (control.type === "action") return undefined
+  if (!holdsValue(control)) return undefined
   if (control.type === "curve") return parseCurve(value, LINEAR, { range: control.range }) as Value
   if (control.type === "gradient") return parseGradient(value, BLACK_TO_WHITE) as Value
   if ("min" in control) {
@@ -55,7 +55,7 @@ export function toKnobs(control: LabControl, value: LabValue | undefined): Value
 
 /** The LabControl setting for a knobs value: choices map back to their typed option, switches to on/off. */
 export function fromKnobs(control: LabControl, value: Value): LabValue | undefined {
-  if (control.type === "action") return undefined
+  if (!holdsValue(control)) return undefined
   if (isRampControl(control)) return Array.isArray(value) && value.length >= 2 ? JSON.stringify(value) : undefined
   if ("min" in control) return typeof value === "number" && Number.isFinite(value) ? value : undefined
   if ("options" in control) return control.options.find(o => String(o.value) === String(value))?.value
@@ -87,6 +87,24 @@ export function describe(row: LabRow & { control: LabControl }, defaults: Readon
     ...(place.folded !== undefined ? { folded: place.folded } : c.folded ? { folded: true } : {}),
   }
   if (c.type === "action") return { ...base, kind: "action" }
+  if (c.type === "readout") {
+    const unit = c.unit ?? ""
+    const kind = c.display ?? "watch"
+    return {
+      ...base,
+      kind,
+      get: c.read,
+      ...(unit ? { unit } : {}),
+      ...(c.hz ? { hz: c.hz } : {}),
+      ...(kind === "table" && c.columns ? { columns: c.columns } : {}),
+      ...(kind === "meter" ? { min: c.scale?.min ?? 0, max: c.scale?.max ?? 1, ...(c.scale?.warn !== undefined ? { warn: c.scale.warn } : {}), ...(c.scale?.critical !== undefined ? { critical: c.scale.critical } : {}) } : {}),
+    }
+  }
+  if (c.type === "buttons") {
+    if (!c.items.length) return null
+    const disabled = "disabled" in base
+    return { ...base, kind: "toolbar", items: c.items.map(i => ({ key: i.key, label: i.label, ...(disabled || i.enabled?.(settings) === false ? { disabled: true } : {}) })) }
+  }
   const initial = c.key in defaults ? defaults[c.key] : settings[c.key]
   if (c.type === "curve") {
     const range = c.range ?? [0, 1]
@@ -167,7 +185,7 @@ export function seededRandom(seed: number): () => number {
 
 /** Whether Random and Mutate may change this control: tuning values only, not switches, pickers, seeds or gated rows. */
 export function isTunable(control: LabControl, settings: Readonly<LabSettings>): boolean {
-  if (control.type === "action" || control.derived || isStructuralKey(control.key)) return false
+  if (!holdsValue(control) || control.derived || isStructuralKey(control.key)) return false
   if (control.enabled?.(settings) === false) return false
   return "min" in control || ("options" in control && control.options.length > 1)
 }

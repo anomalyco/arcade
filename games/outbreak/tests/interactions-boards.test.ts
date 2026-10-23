@@ -81,6 +81,20 @@ describe("prying a board off", () => {
     expect(belt()).toBe(3)
   })
 
+  test("picking Pry off a board from the radial pries; an action the door doesn't offer is ignored", () => {
+    const { sim, ann, door, tick, planks, belt } = atDoor(2, { boardChain: 0 })
+    sim.ai.addBarricadePlank(door.id)
+    sim.ai.addBarricadePlank(door.id)
+    tick()
+    tick({ interact: true, interactAction: "hide" })
+    expect(ann.survivor.channel?.kind).not.toBe("unboard")
+    tick({ interact: true, interactAction: "pry" })
+    expect(ann.survivor.channel?.kind).toBe("unboard")
+    tick({}, ticks(T.unboardTime + 0.2))
+    expect(planks()).toBe(1)
+    expect(belt()).toBe(3)
+  })
+
   test("a boarded window's hold pries too, without peeking first", () => {
     const { sim, ann, tick } = atDoor(0)
     const win = sim.town.windows.find((w) => w.id.startsWith("ash"))!

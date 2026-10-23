@@ -1,4 +1,4 @@
-import { formatLabValue, inferControlUnit, LabPanel, type LabControl, type LabRow, type LabSettings, type LabValue } from "../lab-panel"
+import { formatLabValue, holdsValue, inferControlUnit, LabPanel, type LabControl, type LabRow, type LabSettings, type LabValue } from "../lab-panel"
 import { LabToolbar } from "../lab-knobs"
 import {
   findControlRow,
@@ -1249,7 +1249,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
       const found = findControlRow([panel], rawPath)
       if (found) {
         const { control: c, row } = found
-        if (c.type === "action") return { key: c.key, label: c.label, group: row.group, type: "action" }
+        if (!holdsValue(c)) return { key: c.key, label: c.label, group: row.group, type: c.type }
         const val = panel.navigation.settings[c.key]!
         return {
           key: c.key,
@@ -2244,7 +2244,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
     for (const other of sections) {
       if (other.id === sec.id) continue
       for (const c of other.controls) {
-        if (c.type === "action") continue
+        if (!holdsValue(c)) continue
         out.push({
           id: `setting:${other.id}:${c.key}`,
           label: c.label,
@@ -2327,7 +2327,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   function readWatchPin(pin: WatchPin): WatchReading | null {
     const sec = sections.find(s => s.id === pin.sectionId)
     const c = sec?.controls.find(ctrl => ctrl.key === pin.key)
-    if (!sec || !c || c.type === "action" || !(pin.key in sec.settings)) return null
+    if (!sec || !c || !holdsValue(c) || !(pin.key in sec.settings)) return null
     const v = sec.settings[pin.key]!
     const unit = "min" in c ? inferControlUnit(c.key, c.label, c.unit) : ""
     const text =
@@ -2362,7 +2362,7 @@ export function createWorkbench(opts: WorkbenchOptions) {
   function pinSetting(sectionId: string, key: string, pinned?: boolean) {
     const sec = sections.find(s => s.id === sectionId)
     const c = sec?.controls.find(ctrl => ctrl.key === key)
-    if (!sec || !c || c.type === "action") throw new Error(`Unknown setting "${key}" in section "${sectionId}".`)
+    if (!sec || !c || !holdsValue(c)) throw new Error(`Unknown setting "${key}" in section "${sectionId}".`)
     const id = watchPinId({ sectionId, key })
     const exists = watchPins.some(p => watchPinId(p) === id)
     const want = pinned ?? !exists

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * House radios proof (AR-56) in headless Metal Chromium, muted, no window:

@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "../compare"
 import { parseArgs, repoRoot } from "./common"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Today vs shared-rig legs on Outbreak's survivor, one headless muted browser run: a circle strafe round a target,
 // a slow and a snap turn on the spot, backpedal, the four diagonals and A/D reversals, the pistol raised. The same
@@ -34,7 +37,7 @@ const frameSegs = SEGMENTS.flatMap((s, i) => Array.from({ length: Math.round(s.s
 
 const framesDir = (pass: string) => join(OUT_DIR, `legs-video-frames-${pass}`)
 if (!flags.has("stitch-only")) await capture()
-if (!flags.has("capture-only")) stitchFrames()
+if (!flags.has("capture-only")) await stitchFrames()
 
 async function capture() {
   const outbreakRoot = join(repoRoot, "games/outbreak")
@@ -115,7 +118,7 @@ async function capture() {
   }
 }
 
-function stitchFrames() {
+async function stitchFrames() {
   const pairsDir = join(OUT_DIR, "legs-video-pairs")
   rmSync(pairsDir, { recursive: true, force: true })
   mkdirSync(pairsDir, { recursive: true })
@@ -146,10 +149,9 @@ for i, name in enumerate(labels):
     out.save(os.path.join(out_dir, f"{i:04d}.png"))
   `
   const py = spawnSync("python3", ["-c", stitch, framesDir("today"), framesDir("shared"), pairsDir, labels], { stdio: "inherit" })
-  if (py.status !== 0) process.exit(py.status ?? 1)
+  if (py.status !== 0) await budget.exit(py.status ?? 1)
   const mp4 = join(OUT_DIR, "survivor-legs-today-vs-new.mp4")
   const ff = spawnSync("ffmpeg", ["-y", "-framerate", "60", "-i", join(pairsDir, "%04d.png"), "-an", "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", mp4], { stdio: "inherit" })
-  if (ff.status !== 0) process.exit(ff.status ?? 1)
+  if (ff.status !== 0) await budget.exit(ff.status ?? 1)
   console.log(`Saved ${mp4}`)
 }
-

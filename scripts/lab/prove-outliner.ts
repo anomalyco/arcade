@@ -4,8 +4,12 @@
 // Never opens a visible window and never plays sound (muted browser, AudioContext blocked).
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, "../..")
 const out = resolve(root, "captures/lab-outliner")
@@ -122,6 +126,6 @@ try {
 }
 if (failures.length) {
   console.error(`\n${failures.length} failed:\n${failures.join("\n")}`)
-  process.exit(1)
+  await budget.exit(1)
 }
 console.log(`\nall passed · stills in ${out}`)

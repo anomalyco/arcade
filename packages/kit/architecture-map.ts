@@ -11,7 +11,6 @@ export const ARCHITECTURE_GAMES = [
   { id: "outbreak", label: "Outbreak", dirs: ["games/outbreak"] },
   { id: "carrier", label: "Carrier", dirs: ["games/carrier"] },
   { id: "lab", label: "Lab", dirs: ["games/lab", "packages/kit/lab"] },
-  { id: "wings", label: "Wings", dirs: ["games/wings"] },
   { id: "brawl", label: "Brawl", dirs: ["games/brawl"] },
   { id: "archers", label: "Archers", dirs: ["games/archers"] },
 ] as const
@@ -293,7 +292,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   },
   {
     area: "`client/{input,camera,side-camera,smooth}` & `orbit-gestures`",
-    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), side-view `SideCamera`, and orbit/pan/zoom gestures",
+    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), rig-agnostic `TraumaShake`, side-view `SideCamera`, and orbit/pan/zoom gestures",
     match: (s) =>
       s === "@arcade/kit/client/input" ||
       s === "@arcade/kit/client/camera" ||
@@ -307,9 +306,19 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/audio" || s.startsWith("@arcade/kit/audio/"),
   },
   {
+    area: "`sky/*`",
+    description: "Lazy catalogue stars, HDR night sky, textured Moon, astronomical clock and lunar illuminance",
+    match: (s) => s.startsWith("@arcade/kit/sky/"),
+  },
+  {
     area: "`weather/*`",
     description: "Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass",
     match: (s) => s === "@arcade/kit/weather" || s.startsWith("@arcade/kit/weather/"),
+  },
+  {
+    area: "`shell`",
+    description: "The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md))",
+    match: (s) => s === "@arcade/kit/shell" || s.startsWith("@arcade/kit/shell/"),
   },
   {
     area: "`lab-panel` & `@arcade/knobs`",

@@ -10,7 +10,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { chromium, type Browser } from "playwright-core"
+import { type Browser } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const argv = process.argv.slice(2)
 const option = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined)

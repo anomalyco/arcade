@@ -1,7 +1,10 @@
 import "./style.css"
 import "@fontsource/barlow-condensed/600.css"
 import "@fontsource/barlow-condensed/800.css"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
+import { audioRuntimeSync, createGameShell, createShellQuality } from "@arcade/kit/shell"
+import type { QualityScaling, QualityTiers } from "@arcade/kit/quality"
 import { ARENAS } from "../shared/arena"
 import { GAME, MAX_PLAYERS } from "../shared/config"
 import { Controls, type Device } from "./game/controls"
@@ -11,7 +14,12 @@ import { Renderer } from "./render/renderer"
 import { Sound } from "./sound"
 import { Hud } from "./ui/hud"
 
-const MAX_DPR = 1.5
+/** Resolution only; High is the 1.5× cap Archers always drew at. */
+const ARCHERS_QUALITY: QualityTiers<QualityScaling> = {
+  high: { tier: "high", label: "High (1.5×)", dprCap: 1.5, minScale: 0.75 },
+  balanced: { tier: "balanced", label: "Balanced (1.25×)", dprCap: 1.25, minScale: 0.7 },
+  low: { tier: "low", label: "Low (1×)", dprCap: 1, minScale: 0.6 },
+}
 const BOT_NAMES = ["TEAL", "WINE", "MOSS", "OCHRE"]
 
 /** A room code from the URL, if it looks like one. */
@@ -63,21 +71,52 @@ async function main() {
   const game = new Game(renderer, controls, sound, { arena, seats, seed })
   ;(globalThis as { archers?: Game }).archers = game
   if (room) game.online = new OnlineSession(room, undefined, { arena: params.get("arena"), private: params.get("private") })
-  const invite = () => {
-    const url = new URL(location.href)
-    url.search = `?room=${room}`
-    void navigator.clipboard?.writeText(url.toString())
+  const invite = () => void shell.lobby!.copyInvite()
+  // The title, Escape menu and Settings are the kit game shell. Couch play pauses behind the menu; a room keeps going.
+  // Joining a room reloads into it (`?room=`), as P always did.
+  const quality = createShellQuality({ game: GAME.id, tiers: ARCHERS_QUALITY, params, onChange: () => shell.settings.changed() })
+  const split = () => seats.some((s) => s.device === "kbR")
+  let creating = false
+  const shell = createGameShell({
+    game: GAME.id, title: GAME.title, subtitle: "Arena archery for up to four", soloLabel: "Play", soloNote: "you and bots; pads join with A",
+    quickLabel: "Play online", friendsNote: "a private room", quality, channels: ["master", "effects"],
+    // M is the right-hand player's jump once Enter splits the keyboard.
+    muteKey: () => !split(),
+    start: watch ? "playing" : undefined,
+    controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Space", "Jump"), keyPromptHtml("ShiftLeft", "Shoot"), keyPromptHtml("KeyE", "Dodge"), keyPromptHtml("Enter", "Split keyboard"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
+    lobby: {
+      friends: true, quick: true,
+      // Play is couch play right here (the shell plays on); without onSolo the title would offer rooms only.
+      onSolo: () => {},
+      // Play with friends makes a private room (kept out of Play online's matchmaking).
+      createRoom: () => {
+        creating = true
+        return fetch(`${location.pathname.replace(/[^/]*$/, "")}api/create`, { method: "POST", cache: "no-store" })
+          .then((r) => r.json() as Promise<{ room?: string }>)
+          .then((r) => r.room ?? "")
+      },
+      onJoin: (code) => (location.search = `?room=${code}${creating ? "&private=1" : ""}`),
+    },
+    onLeave: () => {
+      if (room) location.search = ""
+    },
+  })
+  if (room) shell.lobby!.setRoom(room)
+  // Keys drive a seat only in play: paused (a room keeps going behind the menu), nobody's held keys act.
+  const syncControls = () => {
+    controls.enabled = shell.playing
+    if (!shell.playing) controls.release()
   }
+  shell.flow.subscribe(syncControls)
+  syncControls()
+  const syncAudio = audioRuntimeSync(shell.settings, sound.runtime)
   if (params.get("focus")) {
     game.focus = params.get("focus")
     game.focusSpan = Number(params.get("span")) || 6
   }
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio, MAX_DPR)
-    canvas.width = Math.max(1, Math.floor(innerWidth * dpr))
-    canvas.height = Math.max(1, Math.floor(innerHeight * dpr))
-    renderer.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
     document.documentElement.style.setProperty("--hud", String(Math.max(0.6, Math.min(1, innerWidth / 1500, innerHeight / 950))))
   }
   resize()
@@ -95,7 +134,14 @@ async function main() {
     const realDt = (now - last) / 1000
     const dt = Math.min(0.1, realDt)
     last = now
-    if (!watch) {
+    shell.tick(now)
+    syncAudio()
+    if (shell.playing) quality.frame(now)
+    else quality.pause()
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
+    // Couch play holds still on the title and behind the menu; a room's clock is the room's.
+    const live = shell.playing || !!game.online
+    if (!watch && shell.playing) {
       const known = new Set(seats.map((s) => s.device).filter((d): d is Device => !!d))
       for (const d of controls.padJoins(known)) join(d)
       if (controls.pressed("Enter") && !known.has("kbR")) {
@@ -109,14 +155,18 @@ async function main() {
       if (controls.pressed("Digit1")) game.setArena("belltower")
       if (controls.pressed("Digit2")) game.setArena("cloister")
       if (controls.pressed("Digit3")) game.setArena("aqueduct")
-      if (controls.pressed("KeyP")) location.search = "?online"
+      if (controls.pressed("KeyP")) void shell.lobby!.quickMatch()
     }
-    game.update(realDt)
-    renderer.render(game.build(innerWidth, innerHeight, dt))
+    if (live) game.update(realDt)
+    renderer.render(game.build(innerWidth, innerHeight, live ? dt : 0))
     sound.listen(game.cam.cx, game.cam.cy)
     const o = game.online
     hud.update(game, innerWidth, innerHeight, (!watch || !!o?.ready) && now - started < 14000)
-    if (o) hud.net(room, o.rtt, o.fatal ?? o.socket.status() ?? (o.ready ? null : "Joining…"), invite)
+    if (o) {
+      hud.net(room, o.rtt, o.fatal, invite)
+      if (o.fatal) shell.lobby!.setConnection("lost", o.fatal)
+      else shell.lobby!.setSocketStatus(o.socket.status() ?? (o.ready ? null : "Connecting…"))
+    }
     controls.endFrame()
     requestAnimationFrame(frame)
   }

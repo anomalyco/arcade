@@ -50,7 +50,7 @@ export type BotRoom = {
   newId(): number
   /** Player `id` leaves the room (crew, combat, stats). */
   drop(id: number): void
-  sendAll(data: string): void
+  sendAll(data: string | Uint8Array): void
 }
 
 type Base = {

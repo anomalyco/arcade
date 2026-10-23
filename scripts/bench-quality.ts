@@ -8,7 +8,11 @@
 //     [--viewport=2560x1440] [--dpr=2] [--seconds=6] [--auto-seconds=14] [--json=out.json]
 import { writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
-import { chromium, type Browser } from "playwright-core"
+import { type Browser } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const opt = (k: string, d: string) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
 const games = opt("games", "brawl,blackout,getaway,carrier").split(",")

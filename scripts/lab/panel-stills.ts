@@ -7,8 +7,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name)

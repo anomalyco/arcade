@@ -1,13 +1,18 @@
 // Pixel parity between two production builds of a game: serves each `dist/arcade/<game>` directory, runs the same
 // deterministic page (seeded sandbox with a manual clock by default) on headless Metal, and compares canvas pixels.
 // Usage: bun scripts/prove-pixel-parity.ts <game> <base-dist-root> <head-dist-root> [--query=sandbox=1&manual&seed=1]
-//        [--advance=2500] [--out=dir] [--dpr=1] [--viewport=1280x800] [--drive=advance|bench|clock]
+//        [--advance=2500] [--out=dir] [--dpr=1] [--viewport=1280x800] [--drive=advance|bench|clock|step]
 // Drivers: `advance` calls the page's manual clock (`globalThis.advance(ms)`); `bench` steps Getaway's deterministic
 // `__getawayBench` (reset, then one step per 1/30 s); `clock` pauses Playwright's fake clock while the page loads, then
 // runs it for `advance` ms, for games without a manual clock. Math.random is seeded on every driver.
 import { mkdirSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
-import { chromium, type Browser } from "playwright-core"
+import { type Browser } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+import type { Renderer } from "../packages/kit/gpu/renderer"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const [game, baseDir, headDir] = process.argv.slice(2).filter((a) => !a.startsWith("--"))
 const opt = (k: string, d: string) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -51,8 +56,45 @@ async function capture(browser: Browser, dist: string, name: string): Promise<Bu
     await page.clock.install({ time: 1_000_000 })
     await page.clock.pauseAt(1_000_000)
   }
+  if (drive === "step") await page.addInitScript(() => {
+    window.requestAnimationFrame = () => 0
+    performance.now = () => 8000
+    const configure = GPUCanvasContext.prototype.configure
+    GPUCanvasContext.prototype.configure = function (c) { configure.call(this, { ...c, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC }) }
+  })
   await page.goto(`http://127.0.0.1:${server.port}/arcade/${game}/?${query}`)
-  if (drive === "advance") {
+  let steppedPng: Buffer | undefined
+  if (drive === "step") {
+    if (!["lot", "nightshift", "outbreak"].includes(game)) throw Error("step driver supports Lot, Night Shift and Outbreak")
+    type App = { renderer: Renderer; step(ms: number): void | Promise<unknown>; setCamera?(view: "wide"): void; freeze?(on: boolean): void; paused: boolean }
+    const key = game === "outbreak" ? "__arcadeHarness" : game
+    await page.waitForFunction(key => !!(window as unknown as Record<string, App>)[key], key, { polling: 100, timeout: 180000 })
+    const png = await page.evaluate(async key => {
+      const a = (window as unknown as Record<string, App>)[key]!
+      a.paused = true; a.freeze?.(true); a.setCamera?.("wide")
+      a.renderer.render = a.renderer.drawTo.bind(a.renderer)
+      const device = a.renderer.passContext.device
+      for (let i = 0; i < 32; i++) { await a.step(0); await device.queue.onSubmittedWorkDone() }
+      const canvas = document.querySelector<HTMLCanvasElement>("#view, #game")!, ctx = canvas.getContext("webgpu")!
+      const row = Math.ceil(canvas.width * 4 / 256) * 256
+      const buffer = device.createBuffer({ size: row * canvas.height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
+      await a.step(0)
+      const enc = device.createCommandEncoder()
+      enc.copyTextureToBuffer({ texture: ctx.getCurrentTexture() }, { buffer, bytesPerRow: row }, [canvas.width, canvas.height])
+      device.queue.submit([enc.finish()]); await buffer.mapAsync(GPUMapMode.READ)
+      const src = new Uint8Array(buffer.getMappedRange()), rgba = new Uint8ClampedArray(canvas.width * canvas.height * 4)
+      for (let y = 0; y < canvas.height; y++) rgba.set(src.subarray(y * row, y * row + canvas.width * 4), y * canvas.width * 4)
+      buffer.unmap(); buffer.destroy()
+      if (navigator.gpu.getPreferredCanvasFormat().startsWith("bgra")) for (let i = 0; i < rgba.length; i += 4) { const r = rgba[i]!; rgba[i] = rgba[i + 2]!; rgba[i + 2] = r }
+      let visible = 0
+      for (let i = 0; i < rgba.length; i += 4) if (Math.max(rgba[i]!, rgba[i + 1]!, rgba[i + 2]!) > 8) visible++
+      if (visible < canvas.width * canvas.height * .001) throw Error("Refusing blank-frame parity")
+      const output = document.createElement("canvas"); output.width = canvas.width; output.height = canvas.height
+      output.getContext("2d")!.putImageData(new ImageData(rgba, canvas.width, canvas.height), 0, 0)
+      return output.toDataURL("image/png").split(",")[1]!
+    }, key)
+    steppedPng = Buffer.from(png, "base64")
+  } else if (drive === "advance") {
     await page.waitForFunction(() => typeof (globalThis as { advance?: unknown }).advance === "function", null, { timeout: 20_000 })
     await page.evaluate((ms) => (globalThis as unknown as { advance(ms: number): Promise<void> }).advance(ms), advance)
   } else if (drive === "bench") {
@@ -79,7 +121,7 @@ async function capture(browser: Browser, dist: string, name: string): Promise<Bu
   })
   console.log(`${name}: canvas ${canvasSize}`)
   const view = page.locator("canvas#view")
-  const png = await ((await view.count()) ? view : page.locator("canvas").first()).screenshot()
+  const png = steppedPng ?? await ((await view.count()) ? view : page.locator("canvas").first()).screenshot()
   await Bun.write(join(out, `${name}.png`), png)
   await page.close()
   server.stop(true)

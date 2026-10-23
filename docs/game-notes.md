@@ -141,6 +141,12 @@ proven animation techniques to animation.md, not here.
   clock half a sim tick from the 60 Hz ship grid, or float drift gives 0- or 2-step frames. Raw BGRA readback through
   the game's device piped into ffmpeg: 1,800 1080p frames in ~5.5 min on the M4 Max; frame-difference spikes only at
   cuts and lightning.
+- **Port a mix onto the kit by null test (Carrier).** `AudioRuntime`'s `mix` option (`packages/kit/audio/mix.ts`)
+  builds a game-defined graph: named buses, a shared muffle low-pass, per-bus ducks, convolver and slapback sends, glue,
+  limiter, trim and soft clip. Carrier's hand-built mixer became `CARRIER_MIX` with the same nodes in the same order;
+  its seeded demo scenes (`scripts/audio-demo.ts`, Chromium `OfflineAudioContext`) rendered before and after differ by
+  at most one 16-bit step, null RMS -120 to -135 dBFS, exactly the spread of two renders of the old build
+  (`scripts/audio-compare.ts`). Seed `Math.random` per scene or pooled takes and loop starts break the comparison.
 - **Capture the game's own audio in lockstep with a frame-stepped video.** Carrier's `scripts/video-epic.ts` moves the
   game's mixer onto one `OfflineAudioContext` (`mixer.use`, then a synthetic `pointerdown` so the weather and weapon
   sounds start on it) and, after every 1/60 s step, schedules `ctx.suspend` at that step's sample, resumes and awaits it:
@@ -241,6 +247,15 @@ proven animation techniques to animation.md, not here.
   [outbreak-difficulty.md](outbreak-difficulty.md).
 
 ## Rendering (WebGPU)
+
+### Catalogue sky, isolated proof (`night-sky` candidate)
+
+`packages/kit/sky` integrates a cubic B-spline point spread over each pixel rather than drawing a sampled radial
+dot. With scintillation off, a magnitude-zero star varied 0.035114% in total HDR energy over 32 subpixel phases
+at 1920×1080 MSAA4 on mini Metal. The fixture uses the production `SkyPass`; it does not establish woods visibility.
+`scripts/sky/gpu-proof.ts --temporal` also exercises `gpu/temporal.ts`'s opt-in translation-free background
+reprojection: 64 m camera travel gave 0.030859 px star-centroid drift. The default temporal path stays unchanged.
+Raw results, scope and follow-up work are recorded in [the ledger](../perf/night-sky.md).
 
 - **Build a pipeline when it is first drawn, not when the renderer is made (Outbreak smoke, AR-119, 2026-10-21).** On
   SwiftShader (CI) every scene-shader pipeline costs seconds, and Outbreak's boot compiled 35 of which 10 were never
@@ -845,6 +860,16 @@ proven animation techniques to animation.md, not here.
   11.7–13 ms, Balanced 4.9–6.5 ms, Low 2.7–5.4 ms for Brawl, Blackout and Carrier; Auto holds High there. Getaway
   runs 50–130 ms frames headless at any resolution (main thread idle, same on `main`), so its Auto pick there
   (Balanced 0.9× to Low 0.8×) is not what a real window would choose.
+- **When a tier carries expensive looks, step the tier before shedding most of the resolution (Outbreak, AR-124).**
+  Outbreak's tiers (`games/outbreak/src/quality.ts`) also scale its night looks: Balanced draws the mist at a quarter of
+  the screen and contact shadows from one light in 8 steps, and Low turns both off and coarsens the bounced light. Each
+  Lab setting defaults to "Quality tier" (-1), so the tier fills it in and an explicit Lab value wins. With the kit's
+  High `minScale` 0.7, a Mac mini (M4 Pro) on a 4K monitor at 2× sat at High 1.4×, with full looks and fewer pixels.
+  With 0.85 it steps down to Balanced 1.5× after one short resolution step, because the cheaper looks cost less than the
+  extra lost pixels. Headless timing can't settle this: with no display, Chromium copies a 4K canvas back every frame
+  and runs near 5 fps whatever the GPU does (full Chrome headless was no better), which drove Auto to Low 0.5×. So
+  `games/outbreak/scripts/auto-quality.ts` times the GPU per tier and scale (timestamp queries on a frozen frame),
+  replays the real controller against those timings, and shoots the stills.
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.
@@ -1531,6 +1556,17 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
 - The build runs on a worker (`packages/kit/forest/offthread.ts` `ForestBuilder`, `build-worker.ts`): the page samples the grid (the game's height is a function, so it can't cross), the world without `height` and the models go over by transfer, and the build comes back by transfer; the geometry is byte for byte the page's (`forest/build.test.ts`). Spawn the worker before the asset fetches, or its script queues behind the 58 texture images on the host's six connections (that cost 2 s). Six alternating A/B boots on pro: frame 2 median 7.3 s → 6.7 s; the worker's build is ~1.4× slower than the same build on the page, so the win is the overlap with texture decode and a main thread free for the loading screen, not 2–3 s. Boot marks: `woods:grid`, `:models`, `:worker`, `:textures`, `:build`, `:world`, `:frame1/2` (`scripts/smoke.mjs` prints them on a timeout; `games/woods/scripts/boot-profile.ts` prints them and the top self time).
 - The forest's fog changes are opt-ins, so the Lot, Outbreak and Night Shift compile the classic shader byte for byte (checked against woods 003c7733 for every game's real hooks; `fog-scatter.test.ts` pins the hashes): `fogScatterVolume({ torches: true })` gives beam-profiled torches without leak, the d²/(d²+size²) near field and `FogSettings.phaseFloor`; `bankLocal` or `bankExtinction` give the stratified bank (floor from the game, soft shoulder, closed-form depth).
 
+### Lot storm: one strike envelope, rain only where lit (2026-10-21)
+
+- Kit: "rain, storm and a lightning bolt in the Lot" (+ "Also want sfx"). Research brief: `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md`.
+- **A flash is one envelope, not an overlay.** `games/lot/src/weather/storm.ts` drives the channel, a broad directional sky light through the scene's `directional` hook (Night `N.storm`), a sky lobe toward the strike, and the fog: brightness ×(1 + 0.9·flash), hue toward 222°, `cloudDark` → 0.85 so the deck lights from inside, and fog history 1 while lit so the clouds flicker with the stroke instead of lagging ~10 frames. Iteration on stills: fog boost ×8 and directional ×1.6 turned a 330 m strike into daylight with a pale sky band under a dark deck; ×1.9 / ×0.4 plus the lit deck reads as a flash at night. No exposure change.
+- **Light the cloud, not the sky behind it.** A sky lobe toward the strike (×0.25 of the flash, ~7× the fog sky) was hidden wherever the opaque deck stood, so the lit gap outlined the deck as a flat slab with a straight far edge. A faint, broad lobe (×0.02) next to the deck lit from inside (`cloudDark` → 0.85) leaves no boundary; the kit's deck fade stays as Today has it.
+- **Scene-light pulses are rationed, channels are not.** Every strike gets one scene pulse (`maxScene` 1) and the shared `FlashLimiter` caps overlapping strikes at three in 1.25 s (WCAG 2.3.1 with a margin: a pulse starting under a brighter one still decaying reads as a flash ~16 ms later); restrikes flicker only the thin channel. The scene light comes from the strike lighting the lot most (`pickStrikeLights`), picked apart from the channel drawn, or a blocked strike's restrikes could snap the flash to 0 and back. Reduced merges strokes into one non-dipping swell at a third of the rate, ≥ 15 s apart, and a strike only takes a swell 3 s after the last one. Glow halo 10 m at 330 m (~1.7°) keeps the bright area under the 2.3.1 threshold.
+- **Bolt depth and occlusion come free from the scene depth buffer.** The ribbons depth-test without writing, so the building and trees cut the channel; the top fades into the cloud over the first 10 % of the leader. Strikes stay inside the sky dome (±699 m, ceiling 210 m); farther ones are flash and thunder only.
+- **Rain mostly invisible outside lamp light** (`litOnly` 0.94, ambient 0.06): in Storm streaks show in the lamp cones and everywhere for the frame of a flash. Puddles grow only +0.2 × coverage (+25 % scale): the film soaks, standing water stays in the dips.
+- Cost (mini, Metal, 1280×720, paired, n=8): Today 7.58 ms, Drizzle +0.03, Rain +0.05, Storm +0.11 ms between strikes. Flicker (`games/lot/scripts/motion.ts`, `weather-*` variants): scenery unchanged (ground row of the grid 0.011/0.023/0.025 → 0.011/0.023/0.027, booth lamp head 0.209 → 0.229); the overall score rises (still 0.022 → 0.180) because the lit streaks themselves move, and turning off glass rain changes nothing.
+- **Sound by surface, thunder by distance.** A quiet asphalt bed under positional car, booth-roof, gutter and drip emitters; the lobby closes a 650 Hz lowpass over the outdoors and adds rain on glass. In the walk proof: open lot −46 dB RMS, under the booth roof −40, lobby −46 and muffled. Thunder picks close/mid/far/cloud samples by slant distance, lowpasses with distance, pans by bearing relative to the view (bearing + yaw: the view's own bearing is −yaw), adds facade echoes (two persistent delay chains) and Wings' brown-noise roll, all through the lobby muffle, schedules nothing while the context is suspended, muted or unfocused (a frozen `currentTime` would fire it all on resume), and lands ~20 dB over the rain with a −9 dBFS peak behind the bus limiter.
+
 ## Researched, not yet adopted
 
 ### Blackout snapshot rate (2026-10-16)
@@ -1893,6 +1929,13 @@ Candidates from the code audits; measure and playtest before moving any into the
   raised the mean correction from 1.0 to 4.8 mm. Getaway (`games/getaway/shared/wire.ts`) does the same for `WorldView`,
   cars, helicopter, standings, props and `you`: 2-player chase snapshots drop 1,918 → 577 B (−69.9%), downlink
   bandwidth 29.4 → 10.9 KB/s (−62.9%), and server tick time ~30% while keeping `you` and `phaseT` exact for replay.
+- **Binary frames for the high-rate messages only, behind the same decoder.** Carrier (`games/carrier/shared/wire.ts`,
+  `@arcade/kit/net/bytes`) sends jets, ships, boats, turrets, aims, boat orders, triggers and hit reports as binary
+  frames (kind byte, varints on the old rounding grids, one f64 of ms per list plus varint offsets) and keeps
+  hello/crew/chat/objective/events as JSON on the same socket. The binary decoder yields the same message objects, so
+  the JSON validation runs unchanged on both. Full 32-player room (`games/carrier/scripts/net-bandwidth.ts`: 12 jets at
+  20 Hz, 12 gunners, 4 boats): 32.0 → 10.7 KB/s down per client (−67%), a 12-jet `planes` frame 1,901 → 388 B, client
+  uplink 2.23 → 0.77 KB/s per pilot.
 - **Time-stretch `SnapshotBuffer.renderTime` so clock and adaptive-delay shifts never jump a frame.** Calling
   `localTime - offset - effectiveDelay()` directly stepped `renderTime` by up to ±2 ms on snapshot arrival frames,
   creating 1.5–3 m/s velocity spikes on fast vehicles at 120 fps. Slewing the combined shift (`offset + effectiveDelay()`)

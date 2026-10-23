@@ -10,8 +10,11 @@ import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import type { LabStation } from "@arcade/kit/lab/stations/types"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name)

@@ -198,7 +198,10 @@ fn fogged(c: vec3f, a: f32, w: vec3f) -> vec4f {
   let view = normalize(v.world - F.eye.xyz);
   // Edge-on parts of the curtain read stronger, like a sheet of light.
   let edge = 1.0 - abs(dot(n, view));
-  let fade = pow(1.0 - h, 2.2);
+  // Seen from above the whole sheet faces the camera and read as a second, raised ring: it fades out as the view
+  // steepens, so from the air only the ring on the water shows. It also dies away well before its top edge.
+  let level = 1.0 - smoothstep(0.25, 0.6, abs(view.y));
+  let fade = pow(1.0 - h, 3.0) * level;
   let streak = 0.75 + 0.25 * sin(v.polar.y * 240.0 + F.eye.w * 0.6283 * 2.0 - h * 6.0);
   let k = L.a.w * glowScale() * (0.25 + edge * edge * 0.9) * fade * streak * (1.0 + z.cap.w * 1.2);
   var col = zoneColor(z);

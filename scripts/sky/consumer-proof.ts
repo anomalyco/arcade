@@ -1,5 +1,5 @@
 /** One muted, deterministic consumer check: lazy assets, actual scene shader and return to Today. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer } from "vite"
 import { existsSync } from "node:fs"
 import { mkdir, readdir } from "node:fs/promises"
@@ -8,6 +8,9 @@ import type { Renderer } from "../../packages/kit/gpu/renderer"
 import type { attachSky } from "../../packages/kit/sky/controller"
 import type { Opening } from "../../games/nightshift/src/opening"
 import { serveDist } from "../../games/lot/scripts/serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 type App = {
   sky: ReturnType<typeof attachSky>; renderer: Renderer; paused: boolean; time: number

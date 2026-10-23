@@ -7,9 +7,13 @@
 // Steps: the load screen; the roster preview (menu.html, fake crew); then three players quick-joining the real room:
 // the first two share a ship, a seat move, the third starts the other team, a new ship, a team switch, launch and return,
 // and the helm driving the ship that the crew sees move.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -153,17 +157,17 @@ const press = async (page: Page, selector: string) => {
 
 /** Opens the real game, types a name and quick-joins. */
 async function quickJoin(name: string): Promise<Page> {
-  const page = await open(base, name)
-  await page.fill(".mn-name", name)
-  await page.click('[data-act="quick"]')
+  const page = await open(`${base}?shell`, name)
+  await page.fill(".as-card input[data-field=name]", name)
+  await page.click('.as-card [data-act="quick"]')
   await until(page, (v) => v.online === "online" && v.role !== "none", 15_000)
-  await page.waitForFunction(() => !document.querySelector(".mn"), null, { timeout: 5000 })
+  await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "playing", null, { timeout: 5000 })
   return page
 }
 
 // 1. The load screen, as a first visit sees it (the menu over an offline sea), and the menu preview with fake stats.
 {
-  const page = await open(base, "menu")
+  const page = await open(`${base}?shell`, "menu")
   await page.waitForTimeout(2500)
   await shot(page, "menu")
   await page.close()
@@ -245,4 +249,4 @@ check(va.role === "helm" && va.seat === 0, `return: ada back at seat ${va.seat}`
 console.log(logs.length ? `console:\n${logs.slice(0, 30).join("\n")}` : "console: clean")
 console.log(failures ? `${failures} FAILED` : "all checks passed")
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

@@ -22,6 +22,7 @@ type Q = [number, number, number, number]
 export const OPEN_MOCAP_CREDITS = {
   "100style":
     "100STYLE dataset: Ian Mason, Sebastian Starke, Taku Komura, Real-Time Style Modelling of Human Locomotion via Feature-Wise Transformations and Local Motion Phases (2022). CC BY 4.0, https://zenodo.org/records/8127870. Changes: one gait cycle cut, retargeted onto the arcade rig.",
+  cmu: "CMU Graphics Lab Motion Capture Database, http://mocap.cs.cmu.edu (created with funding from NSF EIA-0196217), free for all uses; BVH conversion by Bruce Hahne (cgspeed). Changes: one gait cycle cut, retargeted onto the arcade rig.",
   ual: "Universal Animation Library 1 and 2 by Quaternius. CC0 1.0, https://quaternius.com/packs/universalanimationlibrary.html",
 } as const
 
@@ -132,6 +133,8 @@ export const STYLE_SHA: Record<string, string> = {
   Neutral_SR: "804046d4d29109515fa3f6268f85873bab1dc3d08b87dabbe644eddbf00aec71",
   Neutral_BW: "cfa225ff3a29a38d11ecd1b72fa0d917ca6c3dc3b24b3d09a4cb5c28ee9dc5b9",
   Neutral_BR: "5661951058a5ec50e02a6708a5f9d3ccd09ff768051584cac9611aee8402ea13",
+  Neutral_FR: "f46ca526027a3654c8939a0123413f6008906fb32125d5e885eafcaa830831cb",
+  Neutral_ID: "71aead2e3246bdb47a5b839cb3e60e0574e9a1a046c071cc147e2922a35f259f",
 }
 
 /** One 100STYLE take (e.g. "Zombie_FW": FW forward walk, FR forward run, ID idle), cached under fixtures. */
@@ -170,6 +173,61 @@ export function parse100Style(text: string): BvhClip {
     frames: clip.frames.map(f => {
       const out: Record<string, V3> = { Hips: f.Hips!, Chest: f.Chest3!, Neck: f.Neck!, Head: f.Head!, Head_End: f.Head_End! }
       for (const [src, dst] of Object.entries(STYLE_NAMES)) out[dst] = f[src]!
+      return out
+    }),
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- CMU
+const CMU_URL = "https://raw.githubusercontent.com/una-dinosauria/cmu-mocap/master/data"
+
+/** Pinned hashes of the CMU trials we use (Bruce Hahne's cgspeed BVH conversion); a new trial prints its hash. */
+export const CMU_SHA: Record<string, string> = {
+  "07_12": "704b63c1ecb291cde10625d2cd6b90d8f77d14763ba9931233ab2dc02148a578",
+  "09_11": "1ecc12d8ae242f271d8e1b17ac9b204d1c71cb17d06ba881bc1915a5b72dc712",
+}
+
+/** One CMU trial (e.g. "07_12", subject 07 trial 12), cached under fixtures. Free for all uses. */
+export async function loadCmu(trial: string, dir = join(fixturesDir, "cmu")): Promise<string> {
+  const path = join(dir, `${trial}.bvh`)
+  if (!existsSync(path)) {
+    const url = `${CMU_URL}/${trial.split("_")[0]!.padStart(3, "0")}/${trial}.bvh`
+    console.log(`fetching CMU ${trial}…`)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`Could not download ${url} (${res.status})`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path, await res.text())
+  }
+  const text = readFileSync(path, "utf8")
+  const want = CMU_SHA[trial], got = sha256(text)
+  if (want && got !== want) throw new Error(`${path} does not match its pinned hash`)
+  if (!want) console.log(`  CMU ${trial} sha256 ${got} (pin it in CMU_SHA)`)
+  return text
+}
+
+const CMU_NAMES: Record<string, string> = {
+  LeftArm: "UpperArm_L", LeftForeArm: "LowerArm_L", LeftHand: "Hand_L",
+  RightArm: "UpperArm_R", RightForeArm: "LowerArm_R", RightHand: "Hand_R",
+  LeftUpLeg: "UpperLeg_L", LeftLeg: "LowerLeg_L", LeftFoot: "Foot_L", LeftToeBase: "Toes_L",
+  RightUpLeg: "UpperLeg_R", RightLeg: "LowerLeg_R", RightFoot: "Foot_R", RightToeBase: "Toes_R",
+}
+
+/**
+ * A CMU BVH in the joint names `retargetBvhFrame` reads, rescaled to metres from its hip height (cgspeed's units are
+ * not metres; `hipM` is the performer's assumed hip height). Chest is the upper spine (Spine1).
+ */
+export function parseCmu(text: string, hipM = 0.92): BvhClip {
+  const clip = parseBvh(text)
+  const f0 = clip.frames[0]!
+  const legLen = (sd: string) => { const a = f0[`${sd}UpLeg`]!, b = f0[`${sd}Leg`]!, c = f0[`${sd}Foot`]!; return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) + Math.hypot(b[0] - c[0], b[1] - c[1], b[2] - c[2]) }
+  // Hip joint to ankle is the hip height less the ankle's height above the floor (~8 cm).
+  const k = (hipM - 0.08) / ((legLen("Left") + legLen("Right")) / 2)
+  return {
+    dt: clip.dt,
+    frames: clip.frames.map(f => {
+      const sc = (v: V3): V3 => [v[0] * k, v[1] * k, v[2] * k]
+      const out: Record<string, V3> = { Hips: sc(f.Hips!), Chest: sc(f.Spine1!), Neck: sc(f.Neck1!), Head: sc(f.Head!), Head_End: sc(f.Head_End!) }
+      for (const [src, dst] of Object.entries(CMU_NAMES)) out[dst] = sc(f[src]!)
       return out
     }),
   }

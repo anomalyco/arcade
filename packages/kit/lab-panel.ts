@@ -1,5 +1,6 @@
 import {
   LabNavigation,
+  holdsValue,
   formatLabValue,
   inferControlUnit,
   isSwitchControl,
@@ -14,8 +15,8 @@ import type { HostHistory } from "@arcade/knobs"
 import type { Command, CommandsFromOptions } from "@arcade/knobs/ui"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
-export { formatLabValue, inferControlUnit, isRampControl, resolveControlField } from "./lab-navigation"
-export type { LabControl, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
+export { formatLabValue, holdsValue, inferControlUnit, isRampControl, resolveControlField } from "./lab-navigation"
+export type { LabButton, LabControl, LabReadoutScale, LabReadoutValue, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 export type { LabKnobsView } from "./lab-knobs"
 export type LabOptions = {
   open?: boolean
@@ -357,7 +358,7 @@ export class LabPanel implements LabKnobsHost {
 
   /** `defaults` supplies approved values for Reset and modified highlighting; otherwise the current values are captured. */
   addControls(settings: LabSettings, controls: readonly LabControl[], defaults?: Readonly<LabSettings>) {
-    for (const c of controls) if (c.type !== "action") {
+    for (const c of controls) if (holdsValue(c)) {
       const field = resolveControlField(c, settings)
       Object.defineProperty(this.navigation.settings, c.key, {
         configurable: true,
@@ -418,7 +419,7 @@ export class LabPanel implements LabKnobsHost {
   resetControl(key: string): boolean {
     const row = this.navigation.rows.find(r => r.control?.key === key)
     const c = row?.control
-    if (!c || c.type === "action" || !(key in this.navigation.defaults)) return false
+    if (!c || !holdsValue(c) || !(key in this.navigation.defaults)) return false
     this.begin(`Reset ${c.label}`)
     this.navigation.set(c, this.navigation.defaults[key]!)
     this.end()
@@ -436,7 +437,7 @@ export class LabPanel implements LabKnobsHost {
     const out: LabControl[] = []
     for (const row of this.navigation.rows) {
       const c = row.control
-      if (!c || c.type === "action") continue
+      if (!c || !holdsValue(c)) continue
       if (c.visible && !c.visible(this.navigation.settings)) continue
       if (this.navigation.isModified(c)) out.push(c)
     }
@@ -461,6 +462,11 @@ export class LabPanel implements LabKnobsHost {
 
   /** The tab the panel shows, when it has tabs. */
   get tab(): string | undefined { return this.main?.tab }
+
+  /** Shows one of the panel's tabs (see `setTabs`) by its label; false when there is no such tab. */
+  setTab(label: string): boolean {
+    return this.ensureMain()?.selectTab(label) ?? false
+  }
 
   /** The panel's search text and Modified chip. */
   get search(): { query: string; modified: boolean } {

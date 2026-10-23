@@ -10,7 +10,10 @@ import { mkdirSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
 import { CHROME_ARGS, PACE_60 } from "./headless"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const { values: o } = parseArgs({
   options: {

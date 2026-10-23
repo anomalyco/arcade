@@ -30,6 +30,7 @@ import { flashlightBeamControls, OUTBREAK_LOOK_LIGHTING_PRESETS, outbreakLightin
 import type { NetSession } from "./net-session"
 import { type ProgressionLabHost } from "./progression/lab"
 import { resolveOutbreakSettingTarget, type OutbreakSettings, type OutbreakSubsystemKey } from "./settings"
+import { OUTBREAK_QUALITY_KEY } from "./quality"
 import { survivorAimControls } from "./survivor"
 import { syncUnseenSettingChange, unseenControls } from "./unseen"
 import type { VehicleLabHost } from "./vehicle-lab"
@@ -451,7 +452,7 @@ export function handleOutbreakSettingChanged(
     host.qualityController.setMode(qMode)
     if (!navigator.webdriver) {
       try {
-        saveQualityMode(localStorage, qMode)
+        saveQualityMode(localStorage, qMode, OUTBREAK_QUALITY_KEY)
       } catch {}
     }
     lab.refresh()

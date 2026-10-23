@@ -143,11 +143,12 @@ describe("ships take damage over the network", () => {
     launch(w, "f35")
     const id = w.bShip()
     const hull = w.core.hull(id)!
-    // Six direct hits sink it (175 each); the bomb budget refills on the room's clock.
+    // Direct hits sink it (FLEET.bomb each); the bomb budget refills on the room's clock. B pings so the room keeps it.
     let seq = 0
-    for (let i = 0; i < 40 && hull.sinkAt === -1; i++) {
+    for (let i = 0; i < 60 && hull.sinkAt === -1; i++) {
       w.core.fighters.get(w.a.id)!.bombs = 4
       bombAt(w, seq++, 15, 40)
+      w.say(w.b, { type: "ping", c: 0 })
       w.run(7000)
     }
     expect(hull.sinkAt).toBeGreaterThanOrEqual(0)

@@ -1,7 +1,11 @@
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Wet-road comparison: the Lot (built from this checkout) and Aiden's Ashwood preview at the same camera poses,
 // 1920×1080, headless and muted. Run through HiveMind browser admission:

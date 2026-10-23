@@ -40,7 +40,8 @@ export type PlaneDrawPose = {
   stores?: number
 }
 
-export const MAX_PLANES = 33
+/** Every player's jet (32 + a harness drone) plus every jet parked on four decks (shared/deck-jets.ts). */
+export const MAX_PLANES = 45
 /** Uniform slots per jet: body, stabilisers, gear, canopy, hook, two bay doors, four stores. */
 const PIECES = 12
 const SLOT = 256

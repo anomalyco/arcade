@@ -1,4 +1,5 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import { type Crew, type CrewPlayer, teamCss } from "../../shared/crew"
 import type { Missile } from "../../shared/combat"
 import type { Hull } from "../../shared/fleet"
@@ -120,12 +121,6 @@ const CSS = `
 body.mn-open #rd { display: none; }
 `
 
-/** Matches a typed key that should not open the map (text fields, the debug menu's controls). */
-function typing(e: KeyboardEvent): boolean {
-  const t = e.composedPath()[0]
-  return t instanceof HTMLElement && (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")
-}
-
 /**
  * The pilot's map. While flying, a compact heading-up radar sits in the bottom-left corner, centred on our jet: range
  * rings, a north mark, islands as faint shapes, enemy carriers as filled hulls in their colour (pinned to the rim when
@@ -172,8 +167,11 @@ export class Radar {
     this.map = root.querySelector<HTMLCanvasElement>(".map")!
     this.mask.width = this.mask.height = MASK
     addEventListener("keydown", (e) => {
-      if (e.code === "Escape") this.pinned = this.held = false
-      if (e.code !== "KeyG" || e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return
+      if (e.code === "Escape" && (this.pinned || this.held)) {
+        e.preventDefault()
+        this.pinned = this.held = false
+      }
+      if (e.code !== "KeyG" || !this.enabled || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.composedPath()[0])) return
       if (this.pinned) {
         this.pinned = false
         this.tapClose = true
@@ -190,6 +188,9 @@ export class Radar {
     })
     addEventListener("blur", () => (this.held = false))
   }
+
+  /** G opens the full map only while this is on (the game in play, not behind the title or menu). */
+  enabled = true
 
   /** The full map is up (held or pinned). */
   get mapOpen(): boolean {

@@ -73,6 +73,7 @@ export class OpsMenu {
         }
         if (!this.open) return
         if (e.code === "Escape") {
+          e.preventDefault()
           this.close()
           return
         }

@@ -36,3 +36,10 @@ The people move with the kit's own procedural rig (`packages/kit/human-*.ts`); n
 files. Where the rig is measured or tuned against motion capture, see `docs/animation.md` (100STYLE, CC BY 4.0:
 Ian Mason, Sebastian Starke, Taku Komura, 2022, https://zenodo.org/records/8127870; attribution required if any of it
 is ever shipped).
+
+## Motion
+
+The walk and run cycles in `../gait.gen.ts` come from the CMU Graphics Lab Motion Capture Database,
+http://mocap.cs.cmu.edu (created with funding from NSF EIA-0196217), free for all uses: trials 07_12 (brisk walk) and
+09_11 (run), in Bruce Hahne's cgspeed BVH conversion. Changes: one gait cycle each, retargeted onto the arcade rig and
+resampled (`scripts/people/bake-gait.ts`).

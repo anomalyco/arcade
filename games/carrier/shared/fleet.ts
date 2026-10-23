@@ -3,9 +3,10 @@
 // draw fires, smoke and the settle, show health and limit their own helm. Times are sea time (s).
 //
 // The model (tuning in `FLEET`):
-// - HULL: health, `FLEET.hp` (1,000). A full gun overheat run (160 rounds) takes ~4%, a missile 5%, a direct bomb hit
-//   17.5% (an F-35C's four bombs ≈ 70%), a bomb bursting in the water within `near` m of the hull 1.5–7%, a jet
-//   crashing into the ship 5%. Friendly fire is off: only other carriers' weapons (and jets) hurt a ship.
+// - HULL: health, `FLEET.hp` (1,000). Aircraft are a nuisance more than a death sentence, so ships live long enough
+//   to fight over the zones: a full gun overheat run (160 rounds) takes ~2%, a missile 2.5%, a direct bomb hit 8% (an
+//   F-35C's four bombs ≈ 32%), a bomb bursting in the water within `near` m of the hull 0.8–3.5%, a jet crashing into
+//   the ship 3%. Friendly fire is off: only other carriers' weapons (and jets) hurt a ship.
 // - Zones, from where a hit lands in ship-local space (`hullZone`): the ISLAND (bridge) box, the DECK (on or above the
 //   flight deck), else the HULL side. Island hits also damage the bridge (`island` 0..1): the ship's top speed and
 //   rudder authority fall with it (`hullLimits`, up to 45% slower). Bombs and missiles on the deck start a deck fire:
@@ -27,16 +28,16 @@ import type { WeaponKind } from "./weapons"
 export const FLEET = {
   hp: 1000,
   /** Damage per gun round, missile, direct bomb hit, jet crash. */
-  gun: 0.25,
-  missile: 50,
-  bomb: 175,
-  crash: 50,
+  gun: 0.12,
+  missile: 25,
+  bomb: 80,
+  crash: 30,
   /** A ship gun's shell when the caller gives no amount (gunnery passes its own). */
   shell: 20,
   /** A bomb bursting in the water this close to the hull's waterline (m) does `nearMax` at the hull down to `nearMin`. */
   near: 25,
-  nearMax: 70,
-  nearMin: 15,
+  nearMax: 35,
+  nearMin: 8,
   /** Bridge damage (of 1) per bomb, missile and gun round on the island. */
   islandBomb: 0.4,
   islandMissile: 0.15,

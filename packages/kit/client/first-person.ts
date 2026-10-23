@@ -1,6 +1,6 @@
 import { mat4 } from "wgpu-matrix"
 import { isEditableEventTarget, isMetaKey, observeKeyLayout, requestCanvasPointerLock } from "./controls"
-import type { Rect } from "../sim/geom"
+import { pushOut, type Rect } from "../sim/geom"
 import { stepBody } from "../sim/move"
 
 /** Grounded, pointer-locked camera. Y in the movement body is world Z, as in kit simulation. */
@@ -27,6 +27,8 @@ export class FirstPerson {
   readonly mount = { yaw: 0, pitch: 0, roll: 0, height: 0, fov: 0 }
   /** Called at the start of each update to set `mount`. */
   rig?: (camera: FirstPerson, dt: number, aspect: number) => void
+  /** Called after each collision move with where the body started it, to hold it inside a game's own bounds (a phone cord's reach). */
+  constrain?: (body: { x: number; y: number }, from: readonly [number, number]) => void
   private look: [number, number, number] = [0, 0, -1]
   private up: [number, number, number] = [0, 1, 0]
 
@@ -64,8 +66,11 @@ export class FirstPerson {
     const forward = held("KeyW", "ArrowUp") - held("KeyS", "ArrowDown")
     const right = held("KeyD", "ArrowRight") - held("KeyA", "ArrowLeft")
     const s = Math.sin(this.yaw), c = Math.cos(this.yaw)
+    const from = [this.body.x, this.body.y] as const
     stepBody(this.body, right * c - forward * s, -right * s - forward * c,
       this.speed * (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ? 1.8 : 1), walls, Math.min(dt, 0.05), 0.28, 18)
+    // A clamp can pull the body into a wall or a rolled chair, so collisions get the last word.
+    if (this.constrain) { this.constrain(this.body, from); pushOut(this.body, 0.28, walls) }
     this.rig?.(this, dt, aspect)
     const m = this.mount
     this.eye[0] = this.body.x; this.eye[1] = this.height + m.height; this.eye[2] = this.body.y

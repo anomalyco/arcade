@@ -1,6 +1,9 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync,mkdirSync,readdirSync,writeFileSync } from "node:fs"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out=resolve(process.env.SPLATTER_OUT??"../../captures/splatter"),host=process.env.LAB_URL??"http://127.0.0.1:5180/arcade/lab",quick=process.env.SPLATTER_QUICK==="1"
 mkdirSync(out,{recursive:true})

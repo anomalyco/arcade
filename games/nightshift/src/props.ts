@@ -5,15 +5,9 @@ import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { propHooks } from "./shaders"
 import { CRADLE, RECEIVER_PAD, PHONE_INDICATOR } from "./world"
 import { transformPacked } from "./polish/moving-mesh"
+import { CARPET_MAPS, PROP_DEFINITIONS } from "./assets"
 
-export const PROP_DEFINITIONS=[
-  {kind:"crt",file:"authored/crt",at:[-.74,.795,-5.65],size:[.52,.50,.57],yaw:0},
-  {kind:"pen-cup",file:"pen-cup",at:[1.02,.795,-5.35],size:[.15,.25,.14],yaw:.3},
-  {kind:"mug",file:"period/mug",at:[.62,.795,-5.48],size:[.10,.14,.145],yaw:-.7},
-  {kind:"chair",file:"period/chair",at:[.65,0,-4.55],size:[.62,1.02,.65],yaw:-.3},
-  {kind:"phone",file:"authored/phone-base",at:[.12,.79,-5.4],size:[.40,.13,.38],yaw:0},
-  {kind:"rolodex",file:"authored/rolodex",at:[1.34,.795,-5.55],size:[.23,.19,.23],yaw:-.15},
-]
+export { PROP_DEFINITIONS }
 
 /** Fit the two ear pads to the actual base, rather than a guessed world height. */
 export function phoneSurface(primitives:{vertices:ArrayBuffer}[],x:number,z:number) {
@@ -42,11 +36,14 @@ export function cradleOn(primitives:{vertices:ArrayBuffer}[]) {
   return {position:[CRADLE[0],(front+back)/2+.025*Math.cos(roll)+.0007,CRADLE[2]],roll,supports:{front,back},gap:.0007}
 }
 
-async function carpet(device:GPUDevice):Promise<TexturedPrimitive> {
-  const texture=async(name:string,srgb:boolean,normal=false)=>{
-    const response=await fetch(`${import.meta.env.BASE_URL}props/carpet-${name}.webp`)
-    if(!response.ok)throw new Error(`Carpet ${name}: ${response.status}`)
-    return imageTexture(device,new Uint8Array(await response.arrayBuffer()),srgb,"image/webp",undefined,normal)
+/** Fetches an office file (path relative to the base) and reports it decoded. */
+export type OfficeFiles={bytes(path:string):Promise<Uint8Array>;loaded?(path:string):void}
+const fetchFiles:OfficeFiles={async bytes(path){const r=await fetch(`${import.meta.env.BASE_URL}${path}`);if(!r.ok)throw new Error(`${path}: ${r.status}`);return new Uint8Array(await r.arrayBuffer())}}
+
+async function carpet(device:GPUDevice,files:OfficeFiles):Promise<TexturedPrimitive> {
+  const texture=async(name:typeof CARPET_MAPS[number],srgb:boolean,normal=false)=>{
+    const path=`props/carpet-${name}.webp`,t=await imageTexture(device,await files.bytes(path),srgb,"image/webp",undefined,normal)
+    files.loaded?.(path);return t
   }
   const [base,normal,orm]=await Promise.all([texture("color",true),texture("normal",false,true),texture("orm",false)])
   const m=new Mesh()
@@ -67,11 +64,13 @@ function screenCoordinates(p:TexturedPrimitive) {
 }
 
 /** Licensed static props use the shared textured/physical-light/shadow path. */
-export async function officeProps(renderer:Renderer,terminal:GPUTexture) {
+export async function officeProps(renderer:Renderer,terminal:GPUTexture,files:OfficeFiles=fetchFiles) {
   let cradle={position:[...CRADLE],roll:0,supports:{front:0,back:0},gap:0}
   const indicator=[PHONE_INDICATOR[0],0,PHONE_INDICATOR[1]]
+  // The carpet decodes alongside the props rather than after them.
+  const floor=carpet(renderer.passContext.device,files);floor.catch(()=>{})
   const assets=await Promise.all(PROP_DEFINITIONS.map(async def=>{
-    const asset=await loadGltf(renderer.passContext.device,`${import.meta.env.BASE_URL}props/${def.file}.glb`)
+    const path=`props/${def.file}.glb`,asset=await loadGltf(renderer.passContext.device,await files.bytes(path))
     // The phone base contains no receiver; the scene owns that moving part.
     const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity]
     for(const p of asset.primitives){const f=new Float32Array(p.vertices);for(let i=0;i<f.length;i+=8)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],f[i+k]);hi[k]=Math.max(hi[k],f[i+k])}}
@@ -94,9 +93,10 @@ export async function officeProps(renderer:Renderer,terminal:GPUTexture) {
       cradle=cradleOn(asset.primitives)
       indicator[1]=phoneSurface(asset.primitives,indicator[0],indicator[2])+.0007
     }
+    files.loaded?.(path)
     return asset
   }))
-  const pass=new TexturedMeshPass(renderer.passContext,[...assets.flatMap(a=>a.primitives),await carpet(renderer.passContext.device)],propHooks)
+  const pass=new TexturedMeshPass(renderer.passContext,[...assets.flatMap(a=>a.primitives),await floor],propHooks)
   renderer.addPass("opaque",pass)
   const casters=pass.shadowCasters(),movable:{kind:string;at:number[];source:ArrayBuffer;out:ArrayBuffer;buffer:GPUBuffer;pose:string}[]=[]
   let casterIndex=0

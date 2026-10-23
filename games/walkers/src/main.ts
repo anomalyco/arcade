@@ -1,5 +1,6 @@
-import { keyCapHtml } from "@arcade/kit/client/key-cap"
+import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { LabPanel, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
+import { createGameShell } from "@arcade/kit/shell"
 import { CREATURE_IDS, CREATURES, type CreatureId } from "../shared/creatures"
 import { DEFAULT_REWARD, Episode, type RewardSettings } from "../shared/episode"
 import { DEFAULT_ES } from "../shared/es"
@@ -315,6 +316,43 @@ const panel = new LabPanel(S as unknown as Record<string, LabValue>, controls, p
 })
 panel.header.textContent = "Evolution strategies · Backquote hides"
 
+// Title, Escape menu and Settings are the kit game shell. Walkers is silent, so Settings has no Sound section. The
+// sim keeps training behind the title; the Escape menu freezes playback and training until Resume.
+const sync = (key: string) => {
+  panel.sync()
+  changed(key)
+}
+const shell = createGameShell({
+  game: "walkers",
+  title: "WALKERS",
+  subtitle: "Physics creatures learning to run, live in your browser",
+  playLabel: "Watch them learn",
+  channels: [],
+  keysBlocked: () => panel.hasFocus(),
+  controls: () => [keyPromptHtml("Space", "Train"), keyPromptHtml("KeyR", "Reset"), keyPromptHtml("KeyB", "Replay best"), keyPromptHtml("Backquote", "Lab panel"), keyPromptHtml("Escape", "Menu")].join(" "),
+  sections: [{
+    id: "playback",
+    title: "Playback",
+    rows: [
+      { kind: "range", id: "speed", label: "Playback speed", min: 0.25, max: 16, step: 0.25, unit: "×", get: () => S.speed, set: (v) => { S.speed = v; sync("speed") } },
+      { kind: "toggle", id: "compare", label: "Show pre-trained (gold)", get: () => S.compare, set: (v) => { S.compare = v; sync("compare") } },
+      { kind: "toggle", id: "slowmo", label: "Slow motion on near misses", get: () => S.slowmo, set: (v) => { S.slowmo = v; sync("slowmo") } },
+    ],
+  }],
+})
+let heldTraining = false
+shell.flow.subscribe(() => {
+  const paused = shell.flow.screen === "paused"
+  if (paused && !heldTraining && running) {
+    heldTraining = true
+    trainer.run(false)
+  } else if (!paused && heldTraining) {
+    heldTraining = false
+    if (running) trainer.run(true)
+    lastGenAt = 0
+  }
+})
+
 function changed(key: string): void {
   if (key === "task" && !fits(creature(), task())) S.creature = "quadruped"
   if (key === "creature" && !fits(creature(), task())) S.task = "room"
@@ -395,6 +433,7 @@ function syncButtons(): void {
 window.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
   if ((e.target as HTMLElement).closest?.("input, textarea, [contenteditable], [data-lab-panel]")) return
+  if (!shell.playing) return
   if (e.code === "Space") setRunning(!(running && mode === "train"))
   else if (e.code === "KeyR") reset()
   else if (e.code === "KeyB") enterReplay(trainer.best)
@@ -447,8 +486,9 @@ function renderStats(): void {
 let lastFrame = performance.now()
 let acc = 0
 function frame(now: number): void {
-  const dt = Math.min(0.1, (now - lastFrame) / 1000)
+  const dt = shell.flow.screen === "paused" ? 0 : Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
+  shell.tick(now)
   if (show) {
     // Replays drop to a fifth of the speed for a moment whenever the thief comes within 6 cm of a live beam.
     const slow = show.kind === "replay" && now < slowUntil

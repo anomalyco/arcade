@@ -1,5 +1,5 @@
 /** Deterministic, muted Metal readback; original Foley rendered offline from the actual tape. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir,readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
@@ -11,6 +11,9 @@ import type { Call } from "../shared/call"
 import type { OfficePhysics } from "../src/polish/props"
 import type { Continuity } from "../src/polish/continuity"
 import type { tubeSignal } from "../src/polish/tube"
+
+await using budget = browserBudget()
+const { chromium } = budget
 type App={camera:WalkCamera;renderer:Renderer;settings:Settings;call:Call;renderFoley:typeof renderFoley;physics:OfficePhysics;continuity:Continuity;tubeSignal:typeof tubeSignal;clock:number;time:number;action():void;setCamera(view:"wide"|"phone"):void}
 type Proof={nightshift:App;step(capture:boolean,label:string,measure?:boolean):Promise<{png:string;ms:number}>}
 const out=resolve(process.env.POLISH_OUT??"captures/nightshift-polish"),boot=process.argv.includes("--boot"),perfOnly=process.argv.includes("--perf")

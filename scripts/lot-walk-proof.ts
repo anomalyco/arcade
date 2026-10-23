@@ -1,9 +1,12 @@
 import assert from "node:assert/strict"
 import { mkdirSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { serveDist } from "../games/lot/scripts/serve-dist"
 import type { WalkAudioFrame } from "../games/lot/src/walk-audio"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // One headless, muted actual-input tape; Today replays its exact body poses for the stacked comparison.
 // Frames are encoded on a render worker afterwards, never on Studio's display.

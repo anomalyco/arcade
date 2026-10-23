@@ -6,7 +6,10 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const phase = process.env.WALL_PHASE ?? "after"
@@ -189,5 +192,5 @@ try {
 console.log(`wrote ${out}`)
 if (failures && enforce) {
   console.error(`${failures} wall-light case(s) failed`)
-  process.exit(1)
+  await budget.exit(1)
 }

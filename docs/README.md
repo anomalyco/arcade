@@ -13,6 +13,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   `socketJitter`, and the new-game checklist). Read before any multiplayer or net work.
 - [rendering-techniques.md](rendering-techniques.md): catalogue of rendering techniques with have/missing status,
   cost and location. Read before adding lighting, shadows, materials, post-processing or GPU performance work.
+- [threading.md](threading.md): worker ownership, dependencies, browser limits and ranked threading experiments.
+  Read before moving CPU work off-thread or changing worker protocols.
+- [realism.md](realism.md): the realism playbook by topic (lights to ambience) with cost, Kit's decisions and taste.
 - [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
   posture, transitions, weapons) and the known gaps. Read before touching any character's motion.
 - [audio-design.md](audio-design.md): the shared audio engine and Audio Lab. Read before changing game sound.
@@ -26,10 +29,16 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   on `@arcade/kit` primitives and `LabPanel` knobs before building custom meshes, shaders or multiplayer rooms.
 - [shared-code.md](shared-code.md): what the games still duplicate and what belongs in `packages/kit/`. Check
   before writing something another game already has.
+- [assets.md](assets.md): where to find models, textures, motion and sound (accepted licences, sources Arcade uses
+  and ones to evaluate) and when to generate them instead (image model, TRELLIS, MPFB, procedural, ElevenLabs). Read
+  before adding or generating assets.
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
   detachment and the Characters page. Read before using the rig in a game.
 - [people.md](people.md): realistic skinned people (`@arcade/kit/people`): the MakeHuman build, GPU skinning,
   retargeting from the rig, terrain feet, licences and measurements. Read before adding a person or outfit.
+- [game-shell.md](game-shell.md): the shared player-facing shell (`@arcade/kit/shell`): title and lobby, Escape
+  menu, Settings (volume, mute, quality, reduce motion, key labels), leave warning and loading; its rules, new-game
+  checklist and the per-game audit. Read before touching any of them.
 - [controls.md](controls.md): cross-game key bindings and HUD prompts. Read before changing input or prompts.
 - [architecture.md](architecture.md): the current engine map (layers, `@arcade/kit` and `@arcade/knobs` areas,
   generated per-game shared-module adoption table, core patterns, and staged roadmap). Read before a cross-game

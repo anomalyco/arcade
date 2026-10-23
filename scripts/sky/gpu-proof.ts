@@ -1,10 +1,13 @@
 /** Headless production-shader compilation, flux stability, still and timestamp proof; run via HiveMind on mini. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer } from "vite"
 import { existsSync } from "node:fs"
 import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { hostname } from "node:os"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out=resolve("captures/sky-gpu")
 await mkdir(out,{recursive:true})

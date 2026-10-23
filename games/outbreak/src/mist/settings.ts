@@ -1,8 +1,9 @@
 import type { FogSettings } from "@arcade/kit/gpu/fog-scatter"
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { fromTier, QUALITY_TIER, type OutbreakQualityProfile } from "../quality"
 
 /**
- * Low mist in yards and gutters (Lab › Look · Low mist; on by default since Kit's pick, D-50, `mistStyle` 0 is Today): the kit's drifting fog bank (#359,
+ * Low mist in yards and gutters (Lab › Look · Low mist; Kit's pick, D-50: on at the High and Balanced quality tiers (`quality.ts`), `mistStyle` 0 is Today): the kit's drifting fog bank (#359,
  * `fogScatterVolume({ atmosphere: true })`) retuned for Outbreak's camera. From 38 m above, the Lot's 4 m bank read as
  * ~6 % haze, so the mist here is a dense, knee-high layer that pools: against house walls, in hollows across the yards
  * and in a line along the gutters, thin to nothing on the open road and none indoors or on roofs (`mist/wgsl.ts`
@@ -11,7 +12,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * shroud dims it like everything else (it leaves the scene's colour mask in HDR alpha alone).
  */
 export type OutbreakMistSettings = {
-  /** 0 Today (no mist), 1 low mist (default). */
+  /** -1 the quality tier's (default: on at High and Balanced, off at Low), 0 Today (no mist), 1 low mist. */
   mistStyle: number
   /** Extinction inside the thickest mist, per metre. */
   mistDensity: number
@@ -49,12 +50,12 @@ export type OutbreakMistSettings = {
   mistBeams: number
   /** March steps through the layer. */
   mistSteps: number
-  /** The fog slot's resolution while the mist is on: 1/n of the screen per axis (the mist is soft, so 3 hides it). */
+  /** The fog slot's resolution while the mist is on: 1/n of the screen per axis (the mist is soft); -1 the quality tier's. */
   mistDownscale: number
 }
 
 export const DEFAULT_MIST_SETTINGS: OutbreakMistSettings = {
-  mistStyle: 1,
+  mistStyle: QUALITY_TIER,
   mistDensity: 0.9,
   mistHeight: 1.1,
   mistScale: 5.5,
@@ -73,7 +74,7 @@ export const DEFAULT_MIST_SETTINGS: OutbreakMistSettings = {
   mistLamps: 1.6,
   mistBeams: 6,
   mistSteps: 6,
-  mistDownscale: 3,
+  mistDownscale: QUALITY_TIER,
 }
 
 const G = "Look · Low mist"
@@ -85,6 +86,7 @@ export const mistControls: readonly LabControl[] = [
     group: G,
     type: "select",
     options: [
+      { value: QUALITY_TIER, label: "Quality tier" },
       { value: 0, label: "Today (no mist)" },
       { value: 1, label: "Low mist in yards and gutters" },
     ],
@@ -107,8 +109,16 @@ export const mistControls: readonly LabControl[] = [
   { key: "mistLamps", label: "Lamp glow in the mist", group: G, subsection: "Light", min: 0, max: 5, step: 0.05, unit: "×" },
   { key: "mistBeams", label: "Beams in the mist", group: G, subsection: "Light", min: 0, max: 20, step: 0.25, unit: "×" },
   { key: "mistSteps", label: "Steps", group: G, subsection: "Cost", min: 2, max: 12, step: 1 },
-  { key: "mistDownscale", label: "Resolution", group: G, subsection: "Cost", type: "select", options: [{ value: 2, label: "Half" }, { value: 3, label: "Third" }, { value: 4, label: "Quarter" }] },
+  { key: "mistDownscale", label: "Resolution", group: G, subsection: "Cost", type: "select", options: [{ value: QUALITY_TIER, label: "Quality tier" }, { value: 2, label: "Half" }, { value: 3, label: "Third" }, { value: 4, label: "Quarter" }] },
 ]
+
+/** The settings with "Quality tier" values filled in from the active tier, into `out`. */
+export function resolveMist(s: OutbreakMistSettings, q: Pick<OutbreakQualityProfile, "mist" | "mistDownscale">, out: OutbreakMistSettings): OutbreakMistSettings {
+  Object.assign(out, s)
+  out.mistStyle = fromTier(s.mistStyle, q.mist ? 1 : 0)
+  out.mistDownscale = fromTier(s.mistDownscale, q.mistDownscale)
+  return out
+}
 
 export const mistOn = (s: Pick<OutbreakMistSettings, "mistStyle"> | undefined): boolean => (s?.mistStyle ?? 0) > 0.5
 

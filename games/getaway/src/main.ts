@@ -16,9 +16,10 @@ import { Radio } from "./audio/radio"
 import { Renderer } from "./render/renderer"
 import { Chat } from "./ui/chat"
 import { Hud } from "./ui/hud"
-import { lobby, quickRoom, setRoomParam } from "./ui/lobby"
+import { askRoom, type LobbyResult, PICKS, quickRoom, setRoomParam, titleArt } from "./ui/lobby"
 import { DebugOverlay } from "./ui/debug-overlay"
-import { GameQuality } from "@arcade/kit/client/quality"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
+import { createGameShell, createShellQuality, type GameShell } from "@arcade/kit/shell"
 import { GETAWAY_QUALITY, type GetawayQuality } from "./quality"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { registerGameCommands } from "@arcade/kit/dev-control"
@@ -32,7 +33,7 @@ function fail(msg: string) {
   el.innerHTML = `<div class="nogpu"><h1>GETAWAY</h1><p>${msg}</p></div>`
 }
 
-async function connect(choice: Awaited<ReturnType<typeof lobby>>): Promise<Session> {
+async function connect(choice: LobbyResult): Promise<Session> {
   if (choice.mode === "room" && choice.room) {
     const { NetSession, RoomFullError } = await import("./game/net")
     try {
@@ -64,21 +65,95 @@ async function main() {
   const q = new URLSearchParams(location.search)
   const staged = (import.meta.env.DEV && q.has("stage")) || q.has("solo") || q.get("peaceful") === "1" || q.has("mux")
   const benchMode = q.has("bench")
-  let choice: Awaited<ReturnType<typeof lobby>> = { mode: "solo", room: null, name: "Dax", picks: { robber: "muscle", cop: "cruiser" } }
-  let notice = sessionStorage.getItem(NOTICE_KEY)
+  // Resolution, motion blur and smoke volumes follow the quality tier: Auto starts High and steps down only on slow frames (Settings).
+  const applyTier = (tier: GetawayQuality) => Object.assign(renderer.tier, { motionBlur: tier.motionBlur, volumes: tier.volumes })
+  let shell: GameShell | null = null
+  const quality = createShellQuality({
+    game: "getaway", tiers: GETAWAY_QUALITY, params: q, gpuMs: () => telemetry.gpuMs,
+    onChange: (tier) => {
+      applyTier(tier)
+      shell?.settings.changed()
+    },
+  }).expose()
+  applyTier(quality.profile)
+
+  // The title, lobby, Escape menu and Settings are the kit game shell; the night-road backdrop stays Getaway's.
+  let choose: ((c: LobbyResult) => void) | null = null
+  let via: LobbyResult["via"] = "code"
+  let started = false
+  let debugPanel: DebugOverlay | null = null
+  const gameShell = createGameShell({
+    game: "getaway", title: "GETAWAY", subtitle: "One driver. Everyone else is a cop. Stay free.",
+    quickLabel: "Quick join", soloLabel: "Solo practice", friendsNote: "a private room",
+    askName: true, quality, channels: ["master", "effects", "ambience", "voice"], labels: { voice: "Police radio" },
+    legacyMuteKey: "getaway.mute",
+    start: staged ? "playing" : "title",
+    hidden: q.has("mux") && parent !== window ? true : undefined,
+    keysBlocked: () => Boolean(debugPanel?.hasFocus()),
+    controls: () => [keyPromptHtml("KeyW", "Drive"), keyPromptHtml("Space", "Handbrake"), keyPromptHtml("ShiftLeft", "Boost"), keyPromptHtml("KeyT", "Chat"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
+    lobby: {
+      friends: true, roomParam: "r", upperCase: true, maxName: 16, fallbackName: "Dax", nameRequired: "Enter a name to play online.",
+      quick: () => {
+        via = "quick"
+        return quickRoom()
+      },
+      createRoom: () => {
+        via = "create"
+        return askRoom("create")
+      },
+      onSolo: (name) => {
+        const url = new URL(location.href)
+        url.searchParams.delete("r")
+        url.searchParams.set("solo", "")
+        history.pushState(null, "", url)
+        choose?.({ mode: "solo", room: null, name, picks: { ...PICKS } })
+      },
+      onJoin: (room, name) => {
+        choose?.({ mode: "room", room, name, picks: { ...PICKS }, via })
+        via = "code"
+      },
+    },
+    // Getaway builds its scene from the session's city, so leaving starts the page again on the title.
+    onLeave: () => {
+      if (started) location.replace(location.pathname)
+    },
+  })
+  shell = gameShell
+  const lobby = gameShell.lobby!
+  // The shell owns volume and mute; the engine's own M key is off.
+  audio.muteKey = false
+  const syncAudio = () => {
+    Object.assign(audio.volumes, gameShell.settings.volumes)
+    audio.applyVolumes()
+    if (audio.muted !== gameShell.settings.muted) audio.setMuted(gameShell.settings.muted)
+  }
+  gameShell.settings.subscribe(syncAudio)
+  syncAudio()
+  const art = titleArt(document.getElementById("overlay")!)
+  gameShell.view?.titleSlot.append(art.stats)
+
+  let choice: LobbyResult = { mode: "solo", room: null, name: lobby.name || "Dax", picks: { ...PICKS } }
+  const notice = sessionStorage.getItem(NOTICE_KEY)
   sessionStorage.removeItem(NOTICE_KEY)
+  if (notice) lobby.setConnection("offline", notice)
   let session: Session
   for (;;) {
-    if (!staged) choice = await lobby(document.getElementById("overlay")!, notice)
+    if (!staged) choice = await new Promise<LobbyResult>((resolve) => (choose = resolve))
+    gameShell.flow.play()
     try {
       session = await connect(choice)
       break
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e)
-      notice = /room .* is full|could not reach/i.test(why) ? why : `Could not join room ${choice.room}: ${why}`
+      gameShell.flow.leave()
+      lobby.setRoom(null)
+      lobby.setConnection("offline", /room .* is full|could not reach/i.test(why) ? why : `Could not join room ${choice.room}: ${why}`)
       history.replaceState(null, "", location.pathname)
     }
   }
+  started = true
+  art.remove()
+  if (session.room) lobby.setRoom(session.room)
   if (q.has("nohud")) document.getElementById("hud")!.style.display = "none"
   const scene = new Scene(renderer, session.city)
   const hud = new Hud(document.getElementById("hud")!, session.city)
@@ -101,12 +176,12 @@ async function main() {
     controls.release()
     controls.forward({ type: "mux-release" })
   }, scene, sound)
-  // Resolution, motion blur and smoke volumes follow the quality tier (Auto by default; View → Quality in the Lab).
-  const applyTier = (tier: GetawayQuality) => Object.assign(renderer.tier, { motionBlur: tier.motionBlur, volumes: tier.volumes })
-  const quality = new GameQuality({ game: "getaway", tiers: GETAWAY_QUALITY, params: q, gpuMs: () => telemetry.gpuMs, onChange: applyTier })
-    .addTo(debug)
-    .expose()
-  applyTier(quality.profile)
+  debugPanel = debug
+  // Leaving play lets go of held keys, so the car idles behind the menu; keys only drive in play.
+  controls.active = () => gameShell.playing
+  gameShell.flow.subscribe(() => {
+    if (!gameShell.playing) controls.release()
+  })
   let explosionLoopTimer = 0
   registerGameCommands(commands => {
     commands.registerAll([
@@ -148,6 +223,7 @@ async function main() {
     ])
   })
   const chat = session.chat ? new Chat(document.getElementById("hud")!, controls, session) : null
+  if (chat) chat.active = () => gameShell.playing
   let snapped = false
   let freeze = 0
   let previousFuel = 1
@@ -326,11 +402,15 @@ async function main() {
       return
     }
     const frameMs = last === null ? 0 : Math.max(0, now - last)
-    const dt = Math.min(0.1, frameMs / 1000)
+    // Paused solo practice stops the clock; a room keeps playing behind the menu with the car idling.
+    const frozen = !gameShell.playing && !session.room
+    const dt = frozen ? 0 : Math.min(0.1, frameMs / 1000)
     last = now
-    quality.frame(now)
+    gameShell.tick(now)
+    if (gameShell.playing) quality.frame(now)
+    else quality.pause()
     resize()
-    const input = controls.read(mux ? 0 : dt)
+    const input = gameShell.playing || mux ? controls.read(mux ? 0 : dt) : { throttle: 0, brake: 0, steer: 0, handbrake: false, boost: false, gadget: null, engine: false }
     const view = mux && muxView ? muxView : session.update(dt, input)
     const { mine, focus } = focusOf(view, session.myId)
     if (focus && focus.boost < previousFuel - 1e-4) boostingUntil = now + 80
@@ -365,9 +445,11 @@ async function main() {
     }
     const events = session.drainEvents()
     events.push(...backfires.splice(0))
-    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status: session.status(), idleIn: session.idleIn?.() })
+    const status = session.status()
+    if (session.room) lobby.setConnection(/^online/.test(status) ? "online" : /connecting/.test(status) ? "connecting" : /reconnect/.test(status) ? "reconnecting" : "lost", /^online/.test(status) ? null : status)
+    hud.update(view, { myId: session.myId, cam, width: innerWidth, height: innerHeight, dt, events, players: session.players(), room: session.room, status, idleIn: session.idleIn?.() })
     chat?.update()
-    sound.update(view, { myId: session.myId, cam, dt, events, input, paused: controls.paused })
+    sound.update(view, { myId: session.myId, cam, dt, events, input, paused: controls.paused || frozen })
     radio.update(view, session.myId, events)
     ;(window as unknown as { __view: unknown }).__view = view
     requestAnimationFrame(frame)

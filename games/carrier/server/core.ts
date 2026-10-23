@@ -19,7 +19,10 @@ import {
   spawnAt,
   takeHelm,
   tickCrew,
+  wreckParked,
 } from "../shared/crew"
+import { DECK_JET_ROUND_DAMAGE, DeckJets, isParked, type DeckJetWeapon, type DeckRound, crashFalloff, deckRoundWeapon } from "../shared/deck-jets"
+import { bombDamage, blastDamage } from "../shared/combat"
 import { fleetSpawn } from "../shared/spawn"
 import { kick, promote, setLock } from "../shared/squad"
 import { type Archipelago, archipelagoFor } from "../shared/islands"
@@ -58,14 +61,14 @@ import { RoomBots } from "./bots"
 import { ChatLimiter, hearsChat } from "../shared/chat"
 import { vehicleCode } from "../shared/vehicles"
 import { makeTarget, type Target } from "../shared/weapons"
-import { GunneryWorld, type Interceptable, asInterceptable, packGunBoom, packTurret, shipHitOf, unpackGunFire } from "../shared/gunnery"
+import { GunneryWorld, type Interceptable, asInterceptable, packGunBoom, packTurret, samDamage, shellDamage, shipHitOf, unpackGunFire } from "../shared/gunnery"
 import { type Sea, makeSea, seaHeight } from "../shared/sea"
 import { SHIP, type Ship, type ShipControls, headingTo, makeShip, shipStep } from "../shared/ship"
 import { type CollideEntry, ShipCollider, hullSolid } from "../shared/ship-collide"
 import { RoomTime, TIME_OVERRIDE_LEAD, type TimeOverride, packTime, timeOverride } from "../shared/daycycle"
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type WeatherOverride, type WeatherSea, makeWeather, makeWeatherSea, overrideTo, packOverride, unpackWeather } from "../shared/weather"
 
-export type Conn = { send(data: string): void; close(code?: number, reason?: string): void }
+export type Conn = { send(data: string | Uint8Array): void; close(code?: number, reason?: string): void }
 
 /** A joined connection silent this long is dropped. Clients ping every 2 s, but hidden tabs can throttle timers to
  *  once a minute. */
@@ -203,6 +206,8 @@ export class RoomCore {
   private boatsAt = -Infinity
   private boatsSent = 0
   private boatBudget = new BoatBudget()
+  /** The jets parked on every deck (shared/deck-jets.ts): their health; destroyed ones put their slot into recharge. */
+  private deckJets = new DeckJets()
 
   /**
    * Dev mode (server configuration only: server/room.ts reads it from the Worker's environment, set for `wrangler dev`
@@ -355,6 +360,8 @@ export class RoomCore {
       }
       case "bhits":
         return this.boatHits(id, msg.k, msg.on, msg.n, now)
+      case "deckhits":
+        return this.deckHits(id, msg.w, msg.ship, msg.slot, msg.n, now)
       case "hits": {
         const a = this.where(id)
         const b = this.where(msg.on)
@@ -529,6 +536,7 @@ export class RoomCore {
       if (moved) this.collideShips()
     }
     this.apply(null, tickCrew(this.crew, now))
+    this.deckJets.step(this.crew, now)
     this.settleHulls(t)
     this.bots?.step(t, now)
     this.stepBoats(t, now)
@@ -681,7 +689,7 @@ export class RoomCore {
     return this.objective?.state ?? null
   }
 
-  private objectiveFrame(): string {
+  private objectiveFrame(): string | Uint8Array {
     return encode({ type: "obj", o: this.objective ? packObjective(this.objective.state) : [] })
   }
 
@@ -751,7 +759,10 @@ export class RoomCore {
     if (!events.length) return
     const t = this.seaTime(this.clock())
     for (const e of events.splice(0)) {
-      if (e.k === "gboom") this.sendAll(encode({ type: "gboom", b: packGunBoom(e) }))
+      if (e.k === "gboom") {
+        this.sendAll(encode({ type: "gboom", b: packGunBoom(e) }))
+        this.deckBlast(e.x, e.y, e.z, e.owner, this.gunnery.gunners.get(e.owner)?.team, e.kind, e.kind === "sam" ? samDamage : shellDamage)
+      }
       else if (e.k === "hurt") this.combat.hurt(e.on, e.dmg, e.by, e.w)
       else if (e.k === "ship") {
         const team = this.gunnery.gunners.get(e.owner)?.team ?? (this.crew ? playerOf(this.crew, e.owner)?.team : undefined) ?? -1
@@ -787,6 +798,7 @@ export class RoomCore {
       const m = 12
       if (l[0] < DECK_X0 - m || l[0] > DECK_X1 + m || l[2] < STERN_Z - m || l[2] > BOW_Z + m || l[1] < -15 || l[1] > ISLAND.y1 + m) continue
       this.fleet.hit({ ship: g.id!, by: id, team, w: "crash", x: l[0], y: l[1], z: l[2], near: 0 }, t)
+      this.deckBlast(x, y, z, id, team, "crash", crashFalloff)
       return
     }
   }
@@ -811,7 +823,7 @@ export class RoomCore {
     }
   }
 
-  private hullsFrame(): string {
+  private hullsFrame(): string | Uint8Array {
     const t = this.seaTime(this.clock())
     return encode({ type: "hulls", h: [...this.fleet.hulls.values()].map((h) => packHull(h, t)) })
   }
@@ -927,6 +939,63 @@ export class RoomCore {
     this.flushCombat()
   }
 
+  // ---- jets parked on deck (shared/deck-jets.ts) ------------------------------------------------------------------
+
+  /**
+   * A shooter's reported rounds on a parked jet: that slot has a jet in its bay on an enemy carrier, and the rounds fit
+   * the weapon's own budget and reach exactly as rounds on that hull would (the jet gun's within 1.8 km, a manned CIWS
+   * in range, a boat on the water within its gun's reach).
+   */
+  private deckHits(id: number, w: DeckRound, shipId: number, slot: number, n: number, now: number): void {
+    const crew = this.crew
+    const p = crew && playerOf(crew, id)
+    const ship = this.hullPoses.get(shipId)
+    const s = crew && shipOf(crew, shipId)
+    if (!crew || !p || !ship || !s || s.team === p.team || this.fleet.sinking(shipId) || !isParked(s, slot, now)) return
+    const t = this.seaTime(now)
+    let use = 0
+    if (w === 0) {
+      const a = this.where(id)
+      if (!a || this.boats.has(id) || Math.hypot(a[0] - ship.x, a[2] - ship.z) > 1800) return
+      use = this.combat.spendRounds(id, n)
+    } else if (w === 1) {
+      this.syncGunneryGround()
+      use = this.gunnery.ciwsDeckRounds(id, ship, n)
+    } else {
+      const b = this.boats.get(id)
+      const me = this.combat.fighters.get(id)
+      if (!b || !me?.alive || b.mode !== BOAT_MODE.drive || Math.hypot(ship.x - b.boat.x, ship.z - b.boat.z) > BOAT_REACH + 200) return
+      use = this.boatBudget.spend(id, n, t)
+    }
+    const weapon = deckRoundWeapon(w)
+    if (use > 0) this.deckJets.hit(crew, shipId, slot, use * DECK_JET_ROUND_DAMAGE[weapon], id, p.team, weapon, now)
+    this.flushDeck(now)
+  }
+
+  /** A burst (or a crash) at world (x, y, z) by player `by`: every enemy parked jet near it takes `falloff(distance)`. */
+  private deckBlast(x: number, y: number, z: number, by: number, team: number | undefined, w: DeckJetWeapon, falloff: (d: number) => number): void {
+    const crew = this.crew
+    if (!crew) return
+    const side = team ?? playerOf(crew, by)?.team ?? -1
+    const now = this.clock()
+    if (this.deckJets.blast(crew, this.hullList, x, y, z, by, side, w, falloff, now)) this.flushDeck(now)
+  }
+
+  /** Destroyed parked jets: everyone hears it (the kill feed, the explosion), then the slot recharges like a crash. */
+  private flushDeck(now: number): void {
+    const crew = this.crew
+    for (const e of this.deckJets.events.splice(0)) {
+      if (!crew) continue
+      this.sendAll(encode({ type: "deckkill", ship: e.ship, slot: e.slot, by: e.by, w: e.w }))
+      this.apply(null, wreckParked(crew, e.ship, e.slot, now))
+    }
+  }
+
+  /** Health of parked jet `slot` on ship `ship` (for tests). */
+  deckJetHp(ship: number, slot: number): number {
+    return this.deckJets.health(ship, slot)
+  }
+
   /** The boats out (for tests). */
   get boatSims(): ReadonlyMap<number, { boat: Boat; mode: BoatMode; ship: number }> {
     return this.boats
@@ -984,7 +1053,11 @@ export class RoomCore {
         this.fleet.hit({ ship: e.ship, by: e.owner, team, w: e.w, x: e.x, y: e.y, z: e.z, near: e.near }, this.combat.t)
         continue
       }
-      if (e.k === "boom") this.sendAll(encode({ type: "boom", b: [e.owner, e.seq, round(e.x, 10), round(e.y, 10), round(e.z, 10), e.on, e.water ? 1 : 0, e.bomb ? 1 : 0] }))
+      if (e.k === "boom") {
+        this.sendAll(encode({ type: "boom", b: [e.owner, e.seq, round(e.x, 10), round(e.y, 10), round(e.z, 10), e.on, e.water ? 1 : 0, e.bomb ? 1 : 0] }))
+        // A store shot down in flight bursts harmlessly; any other burst catches the parked jets near it.
+        if (!e.intercepted) this.deckBlast(e.x, e.y, e.z, e.owner, this.combat.fighters.get(e.owner)?.team, e.bomb ? "bomb" : "missile", e.bomb ? bombDamage : blastDamage)
+      }
       else if (e.k === "hp") this.sendAll(encode({ type: "hp", id: e.on, hp: e.hp, by: e.by, w: e.w }))
       else if (e.k === "kill") {
         // A boat destroyed goes down (its slot recharges once it has sunk).
@@ -1009,7 +1082,7 @@ export class RoomCore {
     return s
   }
 
-  private statsFrame(): string {
+  private statsFrame(): string | Uint8Array {
     const s: StatTuple[] = [...this.stats].map(([id, v]) => [id, v.kills, v.deaths])
     return encode({ type: "stats", s })
   }
@@ -1029,23 +1102,23 @@ export class RoomCore {
     for (const [c, pid] of this.ids) if (this.seen.has(c) && hearsChat(crew, pid, p.team, channel)) c.send(data)
   }
 
-  private sendTo(id: number, data: string): void {
+  private sendTo(id: number, data: string | Uint8Array): void {
     for (const [c, pid] of this.ids) if (pid === id) c.send(data)
   }
 
-  private sendOthers(id: number, data: string): void {
+  private sendOthers(id: number, data: string | Uint8Array): void {
     for (const c of this.seen.keys()) if (this.ids.get(c) !== id) c.send(data)
   }
 
-  private timeFrame(): string {
+  private timeFrame(): string | Uint8Array {
     return encode({ type: "time", o: this.time ? packTime(this.time) : null })
   }
 
-  private weatherFrame(): string {
+  private weatherFrame(): string | Uint8Array {
     return encode({ type: "weather", o: this.weather ? packOverride(this.weather) : null })
   }
 
-  private shipsFrame(): string {
+  private shipsFrame(): string | Uint8Array {
     const s: ShipTuple[] = []
     for (const [id, { ship: p }] of this.sims)
       s.push([id, round(p.t, 1e3), round(p.x, 1e2), round(p.z, 1e2), round(p.heading, 1e5), round(p.u, 1e3), round(p.v, 1e3), round(p.r, 1e5), round(p.order, 1e3), round(p.rudder, 1e3), round(p.power, 1e3)])
@@ -1306,7 +1379,7 @@ export class RoomCore {
     this.bots?.clear()
   }
 
-  private sendAll(data: string): void {
+  private sendAll(data: string | Uint8Array): void {
     for (const c of this.seen.keys()) c.send(data)
   }
 

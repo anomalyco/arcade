@@ -1,8 +1,11 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { resolve } from "node:path"
 import { createHash } from "node:crypto"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Serve the pre-extraction modules through the SAME renderer, host, seed and fixed clock.
 const root=resolve(import.meta.dir,"../../.."),out=resolve(root,"captures/lab-effects"),files=[

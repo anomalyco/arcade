@@ -1,10 +1,14 @@
 // Headless proof of the single-origin developer router and hub. Writes captures/dev-hub/.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { createServer } from "vite"
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer as createNetServer } from "node:net"
 import { join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, ".."), out = join(root, "captures/dev-hub")
 mkdirSync(out, { recursive: true })
@@ -56,7 +60,7 @@ try {
   check(page.url() === `${origin}/arcade/getaway/dev.html`, `Entry redirect: ${page.url()}`)
   check(await page.locator(".hub-env").textContent() === "Local", "Environment label")
   const links = Object.fromEntries(await page.locator("a.game").evaluateAll(cards => cards.map(card => [(card as HTMLElement).dataset.game, card.getAttribute("href")])))
-  check(JSON.stringify(links) === JSON.stringify({ getaway: "/arcade/getaway/", blackout: "/arcade/blackout/", wings: "https://anoma.ly/arcade/wings/", carrier: "/arcade/carrier/", outbreak: "/arcade/outbreak/" }), `Game links ${JSON.stringify(links)}`)
+  check(JSON.stringify(links) === JSON.stringify({ getaway: "/arcade/getaway/", blackout: "/arcade/blackout/", carrier: "/arcade/carrier/", outbreak: "/arcade/outbreak/" }), `Game links ${JSON.stringify(links)}`)
   for (const card of await page.locator("[data-prototypes] a").all()) check(!await card.isVisible(), "Prototype promoted")
   check(await page.getByText("bun run dev --workers").isVisible(), "Workers note")
   await page.screenshot({ path: join(out, "games.png") })

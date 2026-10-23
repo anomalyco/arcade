@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { CoopRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
@@ -9,6 +9,9 @@ import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "../tests/loopback"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const out = resolve(game, "../../captures/outbreak-vehicles")

@@ -3,8 +3,12 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, join } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer, type ViteDevServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, "../..")
 const out = resolve(process.env.EXPLOSION_UNIFY_OUT ?? resolve(root, "captures/explosion-unify"))

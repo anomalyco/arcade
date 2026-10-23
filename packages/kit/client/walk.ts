@@ -1,7 +1,7 @@
 import type { FootEvent } from "../audio/footsteps"
 /** Distance-driven gait. Camera and contacts share this clock, including at low speed. */
 export type FoleyEvent = FootEvent
-export type WalkInput = { dx:number; dz:number; yaw:number; dt:number; active:boolean; amount:number; reduced:boolean; stride:number; settling:number; bump?:boolean }
+export type WalkInput = { dx:number; dz:number; yaw:number; dt:number; active:boolean; amount:number; reduced:boolean; stride:number; settling:number; bump?:boolean; airborne?:boolean }
 type Spring={x:number;v:number}
 // Exact critically damped solution, duration in Kit's 2π/ω convention, bounce = 0.
 function settle(s:Spring,target:number,dt:number,duration:number){
@@ -30,12 +30,19 @@ export class Walk {
   private creakAt=12
   private serial=0
   constructor(private creaks=false){}
+  /** Both feet coming down together after a jump: two soft contacts a beat apart and cloth; `impact` 0..1. */
+  land(impact:number){
+    const g=clamp(impact,0,1),at=this.time+.03
+    // The landing is the contact: the next step comes half a stride later, never on top of it.
+    this.phase=Math.floor(this.phase)+.5
+    this.events.push({kind:"step",time:at,gain:.05+.15*g,pan:-.12,seed:++this.serial},{kind:"step",time:at+.028,gain:.04+.12*g,pan:.12,seed:++this.serial},{kind:"cloth",time:at+.04,gain:.07+.07*g,pan:0,seed:++this.serial})
+  }
   update(i:WalkInput){
     const dt=clamp(i.dt,0,.05),start=this.time;this.time+=dt;this.events=[]
     if(dt===0)return
     const distance=Math.hypot(i.dx,i.dz),speed=distance/dt
     // Camera cuts/collision recovery must not emit a burst of steps.
-    const moving=i.active&&distance<.25&&speed>.03
+    const moving=i.active&&!i.airborne&&distance<.25&&speed>.03
     const turn=this.yaw===undefined?0:clamp(Math.atan2(Math.sin(i.yaw-this.yaw),Math.cos(i.yaw-this.yaw))/dt,-3,3)
     this.yaw=i.yaw;this.speed=moving?speed:0
     const power=clamp(this.speed/1.7,0,1.35),before=this.phase
@@ -46,13 +53,15 @@ export class Walk {
       const at=start+dt*(step-before)/(this.phase-before)+.03,pan=step%2?.14:-.14
       emit("step",.025+.175*Math.min(power,1)**1.6,pan,at);emit("cloth",.06+.08*power,-pan,at+.035)
     }
-    if(i.active&&this.time-this.scuffAt>.65&&((this.wasMoving&&!moving)||(Math.abs(turn)>1.1&&this.speed<.8))){
+    // No feet on the floor, no scuff: neither leaving it mid-stride nor turning in the air.
+    if(i.active&&!i.airborne&&this.time-this.scuffAt>.65&&((this.wasMoving&&!moving)||(Math.abs(turn)>1.1&&this.speed<.8))){
       emit("scuff",this.wasMoving?.12:.06,turn*.06);this.scuffAt=this.time
     }
     if(i.active&&i.bump&&!this.touching&&this.time-this.bumpAt>.8){emit("bump",.65);this.bumpAt=this.time}
     this.touching=i.active&&!!i.bump
     if(this.creaks&&this.time>=this.creakAt){if(i.active)emit("creak",.18,Math.sin(this.creakAt)*.7);this.creakAt=this.time+17+(this.serial%7)}
-    this.wasMoving=moving
+    // A hop doesn't end a walk: whether you were walking carries across it.
+    if(!i.airborne)this.wasMoving=moving
     settle(this.amplitude,Math.min(power,1),dt,i.settling)
     settle(this.enabled,i.active&&!i.reduced?clamp(i.amount,0,1):0,dt,.3)
     const strafe=dt>0?(i.dx*Math.cos(i.yaw)-i.dz*Math.sin(i.yaw))/dt:0
