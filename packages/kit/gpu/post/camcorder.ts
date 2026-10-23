@@ -398,13 +398,6 @@ fn ui(c: vec3f, uv: vec2f) -> vec3f {
     res.hist = res.color;
     return res;
   }
-  // Between sensor frames (30 fps on a faster display) the last frame stays up.
-  if (u.b.z > 0.5) {
-    let h = textureLoad(hist, ip, 0).rgb;
-    res.hist = vec4f(h, 1.0);
-    res.color = vec4f(ui(h, uv), 1.0);
-    return res;
-  }
   let k = u.b.y;
   let s0 = textureLoad(state, vec2i(0, 0), 0);
   let s1 = textureLoad(state, vec2i(1, 0), 0);
@@ -504,6 +497,12 @@ fn ui(c: vec3f, uv: vec2f) -> vec3f {
   res.hist = vec4f(d, 1.0);
   res.color = vec4f(ui(d, uv), 1.0);
   return res;
+}
+/** Between sensor frames (30 fps on a faster display) the last frame stays up, with the stamp over it. */
+@fragment fn fs_hold(v: V) -> @location(0) vec4f {
+  let uv = v.pos.xy / u.a.xy;
+  if (uv.x < u.p3.x || uv.x > u.p3.y) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  return vec4f(ui(textureLoad(hist, vec2i(v.pos.xy), 0).rgb, uv), 1.0);
 }
 `
 
@@ -759,7 +758,7 @@ export class CameraFilter implements FinalPass {
   private overlayKey = ""
   private overlaySize: [number, number] = [0, 0]
   private canvas: OffscreenCanvas | HTMLCanvasElement | null = null
-  private pipes: Partial<Record<"state" | "local" | "phone" | "vhs" | "crt", GPURenderPipeline>> = {}
+  private pipes: Partial<Record<"state" | "local" | "phone" | "hold" | "vhs" | "crt", GPURenderPipeline>> = {}
   private mainLayout: GPUBindGroupLayout | null = null
   private stateLayout: GPUBindGroupLayout | null = null
   private sampler: GPUSampler | null = null
@@ -788,7 +787,18 @@ export class CameraFilter implements FinalPass {
     if (familyOf(this.settings.mode) !== null) return true
     this.valid = false
     this.lastMode = "today"
+    // Off holds no full-size textures; the next filter allocates them again.
+    if (this.targets) this.releaseTargets()
     return false
+  }
+
+  /** A sensor frame rate under the display's: between its frames the last picture stays up and the source is unread. */
+  holds(frame: Float32Array): boolean {
+    const s = this.settings, mode = familyOf(s.mode)
+    if (!this.targets || (mode !== "phone" && mode !== "body")) return false
+    const time = frame[19]!, dt = time - this.lastTime
+    const fps = mode === "body" ? 30 : Number(s.phoneFps) || 30
+    return this.valid && s.mode === this.lastMode && dt >= 0 && dt < 0.25 && fps < 59 && Math.floor(time * fps) === this.lastFrameIndex
   }
 
   /** The texture the renderer composites into while a filter is on. */
@@ -822,17 +832,9 @@ export class CameraFilter implements FinalPass {
     const dt = time - this.lastTime
     const continuous = this.valid && s.mode === this.lastMode && dt >= 0 && dt < 0.25
     if (s.mode !== this.lastMode) { this.recordStart = time; this.stampEpoch = this.epoch ?? Date.now() }
-    if (continuous && dt > 0) {
-      const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
-      const k = 1 - Math.exp(-dt / 0.04)
-      this.flow[0] += (fx / dt - this.flow[0]) * k
-      this.flow[1] += (fy / dt - this.flow[1]) * k
-    } else if (!continuous) this.flow = [0, 0]
-    this.prev.set(frame.subarray(0, 20))
-    const fps = mode === "body" ? 30 : Number(s.phoneFps) || 30
-    const frameIndex = Math.floor(time * fps)
-    const hold = sensor && continuous && fps < 59 && frameIndex === this.lastFrameIndex
-    if (!hold) this.lastFrameIndex = frameIndex
+    this.follow(frame, dt, continuous)
+    const hold = this.holds(frame)
+    if (!hold) this.lastFrameIndex = Math.floor(time * (mode === "body" ? 30 : Number(s.phoneFps) || 30))
     this.paintOverlay(mode, time, t.width, t.height)
     this.pack(mode, frame, time, continuous ? dt : 0, hold, !continuous, t.width, t.height)
     this.device.queue.writeBuffer(this.uniform!, 0, this.data)
@@ -856,17 +858,16 @@ export class CameraFilter implements FinalPass {
       pass.end()
     }
     if (metered && !hold) small(this.stateViews![write], this.pipes.state!)
-    // Held frame: carry the state forward untouched.
-    else if (metered) encoder.copyTextureToTexture({ texture: this.state![read] }, { texture: this.state![write] }, [2, 1])
     if (!hold && mode !== "vhs") small(this.localView!, this.pipes.local!)
+    // A held frame draws the last picture again and leaves history, state and parity as they are.
     const main = encoder.beginRenderPass({
       colorAttachments: [
         { view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } },
-        { view: t.histViews[write], loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } },
+        ...(hold ? [] : [{ view: t.histViews[write], loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } } as const]),
       ],
       timestampWrites: timing ? { querySet: timing.query, ...begin(), endOfPassWriteIndex: 1 } : undefined,
     })
-    main.setPipeline(this.pipes[sensor ? "phone" : mode]!)
+    main.setPipeline(this.pipes[hold ? "hold" : sensor ? "phone" : mode]!)
     const visible = 1 - Math.max(0, Math.min(1, this.fade))
     main.setBlendConstant([visible, visible, visible, 1])
     main.setBindGroup(0, this.groups!.main[read]!)
@@ -880,10 +881,33 @@ export class CameraFilter implements FinalPass {
       // The renderer submits right after this call returns.
       queueMicrotask(() => void this.collect())
     }
-    this.parity = write
+    if (!hold) this.parity = write
     this.valid = true
     this.lastMode = s.mode
     this.lastTime = time
+  }
+
+  /**
+   * A held frame the chain repeated without drawing through the filter (`FinalPassChain`): the clocks move as if it
+   * had drawn the hold, so the meter's springs step once per displayed frame, as they were tuned.
+   */
+  skip(frame: Float32Array): void {
+    if (!this.targets || !this.valid) return
+    const time = frame[19]!, dt = time - this.lastTime
+    this.follow(frame, dt, dt >= 0 && dt < 0.25)
+    this.lastTime = time
+  }
+
+  /** The view's flow in px per second, smoothed over displayed frames. */
+  private follow(frame: Float32Array, dt: number, continuous: boolean) {
+    const t = this.targets!
+    if (continuous && dt > 0) {
+      const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
+      const k = 1 - Math.exp(-dt / 0.04)
+      this.flow[0] += (fx / dt - this.flow[0]) * k
+      this.flow[1] += (fy / dt - this.flow[1]) * k
+    } else if (!continuous) this.flow = [0, 0]
+    this.prev.set(frame.subarray(0, 20))
   }
 
   dispose(): void {
@@ -925,10 +949,16 @@ export class CameraFilter implements FinalPass {
     for (const resolve of timer.pending.splice(0)) resolve(ms)
   }
 
-  private resize(width: number, height: number) {
-    const d = this.device
+  private releaseTargets() {
     this.targets?.source.destroy()
     this.targets?.hist.forEach(h => h.destroy())
+    this.targets = null
+    this.groups = null
+  }
+
+  private resize(width: number, height: number) {
+    const d = this.device
+    this.releaseTargets()
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     const make = (label: string) => d.createTexture({ label, size: [width, height], format: this.format, usage })
     const source = make("camera filter source")
@@ -969,7 +999,7 @@ export class CameraFilter implements FinalPass {
       this.groups = null
     }
     if (!this.overlayTex) this.overlayTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT })
-    const pipe = (key: "state" | "local" | "phone" | "vhs" | "crt", code: string, entry: string, layout: GPUBindGroupLayout, targets: GPUColorTargetState[]) => {
+    const pipe = (key: "state" | "local" | "phone" | "hold" | "vhs" | "crt", code: string, entry: string, layout: GPUBindGroupLayout, targets: GPUColorTargetState[]) => {
       if (this.pipes[key]) return
       const module = d.createShaderModule({ label: `camera filter ${key}`, code })
       this.pipes[key] = d.createRenderPipeline({ label: `camera filter ${key}`, layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }), vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: entry, targets }, primitive: { topology: "triangle-list" } })
@@ -980,6 +1010,7 @@ export class CameraFilter implements FinalPass {
     ]
     if (mode === "phone" || mode === "body" || mode === "vhs") pipe("state", CAMERA_FILTER_WGSL.state, "fs_state", this.stateLayout!, [{ format: "rgba32float" }])
     if (mode === "phone" || mode === "body") pipe("phone", CAMERA_FILTER_WGSL.phone, "fs_phone", this.mainLayout, targets)
+    if (mode === "phone" || mode === "body") pipe("hold", CAMERA_FILTER_WGSL.phone, "fs_hold", this.mainLayout, targets.slice(0, 1))
     if (mode !== "vhs") pipe("local", CAMERA_FILTER_WGSL.state, "fs_local", this.stateLayout!, [{ format: "rgba16float" }])
     if (mode === "vhs") pipe("vhs", CAMERA_FILTER_WGSL.vhs, "fs_vhs", this.mainLayout, targets)
     else if (mode === "crt") pipe("crt", CAMERA_FILTER_WGSL.crt, "fs_crt", this.mainLayout, targets)

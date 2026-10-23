@@ -903,7 +903,7 @@ async function main() {
       trigger,
       /** Automation: tonight's web and bundles (`shared/spider-signs.ts`), or null without the spider. */
       get spiderSigns() { return signsFor(session.view.night.seed, session.view.night.layout.verdict.culprit) },
-      measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
+      measure: (n?: number, step?: number) => view.forest.measure(n, step), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
       get net() {

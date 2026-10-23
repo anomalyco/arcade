@@ -141,8 +141,13 @@ export type ForestView = {
   draw(): void
   /** Encodes the last frame offscreen (automation stepping): the caller copies the canvas in the same task. */
   drawTo(view?: GPUTextureView): void
-  /** Median GPU ms of the last frame's input over `n` timed frames. */
-  measure(n?: number): Promise<{ median: number; samples: number[] } | null>
+  /**
+   * Median and mean GPU ms of the last frame's input over `n` timed frames (`samples` in the order taken). `step` (s)
+   * moves its clock on before each one, so time-driven passes (a 30 fps camera holding every other frame) run as in
+   * play (half a step off, so no sample sits on a slower clock's frame boundary), and a failed timing stays in place as
+   * NaN; the clock is put back after.
+   */
+  measure(n?: number, step?: number): Promise<{ median: number; mean: number; samples: number[] } | null>
   stats(): Record<string, number | string>
   /** Exposure the camera has settled on (× base), the torch's hit distance (m) and the eye's dark adaptation (0..1). */
   readonly camera: { exposure: number; hit: number; dark: number }
@@ -717,12 +722,18 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     update: frame,
     draw() { if (lastFrame) renderer.render(lastFrame) },
     drawTo(view?: GPUTextureView) { if (lastFrame) renderer.drawTo(lastFrame, view) },
-    async measure(n = 24) {
+    async measure(n = 24, step = 0) {
       if (!lastFrame) return null
       const samples: number[] = []
-      for (let i = 0; i < n; i++) { for (let w = 0; w < 3; w++) renderer.render(lastFrame); samples.push(await renderer.measure(lastFrame)) }
-      samples.sort((a, b) => a - b)
-      return { median: samples[Math.floor(samples.length / 2)]!, samples }
+      const f = lastFrame, t0 = f.frame[19]!
+      // A bad timestamp interval stays in its place as NaN, so alternate frames still line up.
+      if (step > 0) for (let i = 0; i < n; i++) { f.frame[19] = t0 + (i + 0.5) * step; samples.push(await renderer.measure(f).catch(() => NaN)) }
+      else for (let i = 0; i < n; i++) { for (let w = 0; w < 3; w++) renderer.render(f); samples.push(await renderer.measure(f)) }
+      f.frame[19] = t0
+      const sorted = samples.filter(Number.isFinite).sort((a, b) => a - b)
+      if (!sorted.length) return null
+      const mean = sorted.reduce((a, b) => a + b, 0) / sorted.length
+      return { median: sorted[Math.floor(sorted.length / 2)]!, mean, samples }
     },
     stats: () => ({ ...build.stats, ...pass.stats, loadMs: Math.round(loadMs), buildMs: Math.round(buildMs), shadowLayers: spots.rendered, lights: lights.lightCount, exposure: +cam.exposure.toFixed(3), meter: +(renderer.sceneMeter?.centre ?? -1).toPrecision(3), hit: +cam.hit.toFixed(2), tier: quality.tier, frames: lastInput ? 1 : 0 }),
     camera: cam,

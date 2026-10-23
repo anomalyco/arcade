@@ -269,6 +269,11 @@ export interface FinalPass {
   readonly active: boolean
   source(width: number, height: number): GPUTextureView
   encode(encoder: GPUCommandEncoder, target: GPUTextureView, frame: Float32Array): void
+  /**
+   * This frame shows the pass's last picture again (a 30 fps camera on a faster display), so it won't read its source
+   * and the composite is skipped. Asked after `source`, before `encode`, and must not change state.
+   */
+  holds?(frame: Float32Array): boolean
 }
 
 /**
@@ -1984,25 +1989,30 @@ export class Renderer {
     const finalPass = this.finalPass?.active ? this.finalPass : null
     const dest = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
     const output = finalPass ? finalPass.source(this.width, this.height) : dest
-    const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
-    const useFastLookPost =
-      useLookPipes &&
-      effectiveLook &&
-      (effectiveCompare.mode ?? 1) === 1 &&
-      effectiveLook.painterlySmooth <= 0.01 &&
-      effectiveLook.outlineStrength <= 0.001
-    fp.setPipeline(
-      motion
-        ? this.motionPipes.composite!
-        : useLookPipes
-          ? this.lookComposite(lookVariant, useFastLookPost ? "compositeFast" : "composite")
-          : this.composite(!(f.frame[45]! & 1)),
-    )
-    fp.setBindGroup(0, motion ? this.motionComposite : activeComposite)
-    fp.draw(3)
-    fp.end()
-    if (finalPass) finalPass.encode(enc, dest, taa ? this.unjittered : f.frame)
-    if(this.timing) this.timer!.finish(enc,dest)
+    const finalFrame = taa ? this.unjittered : f.frame
+    // A final pass holding its last picture (a 30 fps camera between its frames) never reads the composite.
+    if (!finalPass?.holds?.(finalFrame)) {
+      const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+      const useFastLookPost =
+        useLookPipes &&
+        effectiveLook &&
+        (effectiveCompare.mode ?? 1) === 1 &&
+        effectiveLook.painterlySmooth <= 0.01 &&
+        effectiveLook.outlineStrength <= 0.001
+      fp.setPipeline(
+        motion
+          ? this.motionPipes.composite!
+          : useLookPipes
+            ? this.lookComposite(lookVariant, useFastLookPost ? "compositeFast" : "composite")
+            : this.composite(!(f.frame[45]! & 1)),
+      )
+      fp.setBindGroup(0, motion ? this.motionComposite : activeComposite)
+      fp.draw(3)
+      fp.end()
+    }
+    if (finalPass) finalPass.encode(enc, dest, finalFrame)
+    // The bloom chain is the scene's last write, so a held frame's timing still waits for the scene.
+    if(this.timing) this.timer!.finish(enc,dest,this.bloomPyramid.views[0]&&{view:this.bloomPyramid.views[0],format:this.format})
     d.queue.submit([enc.finish()])
     this.meterPass?.afterSubmit()
     this.submittedFrames++

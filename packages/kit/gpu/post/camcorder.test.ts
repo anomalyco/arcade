@@ -206,3 +206,42 @@ describe("camera filter motion and map clearing", () => {
     expect(body).toContain("c = c * (1.0 - o.a) + o.rgb")
   })
 })
+
+describe("camera filter held frames and textures", () => {
+  const at = (t: number) => { const f = new Float32Array(20); f[19] = t; return f }
+  /** As after a body-cam frame at 1 s (30 fps sensor frame 30). */
+  function recorded(mode: "bodycam" | "vhs" | "iphone", fps = 30) {
+    const filter = new CameraFilter({} as GPUDevice, "bgra8unorm", { ...createCameraFilterSettings(), mode, phoneFps: fps })
+    Object.assign(filter, { targets: { source: { destroy() {} }, hist: [] }, valid: true, lastMode: mode, lastTime: 1, lastFrameIndex: 30 })
+    return filter
+  }
+
+  test("a 30 fps sensor holds the 60 Hz frame between its own, and only that one", () => {
+    expect(recorded("bodycam").holds(at(1.01))).toBe(true)
+    expect(recorded("bodycam").holds(at(1.04))).toBe(false)
+    expect(recorded("iphone").holds(at(1.01))).toBe(true)
+    expect(recorded("iphone", 60).holds(at(1.01))).toBe(false)
+    // VHS records every field; a jump in time starts afresh.
+    expect(recorded("vhs").holds(at(1.01))).toBe(false)
+    expect(recorded("bodycam").holds(at(1.5))).toBe(false)
+  })
+
+  test("a held frame the chain skips still moves the clock, so the meter steps one displayed frame at a time", () => {
+    const filter = recorded("bodycam")
+    Object.assign(filter, { targets: { width: 1600, height: 900, source: { destroy() {} }, hist: [] } })
+    filter.skip(at(1.01))
+    expect((filter as unknown as { lastTime: number }).lastTime).toBe(Math.fround(1.01))
+    expect(filter.holds(at(1.02))).toBe(true)
+    expect(filter.holds(at(1.04))).toBe(false)
+  })
+
+    test("switching off frees its full-size textures", () => {
+    const filter = recorded("bodycam")
+    let freed = 0
+    Object.assign(filter, { targets: { source: { destroy: () => freed++ }, hist: [{ destroy: () => freed++ }, { destroy: () => freed++ }] } })
+    filter.settings.mode = "today"
+    expect(filter.active).toBe(false)
+    expect(freed).toBe(3)
+    expect((filter as unknown as { targets: unknown }).targets).toBeNull()
+  })
+})
