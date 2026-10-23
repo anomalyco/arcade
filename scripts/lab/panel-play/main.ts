@@ -1,7 +1,8 @@
 // A stand-in game for prove-panel-play.ts: a canvas that locks the pointer on click and counts the keys it takes, gated
 // on `panel.holdsInput` the way the games are, under a capture "focus" LabPanel with groups, sub-headings and Volume.
 // It also runs the kit's `Input` blocked on `holdsInput` (Outbreak's wiring) and a window-capture key listener that
-// swallows Enter and Escape the way Outbreak's lobby does. `?capture=open` and `?open=<group>` change the panel.
+// swallows Enter and Escape the way Outbreak's lobby does. `?capture=open` and `?open=<group>` change the panel. Look
+// and Camera are quick switch rows (`cycle`), and Quality joins through `addCycle`.
 import { isEditableEventTarget, isLabPanelEventTarget } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
@@ -13,7 +14,9 @@ const settings = {
   density: 4.5, ferns: 1, moss: 1,
   exposure: 1.6, vignette: 0.35, bloom: 0.22, noise: 1, chroma: 0.35,
   master: 0.8, effects: 1, ambience: 1,
+  look: "today", camera: "eyes",
 }
+const quality = { mode: "high" }
 const range = (key: keyof typeof settings, label: string, group: string, min: number, max: number, step: number, subsection?: string): LabControl =>
   ({ key, label, group, min, max, step, ...(subsection ? { subsection } : {}) })
 const controls: LabControl[] = [
@@ -38,6 +41,8 @@ const controls: LabControl[] = [
   range("master", "Master", "Volume", 0, 1, 0.05),
   range("effects", "Effects", "Volume", 0, 1, 0.05),
   range("ambience", "Ambience", "Volume", 0, 1, 0.05),
+  { key: "look", label: "Look", group: "Walking", type: "select", cycle: true, options: [{ value: "today", label: "Today" }, { value: "moonlit", label: "Moonlit" }, { value: "fog", label: "Ground fog" }] },
+  { key: "camera", label: "Camera look", group: "Camera", type: "select", cycle: "Camera", options: [{ value: "eyes", label: "Eyes" }, { value: "vhs", label: "VHS" }] },
 ]
 
 const params = new URLSearchParams(location.search)
@@ -45,7 +50,10 @@ const game = { accepted: [] as string[], released: 0, input: [] as string[], lob
 const panel = new LabPanel(settings, controls, params, () => { game.released++ }, {
   open: false, pill: false, groupActions: false, capture: params.get("capture") === "open" ? "open" : "focus",
   openGroups: [params.get("open") ?? "Walking"],
+  // Takes the lock back the way this stand-in's click does (plain, without unadjustedMovement).
+  requestLock: el => { el.requestPointerLock()?.catch?.((e: unknown) => game.clicks.push(String(e))) },
 })
+panel.addCycle({ key: "quality", label: "Quality", options: () => ["high", "low"].map(m => ({ value: m, label: m })), get: () => quality.mode, set: m => { quality.mode = String(m) } })
 const input = new Input(canvas, ["KeyE"])
 input.blocked = () => panel.holdsInput
 input.onKey = code => game.input.push(code)
@@ -62,4 +70,4 @@ window.addEventListener("keydown", e => {
   if (e.code === "Backquote" || isEditableEventTarget(e.target) || panel.holdsInput || document.pointerLockElement !== canvas) return
   game.accepted.push(e.code)
 })
-Object.assign(window, { harness: { panel, game, settings, input } })
+Object.assign(window, { harness: { panel, game, settings, input, quality } })

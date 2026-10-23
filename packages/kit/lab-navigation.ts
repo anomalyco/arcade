@@ -27,6 +27,11 @@ export type LabControl = {
   pair?: { key: string; label: string }
   /** True while the value differs across a multi-selection: the row reads "—" until edited, and the edit sets them all. */
   mixed?: (settings: Readonly<LabSettings>) => boolean
+  /**
+   * A choice the floating panel's quick switch steps through while you play with the panel closed (`[` `]`, see
+   * `lab-quickswitch.ts`). A string names it in the toast; `true` uses `label`. Select rows only.
+   */
+  cycle?: boolean | string
 } & (
   | { type?: "range"; min: number; max: number; step?: number }
   | { type?: "select"; options: readonly { value: number | string; label: string }[] }

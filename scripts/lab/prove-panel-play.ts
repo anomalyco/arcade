@@ -232,8 +232,11 @@ async function harness() {
   await page.locator("[data-lab-panel] .knobs-close").click()
   await until(page, s => !s.visible, "close button closes")
   ok("the close button closes it")
-
-  await page.close()
+  // Closing takes the lock back (the panel was played beside): let it settle and let go. Pages stay open: headless
+  // Chromium 1248 on the mini segfaulted in the browser process after a page.close() (Oct 22), lock or not.
+  await page.waitForTimeout(300)
+  await page.evaluate(() => document.exitPointerLock())
+  await until(page, s => !s.locked, "unlocked before leaving the page")
 
   // The first row in a folded group: Backquote still gives the panel the keyboard, and Escape closes it.
   const folded = await open("?open=Volume")
@@ -246,7 +249,6 @@ async function harness() {
   await folded.keyboard.press("Escape")
   await until(folded, s => !s.visible, "Escape closes a panel whose first row is folded")
   ok("Backquote focuses the panel when its first row is folded; keys stay out; Escape closes")
-  await folded.close()
 
   // Capture "open": keys typed in a knobs menu on <body> (a stand-in menu here) belong to the menu, not the panel.
   const capture = await open("?capture=open")
@@ -268,7 +270,136 @@ async function harness() {
   s = await state(capture)
   assert(s.visible && s.focused, `the panel counts its menu as its own: ${JSON.stringify(s)}`)
   ok("capture open: keys typed in a knobs menu go to the menu")
-  await capture.close()
+
+  // The round trip: one key back to the game. Before (main): ` closed the panel and left the pointer free, so the game
+  // paused and wanted a click on Resume, or a click on the game while the panel stayed up.
+  const trip = await open()
+  const read = () => trip.evaluate(() => {
+    const h = (window as unknown as { harness: { settings: Record<string, string>; quality: { mode: string } } }).harness
+    const toast = document.querySelector<HTMLElement>("[data-lab-quickswitch]")
+    return { look: h.settings.look, camera: h.settings.camera, quality: h.quality.mode, toast: toast?.hasAttribute("data-shown") ?? false, text: toast?.querySelector(".lqs-main")?.textContent ?? "" }
+  })
+  await trip.mouse.click(400, 400)
+  await until(trip, s => s.locked, "first lock")
+  await trip.keyboard.press("BracketRight")
+  s = await until(trip, s => s.accepted.includes("BracketRight"), "] reaches the game before this browser has opened a Lab panel")
+  assert.equal((await read()).look, "today", "the quick switch waits until a Lab panel has been opened here")
+  ok("the quick switch is off until this browser opens a Lab panel (players keep [ and ])")
+  const trips: Record<string, string[]> = {}
+  await trip.keyboard.press("Backquote")
+  await until(trip, s => s.visible && s.focused && !s.locked, "Backquote opens from play")
+  await trip.keyboard.press("Backquote")
+  s = await until(trip, s => !s.visible && s.locked && !s.holds, "Backquote closes and takes the pointer lock again")
+  trips.backquote = ["Backquote"]
+  ok("one Backquote closes the panel and goes back to playing under pointer lock")
+  await trip.keyboard.press("Backquote")
+  await until(trip, s => s.visible && !s.locked, "reopen for the close button")
+  await trip.locator("[data-lab-panel] .knobs-close").click()
+  await until(trip, s => !s.visible && s.locked, "the close button closes and relocks")
+  trips.closeButton = ["click ×"]
+  ok("the close button closes the panel and goes back to playing")
+  await trip.keyboard.press("Backquote")
+  await until(trip, s => s.visible && !s.locked, "reopen for Escape")
+  await trip.keyboard.press("Escape")
+  s = await until(trip, s => !s.visible, "Escape closes")
+  await trip.waitForTimeout(150)
+  report.escapeRelocks = (await state(trip)).locked
+  trips.escape = report.escapeRelocks ? ["Escape"] : ["Escape", "click Resume"]
+  ok(`Escape closes the panel${report.escapeRelocks ? " and relocks" : " (the browser refused the lock: the game's menu takes the next click)"}`)
+  if (!(await state(trip)).locked) {
+    await trip.mouse.click(400, 400)
+    await until(trip, s => s.locked, "relock after Escape")
+  }
+  // Opened from a free pointer (a menu), closing stays free: the panel only resumes play it took you out of.
+  await trip.evaluate(() => document.exitPointerLock())
+  await until(trip, s => !s.locked, "unlock for the menu case")
+  await trip.keyboard.press("Backquote")
+  await until(trip, s => s.visible, "open from a menu")
+  await trip.keyboard.press("Backquote")
+  await trip.waitForTimeout(150)
+  assert.equal((await state(trip)).locked, false, "closing a panel opened from a menu leaves the pointer free")
+  ok("a panel opened from a menu closes back to the menu")
+  report.roundTrip = { before: { backquote: ["Backquote", "click Resume"], closeButton: ["click ×", "click Resume"], escape: ["Escape", "click Resume"], clickGame: ["click the game"] }, after: { ...trips, clickGame: ["click the game"] } }
+
+  // The quick switch: [ ] step the Look while playing with the panel closed, = picks the group, \ flips back.
+  // Chromium refuses lock requests that come too fast ("Too many pointer lock requests"): wait out the window, then click.
+  for (let i = 0; i < 4 && !(await state(trip)).locked; i++) {
+    await trip.waitForTimeout(1000)
+    await trip.mouse.click(400, 400)
+    await trip.waitForTimeout(300)
+  }
+  await until(trip, s => s.locked, "lock for the quick switch")
+  const acceptedBefore = (await state(trip)).accepted.length
+  await trip.keyboard.press("BracketRight")
+  let q = await read()
+  assert.equal(q.look, "moonlit", "] steps the Look")
+  assert(q.toast && /Look\s*Moonlit.*2\/3/.test(q.text), `the toast names the group, preset and place: ${q.text}`)
+  await trip.keyboard.press("BracketRight")
+  await trip.keyboard.press("BracketLeft")
+  assert.equal((await read()).look, "moonlit", "[ steps back")
+  await trip.screenshot({ path: resolve(out, "quickswitch-toast.png"), clip: { x: 340, y: 0, width: 600, height: 120 } })
+  await trip.keyboard.press("Equal")
+  await trip.keyboard.press("BracketRight")
+  q = await read()
+  assert.equal(q.camera, "vhs", "= picks Camera, ] steps it")
+  assert.equal(q.look, "moonlit", "the Look stays")
+  await trip.keyboard.press("Equal")
+  await trip.keyboard.press("BracketRight")
+  assert.equal((await read()).quality, "low", "addCycle groups step too (Quality)")
+  await trip.keyboard.press("Equal")
+  q = await read()
+  assert(/Look/.test(q.text), `= wraps back to Look: ${q.text}`)
+  await trip.keyboard.press("Minus")
+  assert(/Quality/.test((await read()).text), "- goes to the previous group")
+  await trip.keyboard.press("Equal")
+  ok("[ ] step a group's presets, = - pick the group, the toast names it")
+  // \ tap: back to the preset before, and again forward (A/B).
+  await trip.keyboard.press("BracketRight")
+  assert.equal((await read()).look, "fog")
+  await trip.keyboard.press("Backslash")
+  assert.equal((await read()).look, "moonlit", "\\ goes back to the preset before")
+  await trip.keyboard.press("Backslash")
+  assert.equal((await read()).look, "fog", "\\ again comes forward")
+  // \ held: a peek that comes back on letting go.
+  await trip.keyboard.down("Backslash")
+  await trip.waitForTimeout(500)
+  assert.equal((await read()).look, "moonlit", "holding \\ shows the one before")
+  await trip.keyboard.up("Backslash")
+  assert.equal((await read()).look, "fog", "letting go of a held \\ comes back")
+  ok("\\ flips between the current preset and the one before; a hold peeks")
+  s = await state(trip)
+  assert.equal(s.accepted.length, acceptedBefore, `quick switch keys stay out of the game: ${JSON.stringify(s.accepted.slice(acceptedBefore))}`)
+  assert.equal(s.locked, true, "still playing")
+  ok("quick switch keys never reach the game, and play goes on")
+  // It fades (never pops): sample its opacity through the fade.
+  const fade = await trip.evaluate(() => new Promise<number[]>(done => {
+    const el = document.querySelector<HTMLElement>("[data-lab-quickswitch]")!
+    const seen: number[] = []
+    const t0 = performance.now()
+    const tick = () => {
+      seen.push(Number(getComputedStyle(el).opacity))
+      if (performance.now() - t0 < 2400) requestAnimationFrame(tick)
+      else done(seen)
+    }
+    tick()
+  }))
+  assert.equal(fade.at(-1), 0, "the toast is gone after its linger")
+  assert(fade.some(o => o > 0.05 && o < 0.95), `the toast fades through in-between opacities: ${fade.filter(o => o > 0 && o < 1).length} frames`)
+  report.toastFadeFrames = fade.filter(o => o > 0 && o < 1).length
+  ok("the toast fades out on its own")
+  // Inside a focused panel [ and ] stay knobs' own; in its search they are text.
+  await trip.keyboard.press("Backquote")
+  await until(trip, s => s.visible && s.focused, "panel focused")
+  const lookBefore = (await read()).look
+  await trip.keyboard.press("BracketRight")
+  assert.equal((await read()).look, lookBefore, "] in a focused panel is knobs', not the quick switch")
+  await trip.locator("[data-lab-panel] .knobs-search input").click()
+  await trip.keyboard.type("[]")
+  assert.equal(await trip.locator("[data-lab-panel] .knobs-search input").inputValue(), "[]", "[ ] in the search are text")
+  assert.equal((await read()).look, lookBefore, "typing [ ] never cycles")
+  ok("a focused panel and its search keep [ ] for themselves")
+  await trip.evaluate(() => document.exitPointerLock())
+  await until(trip, s => !s.locked, "unlocked at the end")
 
   assert.deepEqual(errors, [], "no page errors")
   report.harness = checks
