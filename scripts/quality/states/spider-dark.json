@@ -1,0 +1,7 @@
+{
+  "version": 1, "width": 1600, "height": 900, "settleFrames": 32, "probeFrames": 24,
+  "states": [
+    { "id": "r2-like-dark-shell", "state": { "camera": "pass", "time": 20, "torch": true, "settings": { "spider.shell": 0.7, "spider.sheen": 0 } }, "probes": { "subject": true } },
+    { "id": "unlit-subject", "state": { "camera": "pass", "time": 20, "torch": false, "settings": { "spider.shell": 0.3, "spider.sheen": 0, "spider.beam": false } }, "probes": { "subject": true } }
+  ]
+}

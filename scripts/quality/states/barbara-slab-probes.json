@@ -1,0 +1,8 @@
+{
+  "version": 1, "width": 1280, "height": 720, "settleFrames": 24, "probeFrames": 16,
+  "limits": { "slabBrightness": 0.012, "slabMaxCv": 0.3 },
+  "states": [
+    { "id": "newmoon-torch", "state": { "look": "newmoon", "torch": true }, "probes": { "subject": true, "shift": 0.25 } },
+    { "id": "groundfog-torch", "state": { "look": "groundfog", "torch": true }, "probes": { "subject": true, "shift": 0.25 } }
+  ]
+}

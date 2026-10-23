@@ -455,10 +455,11 @@ export class TemporalResolve {
   }
 
   /** Drops the history: the next frame shows only the current samples (camera cut, teleport, new level). */
-  reset(): void {
+  reset(frameIndex?: number): void {
     if (this.valid || this.hasPrev) this.resets++
     this.valid = false
     this.hasPrev = false
+    if (frameIndex !== undefined) this.frameIndex = frameIndex
   }
 
   /**

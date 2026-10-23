@@ -52,6 +52,8 @@ its own docs folder. Root `AGENTS.md` indexes visual work by task.
 
 ## Lab and showing Kit
 
+- [quality-gates.md](quality-gates.md): run rendered-frame gates and warm state sweeps before showing Kit captures;
+  includes the BARBARA Looks and spider adapters, thresholds, scoreboard and measured limitations.
 - [lab.md](lab.md): the Lab authoring contract for tunable effects, materials, physics, audio and rendering
   options. Read before adding or tuning any of them.
 - [lab-workbench.md](lab-workbench.md): the current Lab shell and its input API.
