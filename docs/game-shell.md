@@ -94,11 +94,19 @@ not the game's real load.
 
 ## Status (Oct 22)
 
+Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell".
+
 | Game | On the shell | Where |
 |---|---|---|
 | Lot | Yes | `games/lot/src/main.ts`, `src/quality.ts`, `src/walk-audio.ts` |
 | Night Shift | Yes (its boot screen stays its loading screen; the title card sits over READY) | `games/nightshift/src/main.ts`, `src/look/quality.ts` |
-| Brawl, Archers, Blackout, Getaway, Carrier, Outbreak, Walkers | One branch each, `game-shell-<game>`; each lists its deliberate changes in the game's `AGENTS.md` under "Game shell" | |
+| Brawl | Yes (roster parade in the title slot) | `games/brawl/src/main.ts` |
+| Archers | Yes (couch Play, Play online, rooms) | `games/archers/src/main.ts` |
+| Walkers | Yes (silent: Playback section, no Sound) | `games/walkers/src/main.ts` |
+| Blackout | Yes (mode and map picks in the title slot) | `games/blackout/src/main.ts`, `src/ui/menus.ts` |
+| Getaway | Yes (night-road backdrop in the title slot) | `games/getaway/src/main.ts`, `src/ui/lobby.ts` |
+| Carrier | Yes (rooms only, callsign required) | `games/carrier/src/main.ts` |
+| Outbreak | Escape menu and Settings; its own lobby stays the title | `games/outbreak/src/main.ts`, `src/lobby/run-tools.ts` |
 | Woods | Not yet (unshipped branch `woods`); see the adoption note below | |
 | Lab | Exempt: it is the authoring tool, not a game. It keeps Key labels and its own Edit-mode mute | |
 | Wings, landing, redirects | Out of scope: independent projects | |
