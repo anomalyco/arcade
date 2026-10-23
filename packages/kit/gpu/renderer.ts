@@ -5,7 +5,7 @@ import { mat4 } from "wgpu-matrix"
 import { VolumeRenderer } from "@arcade/kit/fx/volume-renderer"
 import type { SmokeVolumes } from "@arcade/kit/fx/volume"
 import type { Particles } from "@arcade/kit/fx/particles"
-import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
+import { ParticleRenderer, type ParticleMistInput } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { SPOT_SHADOW_BINDINGS, SPOT_SHADOW_UNIFORM_FLOATS } from "./shadows/spot-shadows"
 import { CAPSULE_SHADOW_BINDING, CapsuleShadows } from "./shadows/capsule-shadows"
@@ -202,6 +202,8 @@ export type FrameInput = {
      */
     afterFog?: boolean
     haze?: readonly [number, number]
+    /** With `afterFog`, the fog's omni lamps, put back over the particles (`ParticleFrameInput.mist`). */
+    mist?: ParticleMistInput | null
   }
   weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
@@ -1559,6 +1561,7 @@ export class Renderer {
         spotCones: fl?.spotCones,
         falloff: fl?.falloff ?? 0,
         haze: fl?.haze ?? [0, 0],
+        mist: fl?.afterFog ? fl.mist ?? null : null,
       })
       this.particleRenderer.upload(f.fxParticles)
     }

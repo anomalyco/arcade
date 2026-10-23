@@ -14,7 +14,7 @@ import { TEXTURED_VERTEX_LAYOUT } from "../gpu/textured-mesh"
 import { SPRITE } from "../gpu/frame-parts"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "../gpu/scene-frame"
 import { SpotShadows, type SpotCandidate, type SpotShadowCaster, type SpotShadowMask } from "../gpu/shadows/spot-shadows"
-import { FogScatter, createFogSettings, fogScatterVolume, frustumPlanes, packLampGlow, type FogLamp } from "../gpu/fog-scatter"
+import { FOG_LAMP_FLOATS, FogScatter, createFogSettings, fogNoise2, fogScatterVolume, frustumPlanes, packLampGlow, type FogLamp } from "../gpu/fog-scatter"
 import { Ssr, createSsrSettings, ssrVolume } from "../gpu/reflections/ssr"
 import { WET_DEFAULTS } from "../gpu/reflections/wet"
 import { packBeamProfile } from "../gpu/lights/beam"
@@ -36,6 +36,7 @@ import { appendForestLights } from "./lights"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
 import type { Particles } from "../fx/particles"
+import { MAX_PARTICLE_MIST_LAMPS, PARTICLE_MIST_LAMP_FLOATS, type ParticleMistInput } from "../fx/particle-renderer"
 import type { Rect } from "../sim/geom"
 import type { LabControl } from "../lab-navigation"
 import { LakeSky } from "../water/lake-sky"
@@ -228,6 +229,18 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const lakeOf = (w: ForestWorld) => w.lake ?? { x: 0, z: 0, rx: 1, rz: 1, level: -100 }
   const fogBaseOf = (w: ForestWorld) => Math.min(lakeOf(w).level, ...[0, 1, 2, 3].map(i => w.height(Math.cos(i) * 10, Math.sin(i) * 10) - 2))
   let lake = lakeOf(world), fogBase = fogBaseOf(world)
+  // `woodsBankLocal` on the CPU (finest ground instead of the coarse grid): the bank's floor, height and density
+  // scales at a lamp, for the mist particles put back over themselves.
+  const bankLocal = (x: number, z: number): [number, number, number] => {
+    const g = Math.max(world.height(x, z), lake.level)
+    const around = (world.height(x + 12, z) + world.height(x - 12, z) + world.height(x, z + 12) + world.height(x, z - 12)) * 0.25
+    const hollow = Math.min(1, Math.max(0, (around - g) * 0.8))
+    const n = fogNoise2(x / 45 + 3.1, z / 45 + 7.7) * 0.7 + fogNoise2(x / 17 + 1.3, z / 17 + 4.2) * 0.3
+    const u = Math.min(1, Math.max(0, (n - 0.3) / 0.45)), pocket = u * u * (3 - 2 * u)
+    return [g - 0.3, 0.55 + 0.7 * pocket + hollow * 0.9, 0.3 + 0.9 * pocket + hollow * 1.2]
+  }
+  const mistLamps = new Float32Array(MAX_PARTICLE_MIST_LAMPS * PARTICLE_MIST_LAMP_FLOATS)
+  const mist: ParticleMistInput = { lamps: mistLamps, count: 0, phase: [0, 0, 1], bank: [0, 1] }
 
   const fogVolume = forestFogVolume(smoke)
   const ssr = new Ssr(createSsrSettings({ mode: smoke ? "today" : "ssr", strength: 1.6, maxDistance: 60, cutoff: 0.4, streak: 0.8, maxLuminance: 20, historyMoving: 0.4 }))
@@ -598,9 +611,20 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     if (f.particles && f.particles.pool.count > 0) {
       fxLights.update(f.particles.lights, [])
       lastFrame.fxParticles = f.particles.pool
+      // The fog's omni lamps (flares, lanterns), so the smoke can put back the lit mist in front of it and over it.
+      const fs = fog.settings, packed = fog.frame.lamps
+      mist.count = 0
+      for (let k = 0; k < fog.frame.lampCount && mist.count < MAX_PARTICLE_MIST_LAMPS; k++) {
+        const l = fogLamps[fog.picker.chosen[k]!]
+        if (!l || l.cosOuter !== undefined || l.beam || l.lens) continue
+        const o = k * FOG_LAMP_FLOATS, local = bankLocal(l.x, l.z)
+        mistLamps.set([...packed.subarray(o, o + 7), packed[o + 12]!, packed[o + 19]!, ...local], mist.count++ * PARTICLE_MIST_LAMP_FLOATS)
+      }
+      mist.phase = [fs.phaseG, fs.phaseFloor, fs.coneLength]
+      mist.bank = fs.bank === "drift" ? [fs.bankDensity * 0.5 * (1 - Math.min(fs.bankThreshold, 0.95)) * fs.bankLamp, fs.bankHeight] : [0, 1]
       lastFrame.fxLighting = { ambient: f.particles.ambient ?? [0.002, 0.0022, 0.003], lights: fxLights.lights, lightCount: fxLights.lightCount, spotCones: true, falloff: f.particles.falloff,
         // After the fog volume and blur, which would treat smoke as the trunks behind it; the depth mist fades it instead.
-        afterFog: true, haze: [s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart] }
+        afterFog: true, haze: [s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart], mist: fog.enabled ? mist : null }
     }
   }
 

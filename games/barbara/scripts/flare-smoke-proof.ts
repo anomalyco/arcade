@@ -2,11 +2,13 @@
 //   bun scripts/flare-smoke-proof.ts --before <dist root> --after <dist root> [--out <dir>]
 // Each build is a `vite build` output (`dist/arcade/barbara`). For each, a flare burns on the ground with trunks behind
 // it; stills from 6 m with its smoke between you and the trunks (and the same frame with the smoke cleared), from 14 m
-// off to the side (outside the smoke), and mid-turn with a flare 2.5 m ahead. Numbers (smoke.json):
+// off to the side (outside the smoke, and again cleared), and mid-turn with a flare 2.5 m ahead. Numbers (smoke.json):
 // - through: where the smoke changes the picture, its mean grey with and without smoke, and how much of the woods'
 //   detail behind it shows through (`slope`, the high-pass of the smoky frame regressed on the clear one: physical
 //   smoke keeps less than 1, more means it sharpens or lifts what it should hide), and the fine detail the smoke adds
 //   (`fine`: soft smoke adds little; aliasing and dither that temporal AA stopped averaging under it add a lot).
+// - outside: over the column, the plume's mean grey against the same pixels cleared, and the share it darkens (lit smoke
+//   in a lit mist should darken almost none of it).
 // - moving: how much the frame's fine noise looks like interleaved gradient noise's lattice (`ign`, the best match of
 //   its autocorrelation against IGN's at any scale; 0 is unstructured grain) and the noise level (`hp`).
 import { $ } from "bun"
@@ -112,14 +114,6 @@ async function capture(build: "before" | "after", dir: string) {
   await page.evaluate(() => { woods.flares.settings.smoke = 1 })
   await run(9)
   await shot("through-again")
-  if (build === "after") {
-    for (const core of [0, 1]) {
-      await page.evaluate((c) => { woods.flares.look.smokeCore = c }, core)
-      await run(0.4)
-      await shot(`through-core${core}`)
-    }
-    await page.evaluate(() => { woods.flares.look.smokeCore = 0.5 })
-  }
   // Outside the smoke: 14 m off to the side, looking at the column.
   await page.evaluate(({ x, z, fx, fz }) => {
     const px = x + fx * 6, pz = z + fz * 6, sx = px - fz * 14, sz = pz + fx * 14
@@ -127,6 +121,10 @@ async function capture(build: "before" | "after", dir: string) {
   }, at)
   await run(3)
   await shot("outside")
+  await page.evaluate(() => { woods.flares.settings.smoke = 0; woods.flares.pool.count = 0 })
+  await run(0.7)
+  await shot("outside-clear")
+  await page.evaluate(() => { woods.flares.settings.smoke = 1 })
   // Mid-turn with a flare 2.5 m ahead (the fog history keeps only about half in motion).
   await page.evaluate(({ x, z, yaw, fx, fz }) => {
     woods.state.flares.list.length = 0
@@ -221,11 +219,24 @@ async function lattice(name: string) {
   return { ign: r3(best), scale: r3(bestS), hp: r3(Math.sqrt(e / crop.length)) }
 }
 
+// Outside: over the column (where the first build's smoke changes its picture), the plume's mean grey against the same
+// pixels with the smoke cleared, and the share of them the smoke darkens by more than 3 levels.
+const plume = await (async () => {
+  const s = await gray("before-outside"), c = await gray("before-outside-clear")
+  return s.map((v, i) => (Math.abs(v - c[i]!) >= 6 ? 1 : 0))
+})()
+async function outside(build: string) {
+  const s = await gray(`${build}-outside`), c = await gray(`${build}-outside-clear`)
+  let n = 0, ms = 0, mc = 0, dark = 0
+  for (let i = 0; i < W * H; i++) if (plume[i]) { n++; ms += s[i]!; mc += c[i]!; if (s[i]! < c[i]! - 3) dark++ }
+  return { area: r3(n / (W * H)), grey: r3(ms / Math.max(n, 1)), clearGrey: r3(mc / Math.max(n, 1)), darker: r3(dark / Math.max(n, 1)) }
+}
+
 const numbers: Record<string, unknown> = {}
 for (const build of ["before", "after"]) {
   numbers[`${build}-through`] = await through(build, "through")
   numbers[`${build}-through-again`] = await through(build, "through-again")
-  for (const name of build === "before" ? [] : ["through-core0", "through-core1"]) numbers[`${build}-${name}`] = await through(build, name)
+  numbers[`${build}-outside`] = await outside(build)
   numbers[`${build}-near-still`] = await lattice(`${build}-near-still`)
   numbers[`${build}-near-moving`] = await lattice(`${build}-near-moving`)
 }

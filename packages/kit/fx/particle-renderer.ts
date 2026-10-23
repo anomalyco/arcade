@@ -3,10 +3,12 @@ import { reactivePipelineDescriptor } from "../gpu/reactive"
 import { PARTICLE_CAPACITY, Particles } from "./particles"
 
 /**
- * Typed WGSL layout for `ParticleRenderer` frame uniforms (124 floats / 496 bytes).
+ * Typed WGSL layout for `ParticleRenderer` frame uniforms (228 floats / 912 bytes).
  * Keeps the original `[vp(16), eye(3), debug(1), ambient(3), lightCount(1), lights(64)]` prefix, then one plan cone per
  * light (`[dirX, dirZ, cosHalf, on]`, written only when `setFrame` is asked for `spotCones`), then `shading`
- * (`[falloff core m, haze density, haze clear distance m, 0]`).
+ * (`[falloff core m, haze density, haze clear distance m, 0]`), then the mist lamps (`ParticleMistInput`):
+ * `mistMedium` (`[phase g, isotropic share, fade length m, lamp count]`), `mistBank` (`[σ per m, height m, 0, 0]`)
+ * and `PARTICLE_MIST_LAMP_FLOATS` per lamp.
  */
 export const ParticleFrameStruct = wgslStruct("Frame", {
   vp: "mat4x4f",
@@ -17,7 +19,34 @@ export const ParticleFrameStruct = wgslStruct("Frame", {
   lights: "array<vec4f, 16>",
   cones: "array<vec4f, 8>",
   shading: "vec4f",
+  mistMedium: "vec4f",
+  mistBank: "vec4f",
+  mist: "array<vec4f, 24>",
 })
+
+/** Floats per lamp in `ParticleMistInput.lamps`. */
+export const PARTICLE_MIST_LAMP_FLOATS = 12
+/** Mist lamps `drawLate` evaluates. */
+export const MAX_PARTICLE_MIST_LAMPS = 8
+
+/**
+ * Omni lamps lighting the host's fog (`gpu/fog-scatter`), so particles drawn after the fog (`drawLate`) can put back
+ * the lamp light the mist scatters in front of them, and never come out darker than the lit mist they cover: the
+ * same single scattering as the fog's (equiangular, Henyey–Greenstein with an isotropic share, the windowed range),
+ * integrated per vertex along the eye ray up to the particle and beyond it, through a mean mist bank.
+ */
+export type ParticleMistInput = {
+  /**
+   * Per lamp: `[x, y, z, range m]`, `[r, g, b` (the fog's packed colour · intensity · σ(lamp) · T(eye → lamp) ·
+   * strength), `near-field size m]`, `[σ at the lamp, bank floor y, bank height scale, bank density scale]`.
+   */
+  lamps: Float32Array
+  count: number
+  /** `[phase g, isotropic share, fade length m]` (the fog's `phaseG`, `phaseFloor`, `coneLength`). */
+  phase: readonly [number, number, number]
+  /** The mist bank lamps light more of: `[σ per m at its floor (× its lamp share), height m]`; `[0, 1]` without one. */
+  bank: readonly [number, number]
+}
 
 export type ParticleLightInput = {
   x: number
@@ -57,6 +86,8 @@ export type ParticleFrameInput = {
    * to `density`). The particle fades by its transmittance. Ignored by `draw`.
    */
   haze?: readonly [number, number]
+  /** Lamp light in the mist round particles drawn by `drawLate`; null clears it. Ignored by `draw`. */
+  mist?: ParticleMistInput | null
 }
 
 export const blackbodyFireWgsl = /* wgsl */ `
@@ -94,9 +125,10 @@ const lateWgsl = (group: number) => /* wgsl */ `
   // In front of the scene is the larger depth with reversed depth, the smaller without.
   if(select(o.position.z-scene,scene-o.position.z,lateView.z>0.5)>0.0){discard;}
   let c=shade(o);
-  let d=max(0.0,distance(o.world,F.eye)-F.shading.z);
-  let ramp=min(d,12.0);
-  return c*exp(-F.shading.y*(ramp*ramp/24.0+max(0.0,d-12.0)));
+  let t=exp(-hazeDepth(F.eye,o.world));
+  // The share of the pixel the particle covers shows the lamp light the mist scatters in front of it, and smoke
+  // scatters at least the lamp light of the mist it displaces, so a plume never reads as a hole in a lit mist.
+  return vec4f(max(c.rgb,c.a*o.mistBack)*t+c.a*t*o.mistFront,c.a*t);
 }
 `
 
@@ -113,6 +145,8 @@ struct Out {
   @location(3) @interpolate(flat) kind: f32,
   @location(4) @interpolate(flat) misc: vec4f,
   @location(5) @interpolate(flat) emit: f32,
+  @location(6) mistFront: vec3f,
+  @location(7) mistBack: vec3f,
 }
 fn hash2(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
@@ -131,6 +165,40 @@ fn fbm3(p: vec2f) -> f32 {
 }
 ${blackbodyFireWgsl}
 ${strontiumFlameWgsl}
+/** The host's depth mist between two points: clear for shading.z, then a 12 m ramp up to shading.y per metre. */
+fn hazeDepth(a:vec3f,b:vec3f)->f32 {
+  let d=max(0.0,distance(a,b)-F.shading.z);let ramp=min(d,12.0);
+  return F.shading.y*(ramp*ramp/24.0+max(0.0,d-12.0));
+}
+fn mistBankSigma(y:f32,local:vec4f)->f32 {
+  return F.mistBank.x*local.w*(1.0-smoothstep(0.0,1.3,(y-local.y)/max(F.mistBank.y*local.z,0.05)));
+}
+/** Mist lamp light scattered toward the eye along eye + rd·[t0, t1] (ParticleMistInput). */
+fn mistLight(rd:vec3f,t0:f32,t1:f32)->vec3f {
+  var acc=vec3f(0.0);
+  let g=F.mistMedium.x;let g2=g*g;
+  for(var i=0;i<min(8,i32(F.mistMedium.w));i++){
+    let L=F.mist[i*3];let K=F.mist[i*3+1];let local=F.mist[i*3+2];
+    let toL=L.xyz-F.eye;let s0=dot(toL,rd);
+    let h=max(sqrt(max(dot(toL,toL)-s0*s0,0.0)),0.03);
+    let a=max(s0-L.w,t0);let b=min(s0+L.w,t1);
+    if(b<=a){continue;}
+    let ta=atan((a-s0)/h);let tb=atan((b-s0)/h);
+    var sum=0.0;
+    for(var j=0;j<8;j++){
+      let t=s0+h*tan(mix(ta,tb,(f32(j)+0.5)/8.0));
+      let p=F.eye+rd*t;
+      let lx=p-L.xyz;let ld=max(length(lx),1e-3);let r4=ld/L.w;
+      let win=pow(clamp(1.0-r4*r4*r4*r4,0.0,1.0),2.0)*(ld*ld/(ld*ld+K.w*K.w))*exp(-ld/F.mistMedium.z);
+      let hg=(1.0-g2)/pow(max(1.0+g2+2.0*g*dot(lx/ld,rd),1e-4),1.5);
+      var thick=(1.0+mistBankSigma(p.y,local)/max(local.x,1e-5))*exp(-mistBankSigma(0.5*(p.y+L.y),local)*ld-mistBankSigma(0.5*(p.y+F.eye.y),local)*t);
+      thick=(thick+F.shading.y*clamp((t-F.shading.z)/12.0,0.0,1.0)/max(local.x,1e-5))*exp(-hazeDepth(F.eye,p)-hazeDepth(L.xyz,p));
+      sum+=win*mix(hg,1.0,F.mistMedium.y)*thick;
+    }
+    acc+=K.rgb*sum*(tb-ta)/(h*8.0*12.566371);
+  }
+  return acc;
+}
 @vertex fn vs(@builtin(vertex_index) i:u32,s:In)->Out {
   let corners=array<vec2f,6>(vec2f(-1,-1),vec2f(1,-1),vec2f(1,1),vec2f(-1,-1),vec2f(1,1),vec2f(-1,1));
   let c=corners[i%6];let toward=normalize(F.eye-s.pos.xyz);
@@ -203,6 +271,11 @@ ${strontiumFlameWgsl}
   o.position=F.vp*vec4f(clipWorld,1);o.uv=c;
   o.color=vec4f(select(s.color.rgb*light,light,kind==7.0),s.color.a);
   o.world=world;o.kind=kind;o.misc=s.misc;
+  o.mistFront=vec3f(0.0);o.mistBack=vec3f(0.0);
+  if(F.mistMedium.w>0.5&&(i<6u||kind==2.0)){
+    let to=world-F.eye;let dp=length(to);let rd=to/max(dp,1e-4);
+    o.mistFront=mistLight(rd,0.0,dp);o.mistBack=mistLight(rd,dp,1e5);
+  }
   // A fireball's red channel scales its incandescence (1 in every explosion preset).
   o.emit=select(1.0,s.color.r,kind==7.0);
   if(F.debug==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
@@ -355,6 +428,9 @@ const LIGHT_COUNT_OFFSET = ParticleFrameStruct.offsetOf("lightCount")
 const LIGHTS_OFFSET = ParticleFrameStruct.offsetOf("lights")
 const CONES_OFFSET = ParticleFrameStruct.offsetOf("cones")
 const SHADING_OFFSET = ParticleFrameStruct.offsetOf("shading")
+const MIST_MEDIUM_OFFSET = ParticleFrameStruct.offsetOf("mistMedium")
+const MIST_BANK_OFFSET = ParticleFrameStruct.offsetOf("mistBank")
+const MIST_OFFSET = ParticleFrameStruct.offsetOf("mist")
 
 /** One instanced HDR draw. Non-debris extra vertices degenerate; debris gets six genuinely lit faces. */
 export class ParticleRenderer {
@@ -486,6 +562,16 @@ export class ParticleRenderer {
     if (input.haze) {
       u[SHADING_OFFSET + 1] = Math.max(0, input.haze[0])
       u[SHADING_OFFSET + 2] = input.haze[1]
+    }
+    if (input.mist !== undefined) {
+      const m = input.mist
+      const n = m ? Math.min(MAX_PARTICLE_MIST_LAMPS, m.count) : 0
+      u.fill(0, MIST_MEDIUM_OFFSET, MIST_OFFSET + MAX_PARTICLE_MIST_LAMPS * PARTICLE_MIST_LAMP_FLOATS)
+      if (m && n > 0) {
+        u.set([m.phase[0], m.phase[1], Math.max(m.phase[2], 1e-3), n], MIST_MEDIUM_OFFSET)
+        u.set([m.bank[0], m.bank[1], 0, 0], MIST_BANK_OFFSET)
+        u.set(m.lamps.subarray(0, n * PARTICLE_MIST_LAMP_FLOATS), MIST_OFFSET)
+      }
     }
     if (input.debug !== undefined) {
       u[DEBUG_OFFSET] = input.debug

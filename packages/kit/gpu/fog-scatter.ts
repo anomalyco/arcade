@@ -307,6 +307,23 @@ export function fogOpticalDepth(a: Vec3, b: Vec3, m: FogMedium): number {
 }
 
 export const fogTransmittance = (a: Vec3, b: Vec3, m: FogMedium): number => Math.exp(-fogOpticalDepth(a, b, m))
+
+/** The WGSL `fogHash3` on the CPU. */
+const fogHash3 = (x: number, y: number, z: number): number => {
+  let h = (Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841) ^ Math.imul(z, 0xcb1ab31f)) >>> 0
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d) >>> 0
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b) >>> 0
+  return ((h ^ (h >>> 16)) >>> 8) / 16777216
+}
+
+/** The WGSL `fogNoise2` on the CPU (value noise, 0..1), for a game's `bankLocal` evaluated off the GPU. */
+export function fogNoise2(x: number, y: number): number {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
+  const a = fogHash3(ix, iy, 7) + (fogHash3(ix + 1, iy, 7) - fogHash3(ix, iy, 7)) * ux
+  const b = fogHash3(ix, iy + 1, 7) + (fogHash3(ix + 1, iy + 1, 7) - fogHash3(ix, iy + 1, 7)) * ux
+  return a + (b - a) * uy
+}
 export const fogSigma = (p: Vec3, m: FogMedium): number => m.density * Math.exp(-m.falloff * Math.min(p[1] - m.base, 200))
 
 /** HSL tint (linear, as three's `setHSL` in a linear working space) scaled to a linear luminance. */

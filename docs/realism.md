@@ -317,8 +317,13 @@ soft haze sprite (`ForestGlow.soft`) the trunks cut up, since the fog march's la
   particles after the fog (`fxLighting.afterFog`: hand depth test, faded by the depth mist in front), which also keeps
   them out of temporal AA's reactive mask, where a frame-wide plume made TAA show raw jittered frames. The window
   falloff `(1 − d/r)²` lit the column evenly to the top; smoke now takes inverse square with a 1 m soft core
-  (`FlareLook.smokeCore`, Lab "Smoke glows within"): red over the flame, dark higher up. From outside, the plume now
-  reads dark against the red mist, because the mist glow in front of it is not added back.
+  (`FlareLook.smokeCore`, Lab "Smoke glows within"): red over the flame, dark higher up. Drawn after the fog alone,
+  the plume read from outside as a black hole in the red mist (Oct 22): it hid the lamp glow the mist scatters in
+  front of and around it. `fxLighting.mist` puts the fog's omni lamps back per vertex with the fog's own single
+  scattering (equiangular, HG plus isotropic share, windowed range, mean bank via a CPU `woodsBankLocal`): the mist
+  in front is added over the particle, and the smoke is floored at the lit mist it displaces. Outside, the plume
+  measures 27.4 grey against 19.3 cleared, as bright as before; through it, no trunk shapes come back. Torch beams
+  (`beam`, cones) are not put back, so smoke still hides a torch beam behind it.
   Proof: `games/barbara/scripts/flare-smoke-proof.ts`.
 
 - Pitfalls:
