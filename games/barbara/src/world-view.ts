@@ -5,6 +5,7 @@ import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
 import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
 import { createForestView, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
+import type { ForestStormView } from "@arcade/kit/forest/storm"
 import type { QualityTier } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Feel, WoodsState } from "../shared/sim"
@@ -81,6 +82,8 @@ export type WorldFrame = {
   casters?: readonly SpotShadowCaster[]
   /** Batches drawn beside `fp`'s (the creature's, which go into the TAA reactive mask). */
   batches?: readonly Batch[]
+  /** The storm this frame (`ForestStorm.frame(...).view`). */
+  storm?: ForestStormView | null
 }
 
 /**
@@ -195,7 +198,7 @@ export class WorldView {
     this.forest[sync || target ? "update" : "frame"]({
       eye: f.eye, viewProj: f.viewProj, width: f.width, height: f.height, time: f.time, dt: f.dt, fovY: f.fovY, torches: f.torches,
       batches: f.batches?.length ? [...f.fp.batches(), ...f.batches] : f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
-      lights: f.place.scene, fogLamps: f.place.fog, glows: this.glows, casters: f.casters,
+      lights: f.place.scene, fogLamps: f.place.fog, glows: this.glows, casters: f.casters, storm: f.storm ?? null,
     })
     if (sync || target) this.forest.drawTo(target)
   }

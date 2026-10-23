@@ -6,10 +6,11 @@ import { openGpu } from "@arcade/kit/gpu/boot"
 import { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
+import { ForestStorm, forestRainLightControls, forestStormControls, forestStormEyeControls } from "@arcade/kit/forest/storm"
 import type { ForestTorch } from "@arcade/kit/forest/view"
 import { createGameShell, createShellQuality } from "@arcade/kit/shell"
 import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
-import { answerCall, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
+import { answerCall, DISTANT_SOUNDS, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
 import { VOICE_LINES } from "../shared/lines.gen"
 import { CLUE_NAMES, dawnShare, leadText, nextStep } from "../shared/night"
 import { ROOM_CODE } from "../shared/protocol"
@@ -22,6 +23,8 @@ import { CreatureView } from "./creature-view"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FriendsView } from "./friends-view"
 import { HeldMap, heldMapControls } from "./held-map"
+import { arrangeControl, LOOKS_SECTION, SECTIONS } from "./knobs"
+import { applyLook, lookBase, LOOK_IDS, LOOKS, type LookId } from "./looks"
 import { PaperMap } from "./map"
 import { OnlineSession, SoloSession, type Session } from "./session"
 import { NightHud } from "./night-hud"
@@ -154,7 +157,11 @@ async function main() {
   const spawn = world.camp.spawn
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
-  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: [lakeLab ? "Water" : "Flashlight"], onToggle: () => syncOverlays() })
+  // The storm over the woods (kit weather in the forest renderer): lightning, rain, wet surfaces, storm wind, the eye
+  // after a flash. Still and dry until a Look or a knob asks for it.
+  const storm = new ForestStorm({}, world.params.seed)
+  // Sections with sub-headings, all folded but Looks & Triggers (`src/knobs.ts` places every subsystem's rows).
+  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: [lakeLab ? "Camp" : LOOKS_SECTION], arrange: arrangeControl, onToggle: () => syncOverlays() })
   live.panel = panel
   panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
   if (lakeLab) {
@@ -181,13 +188,45 @@ async function main() {
   ])
   panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
   panel.addControls({}, UNCANNY_SOUNDS.map((s) => ({ key: `uncanny.${s}`, label: `Trigger ${s.slice(4)}`, group: "Sound", subsection: "Uncanny", type: "action" as const, run: () => { void uncanny.trigger(s) } })))
+  panel.addControls(storm.settings as unknown as Record<string, number | string | boolean>, forestStormControls("Weather", "woods.storm."))
+  panel.addControls(storm.rainLighting as unknown as Record<string, number | string | boolean>, forestRainLightControls("Weather", "woods.rainLight."))
+  panel.addControls(storm.eye as unknown as Record<string, number | string | boolean>, forestStormEyeControls("Weather", "woods.eye."))
   panel.addControls(held.settings as unknown as Record<string, number | string | boolean>, heldMapControls())
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
   audio.bindControls(panel)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()
-  panel.setView({ order: ["Water", "Walking", "Search", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices"] })
+  // Looks: curated bundles of sky, fog, light, weather and exposure (`src/looks.ts`); Today is the game as shipped.
+  type Bag = Record<string, unknown>
+  const lookTargets = { forest: view.forest.settings as unknown as Bag, storm: storm.settings as unknown as Bag, feel: settings as unknown as Bag }
+  const todayLook = lookBase(lookTargets)
+  const lookState = { look: "today" as LookId }
+  const pickLook = (id: LookId) => {
+    if (!LOOKS[id]) return
+    lookState.look = id
+    applyLook(id, lookTargets, todayLook)
+    panel.sync()
+  }
+  // Triggers: everything the storm and the woods can do, now. A click is a gesture, so the sound can start too.
+  const trigger = (what: string) => {
+    audio.begin()
+    if (what === "near" || what === "mid" || what === "far") storm.strike(what)
+    else if (what === "thunder") storm.thunder()
+    else if (what === "gust") storm.gust()
+    else if (what === "creature") creature.trigger()
+    else if (what === "distant") void audio.auditionNow(DISTANT_SOUNDS[Math.floor(Math.random() * DISTANT_SOUNDS.length)]!)
+  }
+  panel.addControls(lookState as unknown as Bag as Record<string, string>, [
+    { key: "woods.look", field: "look", label: "Look", group: LOOKS_SECTION, type: "select", options: LOOK_IDS.map((id) => ({ value: id, label: LOOKS[id].label })), change: (v) => pickLook(String(v) as LookId) },
+    { key: "woods.lookNote", label: "This look", group: LOOKS_SECTION, type: "readout", read: () => LOOKS[lookState.look].note },
+    { key: "woods.triggers.lightning", label: "Lightning strike", group: LOOKS_SECTION, type: "buttons", items: (["near", "mid", "far"] as const).map((d) => ({ key: `woods.trigger.${d}`, label: d === "near" ? "Near" : d === "mid" ? "Mid" : "Far", run: () => trigger(d) })) },
+    { key: "woods.triggers.sound", label: "Sounds", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.thunder", label: "Thunder only", run: () => trigger("thunder") }, { key: "woods.trigger.distant", label: "A distant sound", run: () => trigger("distant") }] },
+    { key: "woods.triggers.woods", label: "In the woods", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.gust", label: "A gust", run: () => trigger("gust") }, { key: "woods.trigger.creature", label: "The creature", run: () => trigger("creature") }] },
+  ])
+  const askedLook = params.get("look") ?? lookState.look
+  if (askedLook !== "today" && askedLook in LOOKS) pickLook(askedLook as LookId)
+  panel.setView({ order: SECTIONS })
   attachLabPanelControl(panel)
   shell.settings.subscribe(() => { syncSound(); settings.reduceMotion = shell.settings.reduceMotion; panel.sync() })
   let regenAt = 0, worldKey = `${settings.trunkDensity}`
@@ -546,7 +585,10 @@ async function main() {
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
     creature.frame()
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time) }, stepping, smokeTarget?.createView())
+    // The storm: strikes, rain, wind and the eye after a flash for the picture; its thunder and rain for the sound.
+    const sf = storm.frame({ dt, eye: camera.eye, yaw: camera.yaw, groundY: standHeight(world, at.x, at.z), forestWind: view.forest.settings.wind })
+    audio.storm(sf)
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time), storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
     const target = playing && p.mapRaise < 0.3 ? tieTarget(world, p, settings.tapeReach) : null
@@ -592,9 +634,12 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard,
+      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard, storm,
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */
       get night() { return session.view.night }, nextNight,
+      /** Automation: the curated Looks (`src/looks.ts`) and the Triggers group's buttons. */
+      looks: { pick: pickLook, get current() { return lookState.look }, ids: LOOK_IDS },
+      trigger,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
@@ -633,6 +678,11 @@ async function main() {
   })
   // Automation and the Lab's camera station: the fixed night spot with your torch and two friends'.
   if (params.get("lab") === "camera" && !smoke) stageCameraLab((window as unknown as { woods: Parameters<typeof stageCameraLab>[0] }).woods)
+  // The Looks station: the same night spot, the knobs open on Looks & Triggers.
+  if (params.get("lab") === "looks" && !smoke) {
+    stageCameraLab((window as unknown as { woods: Parameters<typeof stageCameraLab>[0] }).woods)
+    if (!panel.visible) panel.toggle()
+  }
   requestAnimationFrame(loop)
 }
 

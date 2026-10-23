@@ -352,6 +352,23 @@ any second to three scene flashes (WCAG 2.3.1); Full / Reduced / Off, with Reduc
   doesn't average the flicker away. Strike now lands 220–420 m out because the Lot's sky dome is ±699 m.
 - Research: `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md` (NOAA, Rakov & Uman, WCAG G15).
 
+**Forest storm (`barbara-looks`).** The kit strike envelope under a canopy: `StormStrikes` (`weather/storm.ts`)
+schedules strikes and emits each one's thunder with its position and arrival (slant / 343 m/s); `ForestStorm`
+(`forest/storm.ts`) lights the forest from the channel as a directional light through a spot shadow map from the
+strike's direction (so trunks and crowns cast), adds a dim cloud dome (×0.35 on surfaces, so the floor doesn't go
+milky), draws far channels scaled inside the far plane so they show through canopy gaps, and darkens the eye after the
+flash (`EyeAdaptation`, 1.6 EV, ~3 s recovery) while the forest's own meter holds. Rain uses the weather layer's
+light-volume mode, so drops appear only in torch beams, window and porch cones and the flash; drips fall from the
+nearest crowns' lowest branches. BARBARA's thunder goes through its own soundscape with travel delay.
+- Where: `packages/kit/forest/storm.ts`, `packages/kit/weather/storm.ts`, `games/barbara/src/looks.ts` (Storm coming,
+  Downpour), `games/barbara/src/audio/storm.ts`.
+- Cost: Downpour vs Today at the camera-lab spot (mini Metal, 1600×900, 12-frame median, two runs): +0.6–1.4 ms High,
+  +0.3–0.4 ms Low.
+- Kit: asked for it with restraint (dark between flashes, no milky wash). First pass at 1.5 lx flash and a full cloud
+  dome lit the whole floor grey; shipped at 0.9 lx (Downpour 1.1) with the dome at ×0.35. Awaiting his pick.
+- Pitfalls: the forest's scene units make a full moon (0.25 lx) about as bright as a torch pool, so flash "lux" is
+  relative to the moon, not to real lightning (10–100 lx would wash everything).
+
 **Shared shelter and wind.** One list of sheltered rects and dripping eaves drives rain, wetness and sound
 (`games/lot/src/weather/shelter.ts`); the weather's gust (`evaluateWeatherGust`) drives forest sway.
 

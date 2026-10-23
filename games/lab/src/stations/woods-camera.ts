@@ -47,7 +47,7 @@ export default defineStation({
   branches: ["woods-camera"],
   links: [{ label: "Play Barbara", href: "/arcade/barbara/" }],
   layout: {
-    right: [{ widget: "controls", groups: ["Camera look"], title: "Camera look" }],
+    right: [{ widget: "controls", groups: ["Camera"], title: "Camera" }],
     dock: [{ widget: "variants" }],
   },
 })

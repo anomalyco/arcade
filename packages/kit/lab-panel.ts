@@ -40,6 +40,12 @@ export type LabOptions = {
    * folds and opens is remembered per page. Inspector groups start open.
    */
   openGroups?: readonly string[]
+  /**
+   * Places every control added (in the constructor and by any later `addControls`) where the game wants it: a game with
+   * many subsystems regroups their rows into a few sections with sub-headings without each subsystem knowing. Keys
+   * stay as they are, so saved values and URLs keep working.
+   */
+  arrange?: (control: LabControl) => LabControl
   /** Called with each setting a panel edit changes (the same as passing a function as `options`). */
   onChange?: (key: string, value: LabValue) => void
   /** Saved variants are kept per this id (by default per page and section); `false` turns them off. */
@@ -116,6 +122,7 @@ export class LabPanel implements LabKnobsHost {
   private view: LabPanelView = {}
   private tabs: readonly LabTab[] = []
   private openGroups?: readonly string[]
+  private arrange?: (control: LabControl) => LabControl
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const opts = typeof options === "object" ? options : {}
@@ -129,6 +136,7 @@ export class LabPanel implements LabKnobsHost {
     this.onFocusChange = opts.onFocusChange
     this.variants = opts.variants
     this.openGroups = opts.openGroups
+    this.arrange = opts.arrange
     this.history = opts.history
     if (opts.onPin) this.pin = { toggle: opts.onPin, has: key => Boolean(opts.isPinned?.(key)) }
     this.navigation = new LabNavigation({}, [], (key, value) => {
@@ -358,6 +366,7 @@ export class LabPanel implements LabKnobsHost {
 
   /** `defaults` supplies approved values for Reset and modified highlighting; otherwise the current values are captured. */
   addControls(settings: LabSettings, controls: readonly LabControl[], defaults?: Readonly<LabSettings>) {
+    if (this.arrange) controls = controls.map(this.arrange)
     for (const c of controls) if (holdsValue(c)) {
       const field = resolveControlField(c, settings)
       Object.defineProperty(this.navigation.settings, c.key, {
