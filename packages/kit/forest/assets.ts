@@ -97,7 +97,7 @@ async function bitmap(url: string, size: number): Promise<ImageBitmap> {
 }
 
 /** Birch bark has no CC0 scan on Poly Haven: paint its chalky white with dark lenticels and black fissures. */
-function birchBark(size: number): { base: OffscreenCanvas; normal: OffscreenCanvas } {
+function birchBark(size: number): { base: Uint8ClampedArray<ArrayBuffer>; normal: Uint8ClampedArray<ArrayBuffer> } {
   const base = new OffscreenCanvas(size, size), g = base.getContext("2d")!
   const rand = (() => { let a = 91; return () => ((a = (a * 16807) % 2147483647) / 2147483647) })()
   g.fillStyle = "#d9d6cc"
@@ -120,15 +120,14 @@ function birchBark(size: number): { base: OffscreenCanvas; normal: OffscreenCanv
     g.fillRect(rand() * size, rand() * size, size * 0.03 * rand(), size * 0.03 * rand())
   }
   const px = g.getImageData(0, 0, size, size).data
-  const normal = new OffscreenCanvas(size, size), ng = normal.getContext("2d")!, out = ng.createImageData(size, size)
+  const out = new ImageData(size, size)
   const lum = (x: number, y: number) => { const i = (((y + size) % size) * size + ((x + size) % size)) * 4; return (px[i]! + px[i + 1]! + px[i + 2]!) / 765 }
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const dx = (lum(x + 1, y) - lum(x - 1, y)) * 2.5, dy = (lum(x, y + 1) - lum(x, y - 1)) * 2.5
     const l = Math.hypot(dx, dy, 1), i = (y * size + x) * 4
     out.data[i] = (-dx / l * 0.5 + 0.5) * 255; out.data[i + 1] = (dy / l * 0.5 + 0.5) * 255; out.data[i + 2] = (1 / l * 0.5 + 0.5) * 255; out.data[i + 3] = 255
   }
-  ng.putImageData(out, 0, 0)
-  return { base, normal }
+  return { base: px, normal: out.data }
 }
 
 /** Loads every layer into three arrays. `size` 512 on the low tier, 1024 otherwise; ORM is half that. */
@@ -138,8 +137,10 @@ export async function loadForestTextures(device: GPUDevice, root: string, size =
   const make = (format: GPUTextureFormat, s: number, label: string) => device.createTexture({ label, size: [s, s, LAYERS.length], mipLevelCount: mips(s), format, usage, dimension: "2d" })
   const base = make("rgba8unorm-srgb", size, "forest base"), normal = make("rgba8unorm", size, "forest normal"), orm = make("rgba8unorm", ormSize, "forest orm")
   const mip = new MipMaker(device)
-  const upload = (texture: GPUTexture, layer: number, source: ImageBitmap | OffscreenCanvas) =>
+  const upload = (texture: GPUTexture, layer: number, source: ImageBitmap) =>
     device.queue.copyExternalImageToTexture({ source }, { texture, origin: [0, 0, layer], premultipliedAlpha: false }, [texture.width, texture.height])
+  const write = (texture: GPUTexture, layer: number, data: Uint8ClampedArray<ArrayBuffer>) =>
+    device.queue.writeTexture({ texture, origin: [0, 0, layer] }, data, { bytesPerRow: texture.width * 4 }, [texture.width, texture.height])
   const fill = (texture: GPUTexture, layer: number, rgba: readonly number[]) => {
     const s = texture.width, data = new Uint8Array(s * s * 4)
     for (let i = 0; i < s * s; i++) data.set(rgba, i * 4)
@@ -149,7 +150,8 @@ export async function loadForestTextures(device: GPUDevice, root: string, size =
     const src = SOURCES[name]
     if (!src.dir) {
       const birch = birchBark(size)
-      upload(base, layer, birch.base); upload(normal, layer, birch.normal); fill(orm, layer, [255, 200, 0, 255])
+      // Pixels, not the canvas: SwiftShader (CI's smoke) can't copy from an OffscreenCanvas.
+      write(base, layer, birch.base); write(normal, layer, birch.normal); fill(orm, layer, [255, 200, 0, 255])
       return
     }
     const url = (kind: string) => `${root}${src.dir}/${name}-${kind}.webp`

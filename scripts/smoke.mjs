@@ -33,7 +33,8 @@ let bootTimeline = async () => "not loaded"
 // first use, which took 3–7 s off), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
 const READY_MS = game === "lot" ? 60_000 : 40_000
-const DEADLINE_MS = game === "lot" ? 75_000 : 55_000
+// Barbara waits for its forest frames to finish on the GPU: 9 s under SwiftShader on a Mac, past 45 s on CI (Oct 22).
+const DEADLINE_MS = game === "lot" ? 75_000 : game === "barbara" ? 140_000 : 55_000
 const CLOSE_MS = 3_000
 let passed = false
 const deadline = setTimeout(async () => {
