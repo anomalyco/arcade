@@ -2,7 +2,9 @@ import { stepBody } from "@arcade/kit/sim/move"
 import { stepCreature, type CreatureEvent } from "./creature"
 import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
-import { BOT_ORDER, CAST_NAMES, createVoices, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
+import { NIGHT_LINES } from "./night-lines.gen"
+import { botWaypoint, CALL_EVERY, handOff, canLight, CLUE, createNight, stepNight, type NightEvent, type NightState } from "./night"
+import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTape, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -62,6 +64,12 @@ export const FEEL = {
   creatureFar: 80,
   /** Its running speed (m/s). */
   creatureSpeed: 11,
+  /** Minutes from leaving camp to dawn (NIGHT.md); the room runs the default. */
+  dawnMinutes: 18,
+  /** Minutes of light in one torch battery; it drains only while lit. */
+  batteryMinutes: 8,
+  /** Seconds in the dark fumbling a spare battery in. */
+  swapSeconds: 4,
 }
 export type Feel = typeof FEEL
 
@@ -96,6 +104,8 @@ export type MapKnowledge = {
   heard: { from: number; serial: number; trail: number[] }[]
   tapes: number[]
   markers: number[]
+  /** Clues seen or copied (`shared/night.ts` ids). */
+  clues: number[]
 }
 export type Player = {
   id: number
@@ -121,10 +131,33 @@ export type Player = {
   tieHold: number
   /** Seconds the beam has pointed up (`SIGNAL_PITCH`). */
   signal: number
+  /** Battery left (0..1), a spare in the pocket, seconds left swapping one in (`shared/night.ts`). */
+  charge: number
+  spare: boolean
+  swap: number
+  /** Seconds on their own in the dark, torch out and nobody lit near (the spider's hook). */
+  isolated: number
+  /** Something has hold of them (the spider's hook): no walking, torch out. Always null until that lands. */
+  capture: { by: number; left: number } | null
   map: MapKnowledge
 }
 export type Tape = { id: number; tree: number; x: number; y: number; z: number; /** Plan angle of the knot side, atan2(dz, dx) from the trunk (rad). */ yaw: number; by: number; at: number }
-export type Brain = { id: number; mode: "wander" | "tie" | "regroup" | "signal" | "wait" | "found"; heading: number; timer: number; since: number; tx: number; tz: number; sweep: number }
+export type Brain = {
+  id: number
+  mode: "wander" | "tie" | "regroup" | "signal" | "wait" | "found" | "detour"
+  heading: number
+  timer: number
+  since: number
+  tx: number
+  tz: number
+  sweep: number
+  /** Seconds walking into something without getting anywhere, the way it last stepped round, and how often on this waypoint. */
+  stuck: number
+  side: number
+  tries: number
+  /** Closest it has got to the waypoint it is walking to (`tx`, `tz`). */
+  best: number
+}
 
 export type WoodsEvent =
   | { kind: "tape-tied"; by: number; tape: number; x: number; z: number; tree: number; yaw: number; at: number }
@@ -139,6 +172,8 @@ export type WoodsEvent =
   | VoiceEvent
   /** The creature crossing in front of a distant light (`shared/creature.ts`), seen by everyone at the same moment. */
   | CreatureEvent
+  /** Clues found, spares picked up, torches dying and swapped, and the night starting and ending (`shared/night.ts`). */
+  | NightEvent
 
 export type WoodsState = {
   t: number
@@ -160,6 +195,8 @@ export type WoodsState = {
   distant: DistantState
   /** The searchers' voices (`shared/voices.ts`), stepped here. */
   voices: VoiceState
+  /** The night as a game: clues, the clock, batteries, the end (`shared/night.ts`). */
+  night: NightState
 }
 
 /** One player's controls for a step: the same for a person (sent to the room, predicted locally) and a bot. */
@@ -175,7 +212,7 @@ export type PlayerInput = {
   sprint?: boolean
 }
 
-const VOICE_CUES = new Set(["marker-found", "signal", "distant", "tape-tied", "creature"])
+const VOICE_CUES = new Set(["clue-found", "signal", "distant", "tape-tied", "creature"])
 /** Bots are the searchers `BOT_ORDER` gives them (STORY.md). */
 const NAMES = BOT_ORDER.map((c) => CAST_NAMES[c])
 /** Bots take ids from here up, so they never collide with people's ids (0 solo, 1–6 in a room). */
@@ -185,7 +222,8 @@ export function newPlayer(id: number, bot: boolean, name: string, x: number, z: 
   return {
     id, bot, name, x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: true,
     flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, serial: 0, tieHold: 0, signal: 0,
-    map: { trail: [x, z], heard: [], tapes: [], markers: [] },
+    charge: 1, spare: false, swap: 0, isolated: 0, capture: null,
+    map: { trail: [x, z], heard: [], tapes: [], markers: [], clues: [] },
   }
 }
 
@@ -193,7 +231,7 @@ export type Human = { id: number; name: string }
 
 /** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
 export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
-  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c) }
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c), night: createNight(world, seed) }
   for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
@@ -210,7 +248,9 @@ export function addHuman(state: WoodsState, world: WoodsWorld, id: number, name:
 
 /** A walker leaves for good: their tapes and the room's finds stay, the copies of their path on other maps go. */
 export function removePlayer(state: WoodsState, id: number): void {
+  const gone = state.players.find((p) => p.id === id)
   state.players = state.players.filter((p) => p.id !== id)
+  if (gone) handOff(state.night, gone, state.players)
   state.brains = state.brains.filter((b) => b.id !== id)
   for (const p of state.players) if (p.map.heard.some((h) => h.from === id)) p.map.heard = p.map.heard.filter((h) => h.from !== id)
 }
@@ -235,7 +275,7 @@ export function setBotCount(state: WoodsState, world: WoodsWorld, n: number): vo
     const bot = newPlayer(id, true, NAMES[(id - BOT_ID) % NAMES.length]!, x, z, -0.4 + k * 0.4)
     bot.serial = ++state.serial
     state.players.push(bot)
-    state.brains.push({ id, mode: "wander", heading: -0.5 + k * 0.5 + (nextRandom(state.rng) - 0.5) * 0.4, timer: 1 + k * 1.5, since: 0, tx: x, tz: z, sweep: nextRandom(state.rng) * 6 })
+    state.brains.push({ id, mode: "wander", heading: -0.5 + k * 0.5 + (nextRandom(state.rng) - 0.5) * 0.4, timer: 1 + k * 1.5, since: 0, tx: x, tz: z, sweep: nextRandom(state.rng) * 6, stuck: 0, side: 1, tries: 0, best: 1e9 })
   }
 }
 
@@ -271,8 +311,10 @@ function stepFlicker(state: WoodsState, p: Player, feel: Feel, dt: number) {
   p.flickerLeft = Math.max(0, p.flickerLeft - dt)
   p.flickerNext -= dt
   if (p.flickerNext <= 0) {
-    p.flickerLeft = 0.12 + nextRandom(state.rng) * 0.5
-    const rate = Math.max(feel.flashFlicker, 0.01)
+    // A tired battery sputters far more often, and for longer.
+    const tired = p.charge < 0.25 ? (0.25 - p.charge) / 0.25 : 0
+    p.flickerLeft = (0.12 + nextRandom(state.rng) * 0.5) * (1 + tired * 2)
+    const rate = Math.max(feel.flashFlicker, 0.01) * (1 + tired * 8)
     p.flickerNext = (60 / rate) * (0.4 + nextRandom(state.rng) * 1.2)
   }
 }
@@ -280,15 +322,18 @@ function stepFlicker(state: WoodsState, p: Player, feel: Feel, dt: number) {
 /**
  * 0..1 output of a player's flashlight at presentation time `t` (a continuous local clock, not the tick or snapshot
  * time, so a dip doesn't step). A dip is a sputter between 0.15 and 0.8 at a few hertz, not a strobe;
- * `feel.flashFlicker` 0 disables dips.
+ * `feel.flashFlicker` 0 disables dips. Below `BROWNOUT` charge the whole beam dims towards a third.
  */
 export function beamLevel(p: Player, t: number, feel: Feel): number {
   if (!p.light) return 0
-  if (p.flickerLeft <= 0 || feel.flashFlicker <= 0) return 1
+  const brown = p.charge < BROWNOUT ? 0.35 + 0.65 * (p.charge / BROWNOUT) : 1
+  if (p.flickerLeft <= 0 || feel.flashFlicker <= 0) return brown
   const n = Math.sin(t * 17.3 + p.id * 4.1) * 0.6 + Math.sin(t * 7.9 + p.id) * 0.4
   const k = Math.max(0, Math.min(1, (n + 0.1) / 0.6))
-  return 0.8 - 0.65 * k * k * (3 - 2 * k)
+  return (0.8 - 0.65 * k * k * (3 - 2 * k)) * brown
 }
+/** Charge below which a torch browns out. */
+export const BROWNOUT = 0.12
 
 const TIE_RELEASE = 0.2
 
@@ -349,6 +394,7 @@ function compareMaps(state: WoodsState, a: Player, b: Player) {
   for (const [from, to] of [[a, b], [b, a]] as const) {
     for (const id of from.map.tapes) addUnique(to.map.tapes, id)
     for (const id of from.map.markers) addUnique(to.map.markers, id)
+    for (const id of from.map.clues) addUnique(to.map.clues, id)
     const heard = to.map.heard.filter((h) => h.from !== from.id)
     heard.push({ from: from.id, serial: from.serial, trail: from.map.trail.slice() })
     for (const h of from.map.heard) if (h.from !== to.id && !heard.some((x) => x.from === h.from)) heard.push({ from: h.from, serial: h.serial, trail: h.trail.slice() })
@@ -375,10 +421,17 @@ export function stepMotion(world: WoodsWorld, p: Player, input: PlayerInput, fee
   const raiseRate = dt / Math.max(feel.mapRaise, 0.02)
   p.mapRaise = Math.max(0, Math.min(1, p.mapRaise + (input.map ? raiseRate : -raiseRate * 1.4)))
   const speed = (p.bot ? feel.botSpeed : feel.walkSpeed * (input.sprint ? 1.8 : 1)) * (p.mapRaise > 0.5 ? feel.mapWalk : 1)
-  movePlayer(world, p, input.mx, input.mz, speed, dt)
+  if (p.capture) movePlayer(world, p, 0, 0, speed, dt)
+  else movePlayer(world, p, input.mx, input.mz, speed, dt)
 }
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
+/** A person this close to the ridge light hears the extra searcher call (m); else it calls this long after the tape (s). */
+const CALL_NEAR = 110
+const CALL_LATE = 180
+const tapeSeconds = (id: string) => NIGHT_LINES.find((l) => l.id === id)?.seconds ?? 14
+/** A bot working the ground for a clue walks at this share of its speed. */
+const SEARCH_PACE = 0.55
 
 function nearestHuman(state: WoodsState, p: Player, signalling = false): Player | undefined {
   let best: Player | undefined, bd = Infinity
@@ -395,7 +448,7 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
   const caller = nearestHuman(state, p, true)
   b.timer -= dt
   b.sweep += dt
-  let speed = 1, tie = false, pitch = -0.22 + Math.sin(b.sweep * 0.7) * 0.12, yawOffset = Math.sin(b.sweep * 0.45) * 0.55
+  let speed = 1, tie = false, light = true, pitch = -0.22 + Math.sin(b.sweep * 0.7) * 0.12, yawOffset = Math.sin(b.sweep * 0.45) * 0.55
   const toYou = you ? Math.hypot(you.x - p.x, you.z - p.z) : 0
   if (caller && b.mode !== "regroup" && b.mode !== "signal" && Math.hypot(caller.x - p.x, caller.z - p.z) < 260) {
     // Reply with your own beam, then head over.
@@ -417,15 +470,67 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
       if (b.timer <= 0 || (p.tie && (p.tie.progress >= 1 || p.tie.removing))) { b.mode = "wander"; b.since = 0; b.timer = 2 }
       break
     case "wait":
-      speed = 0
+      // Stood still, working the ground round it with the beam.
+      speed = 0; pitch = -0.42 + Math.sin(b.sweep * 0.9) * 0.12; yawOffset = Math.sin(b.sweep * 1.6) * 0.9
+      if (b.timer <= 0) b.mode = "wander"
+      break
+    case "detour":
+      yawOffset *= 0.3
       if (b.timer <= 0) b.mode = "wander"
       break
     case "found":
-      // Found a marker: beam straight up for a while so the others can find the spot, then wait there.
-      speed = 0; pitch = b.timer > 14 ? 1.35 : pitch
+      // Found a clue: beam straight up for a while so the others can find the spot, then wait there a moment.
+      speed = 0; pitch = b.timer > 8 ? 1.35 : pitch
       if (b.timer <= 0) b.mode = "wander"
       break
     default: {
+      const n = state.night
+      const stranded = !canLight(p) && !p.spare && p.swap <= 0 && !p.capture
+      const way = stranded ? null : botWaypoint(n, p, state.players)
+      if (stranded) {
+        // No light and nothing to swap in: fetch a spare from the mess table if one's left, else keep by a lit friend.
+        const spare = n.layout.spares.find((s) => s.camp && !n.taken.includes(s.id))
+        let lit: Player | undefined, ld = Infinity
+        for (const q of state.players) { const d = Math.hypot(q.x - p.x, q.z - p.z); if (q !== p && q.light && d < ld) { ld = d; lit = q } }
+        const to = spare ?? lit
+        if (to) b.heading = Math.atan2(-(to.x - p.x), -(to.z - p.z))
+        if (!spare && ld < 3) speed = 0
+        break
+      }
+      if (way) {
+        // Working a lead (`shared/night.ts`): head for the next point of the sweep, beam low and swinging once there.
+        const d = Math.hypot(way.x - p.x, way.z - p.z)
+        if (Math.hypot(way.x - b.tx, way.z - b.tz) > 0.5) {
+          const reached = b.best < 3
+          b.tx = way.x; b.tz = way.z; b.best = d; b.stuck = 0; b.tries = 0
+          // At each point of a sweep it stops and looks round with its beam for a moment, as a person would.
+          if (reached && way.searching) { b.mode = "wait"; b.timer = 1 + nextRandom(state.rng) * 1.5; break }
+        }
+        if (d < b.best - 0.3) { b.best = d; b.stuck = 0 } else b.stuck += dt
+        if (b.stuck > 1.5) {
+          // Walked into something (a trunk, a boulder, a wall) without getting closer: step round it, the other way
+          // each time; after a few goes give up on that point of the sweep.
+          b.stuck = 0; b.best = d; b.side = -b.side
+          if (++b.tries >= 3) { const lead = n.bots[p.id]; if (lead) lead.step++; b.tries = 0 }
+          b.heading += b.side * (1.3 + nextRandom(state.rng) * 0.5)
+          b.mode = "detour"; b.timer = 1.4 + nextRandom(state.rng)
+          break
+        }
+        b.heading += wrap(Math.atan2(-(way.x - p.x), -(way.z - p.z)) - b.heading) * Math.min(1, dt * 4)
+        // Searching is slow: a careful walk, the beam working the ground either side.
+        // Walking with a friend whose torch is lit (a person, or a bot ahead of it in the list): one light between two
+        // saves a battery.
+        if (state.players.some((q) => q !== p && q.light && (!q.bot || q.id < p.id) && Math.hypot(q.x - p.x, q.z - p.z) < (p.light ? 5 : 8))) light = false
+        if (way.searching) { speed = SEARCH_PACE; pitch = -0.48 + Math.sin(b.sweep * 0.7) * 0.1; yawOffset = Math.sin(b.sweep * 1.1) * 0.6 }
+        b.since += Math.hypot(p.vx, p.vz) * dt
+        if (b.since > feel.botTapeEvery) {
+          const t = tieTarget(world, { ...p, yaw: b.heading }, feel.tapeReach + 0.6)
+          if (t && !tapeOnTree(state, t.id)) { b.mode = "tie"; b.timer = feel.tapeTieTime + 0.6 }
+        }
+        break
+      }
+      // Nothing to work on and a friend's torch alongside: save the battery.
+      if (state.players.some((q) => q !== p && !q.bot && q.light && Math.hypot(q.x - p.x, q.z - p.z) < 6)) light = false
       if (b.timer <= 0) {
         b.heading += (nextRandom(state.rng) - 0.5) * 1.6
         b.timer = 4 + nextRandom(state.rng) * 7
@@ -452,7 +557,7 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
     b.heading += (side > 0 ? -1 : 1) * dt * 2.2
   }
   const [mx, , mz] = viewDir(b.heading, 0)
-  return { yaw: b.heading + yawOffset, pitch, light: true, tie, map: false, mx: mx * speed, mz: mz * speed }
+  return { yaw: b.heading + yawOffset, pitch, light, tie, map: false, mx: mx * speed, mz: mz * speed }
 }
 
 /**
@@ -466,15 +571,22 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     const brain = p.bot ? state.brains.find((b) => b.id === p.id) : undefined
     const input = brain ? botInput(state, world, brain, p, feel, dt) : inputs.get(p.id) ?? { yaw: p.yaw, pitch: p.pitch, light: p.light, tie: false, map: false, mx: 0, mz: 0 }
     stepMotion(world, p, input, feel, dt)
-    if (input.light !== p.light) state.events.push({ kind: "light", by: p.id, on: input.light })
-    p.light = input.light
+    // A dead or swapping torch stays off whatever the switch says (`shared/night.ts` owns the battery).
+    const light = input.light && canLight(p)
+    if (light !== p.light) state.events.push({ kind: "light", by: p.id, on: light })
+    p.light = light
     stepFlicker(state, p, feel, dt)
     stepTie(state, world, p, input.tie && p.mapRaise < 0.3, feel, dt)
     const wasSignal = p.signal > SIGNAL_HOLD
     p.signal = p.light && p.pitch > SIGNAL_PITCH ? p.signal + dt : 0
     if (!wasSignal && p.signal > SIGNAL_HOLD) state.events.push({ kind: "signal", by: p.id, x: p.x, z: p.z })
     stepKnowledge(state, world, p, feel)
-    if (brain && state.events.some((e) => e.kind === "marker-found" && e.by === p.id)) { brain.mode = "found"; brain.timer = 24 }
+  }
+  const night = state.night
+  for (const e of stepNight(night, world, state.players, state.tapes, state.t, dt, feel, (w) => standHeight(world, w.x, w.z) + EYE_HEIGHT)) {
+    state.events.push(e)
+    const brain = e.kind === "clue-found" ? state.brains.find((b) => b.id === e.by) : undefined
+    if (brain) { brain.mode = "found"; brain.timer = 14 }
   }
   for (let i = 0; i < state.players.length; i++) for (let j = i + 1; j < state.players.length; j++) {
     const a = state.players[i]!, b = state.players[j]!
@@ -489,10 +601,32 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   if (creature) state.events.push(creature)
   // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
+  // Dawn coming, and dawn come, get a line each.
+  if (night.phase === "search" && !night.dawnSaid && state.t >= night.dawn - 120) { night.dawnSaid = true; cues.push({ kind: "dawn" }) }
+  if (state.events.some((e) => e.kind === "night" && e.reason === "dawn")) cues.push({ kind: "daylight" })
   const lines = stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID)
   state.events.push(...lines)
   // A call for Barbara may be answered from the wrong side (`answerCall`, the uncanny tier's mimic).
   for (const e of lines) if (!people.some((p) => p.id === e.by)) answerCall(state.distant, world, people, e.line, e, VOICE_LINES.find((l) => l.id === e.line)?.seconds ?? 2, state.t, feel)
+  // The cassette plays from the hand of whoever found it, once the voices have finished reacting.
+  if (night.tapeAt > 0 && state.t >= night.tapeAt && state.t >= voicesBusyUntil(state.voices)) {
+    const by = state.players.find((q) => q.id === night.tapeBy) ?? state.players.find((q) => !q.bot)
+    night.tapeAt = 0
+    if (by) {
+      const tape = sayTape(state.voices, world, by, state.players, state.t)
+      state.events.push(tape)
+      // When the tape has run out, someone answers "Over here!" from up on the ridge (STORY.md's extra searcher).
+      night.callAt = state.t + tapeSeconds(tape.line) + 6
+    }
+  }
+  // It calls once a person is up near the ridge, or a few minutes after the tape whoever is up there.
+  const ridgeNear = people.some((p) => Math.hypot(p.x - night.layout.ridge.x, p.z - night.layout.ridge.z) < CALL_NEAR)
+  if (night.callAt > 0 && night.phase === "search" && (ridgeNear || night.calls > 0 || state.t >= night.callAt + CALL_LATE) && state.t >= night.callAt && state.t >= voicesBusyUntil(state.voices)) {
+    const strip = night.layout.clues[CLUE.strip]!
+    state.events.push(sayExtra(state.voices, world, strip.x, strip.z, state.players, state.t))
+    night.calls++; night.rev++
+    night.callAt = state.t + CALL_EVERY
+  }
   holdDistant(state.distant, voicesBusyUntil(state.voices))
 }
 

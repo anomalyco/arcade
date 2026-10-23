@@ -2,7 +2,8 @@ import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/inte
 import { Predictor, Smoother } from "@arcade/kit/net/prediction"
 import { RoomSocket } from "@arcade/kit/net/room-socket"
 import { BUILD } from "../shared/build.gen"
-import { applyMapDelta, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { createNight, canLight } from "../shared/night"
+import { applyMapDelta, applyNightWire, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import { createWoods, newPlayer, setBotCount, stepMotion, stepWoods, type Feel, type Player, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import type { WoodsWorld } from "../shared/world"
 
@@ -51,8 +52,9 @@ export class SoloSession implements Session {
   private shown = new Map<number, Player>()
   private drawnView = {} as WoodsState
 
-  constructor(readonly world: WoodsWorld, private readonly feel: Feel) {
-    this.state = this.view = createWoods(world, feel.botCount)
+  /** `seed` picks the night (its clue layout, bots and flicker); the same seed is the same night. */
+  constructor(readonly world: WoodsWorld, private readonly feel: Feel, readonly seed = world.params.seed) {
+    this.state = this.view = createWoods(world, feel.botCount, seed)
     this.prev = { x: this.self.x, z: this.self.z }
   }
   get self(): Player {
@@ -119,6 +121,13 @@ export class SoloSession implements Session {
 
 type Remote = { player: Player; glide: Glide }
 
+/** A walker's torch battery from their row. */
+function battery(p: Player, r: PlayerRow) {
+  p.charge = (r[10] ?? 100) / 100
+  p.spare = !!(r[7]! & BIT.spare)
+  p.swap = r[7]! & BIT.swap ? 1 : 0
+}
+
 export class OnlineSession implements Session {
   readonly online = true
   me = -1
@@ -134,6 +143,10 @@ export class OnlineSession implements Session {
   private rosterRows: RosterRow[] = []
   private prev = { x: 0, z: 0 }
   private fatal: string | null = null
+  /** Ask the room for the next night (from the debrief). */
+  again() {
+    this.socket.send({ type: "again" })
+  }
   /** Bytes received over the socket (bandwidth readout). */
   bytesIn = 0
   readonly startedAt = performance.now()
@@ -166,7 +179,7 @@ export class OnlineSession implements Session {
     this.prev = { x: this.self.x, z: this.self.z }
     const seq = this.predictor.record(q)
     stepMotion(this.world, this.self, q, ROOM_FEEL, TICK_DT)
-    this.self.light = q.light
+    this.self.light = q.light && canLight(this.self)
     this.socket.send({ type: "intent", seq, i: packIntent(q) })
   }
 
@@ -194,7 +207,8 @@ export class OnlineSession implements Session {
   }
 
   private snapshot(s: Snapshot) {
-    const first = this.me < 0 || this.me !== s.me
+    // A new night puts everyone back at camp: take the room's position outright rather than easing across the woods.
+    const first = this.me < 0 || this.me !== s.me || (!!s.night && s.night.seed !== this.view.night.seed)
     this.me = s.me
     this.self.id = s.me
     this.view.t = s.t
@@ -202,9 +216,14 @@ export class OnlineSession implements Session {
     if (s.tapes) this.view.tapes = s.tapes.map((r) => tapeFromRow(this.world, r)).filter((t) => t !== null)
     if (s.found) this.view.found = s.found
     if (s.distant) this.view.distant = s.distant
+    if (s.night) {
+      if (s.night.seed !== this.view.night.seed) this.view.night = createNight(this.world, s.night.seed)
+      applyNightWire(this.view.night, s.night)
+    }
     if (s.map) applyMapDelta(this.self.map, s.map)
     const mine = s.p.find((r) => r[0] === s.me)
     if (mine) {
+      battery(this.self, mine)
       this.self.flickerLeft = mine[7]! & BIT.flicker ? 1 : 0
       this.self.tie = mine[9]! >= 0 ? { tree: mine[9]!, progress: mine[8]! / 100, removing: !!(mine[7]! & BIT.untie) } : null
     }
@@ -254,6 +273,7 @@ export class OnlineSession implements Session {
         p.yaw = lerpAngle(a[5]! / 1000, b[5]! / 1000, br.t)
         p.pitch = a[6]! / 1000 + (b[6]! / 1000 - a[6]! / 1000) * br.t
         p.light = !!(b[7]! & BIT.light)
+        battery(p, b)
         p.flickerLeft = b[7]! & BIT.flicker ? 1 : 0
         p.signal = b[7]! & BIT.signal ? 1 : 0
         p.mapRaise = b[7]! & BIT.map ? 1 : 0

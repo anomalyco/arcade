@@ -4,6 +4,7 @@ import { cleanPlayerName } from "@arcade/kit/sim/matchmaking"
 import { FEEL, SIGNAL_HOLD_SECONDS, type MapKnowledge, type Player, type PlayerInput, type Tape, type WoodsEvent } from "./sim"
 import { TAPE_HEIGHT } from "./sim"
 import type { DistantState } from "./distant"
+import type { NightPhase, NightReason, NightState } from "./night"
 import type { WoodsWorld } from "./world"
 
 /**
@@ -55,7 +56,8 @@ export const intentOps: InputOps<PlayerInput> = {
 // ---------------------------------------------------------------- client → room
 
 export type Hello = { type: "hello"; token?: string; build?: string; name?: string }
-export type ClientMsg = Hello | { type: "intent"; seq: number; i: PlayerInput } | { type: "name"; name: string }
+/** `again`: start the next night from the debrief (anyone in the room, once the night has ended). */
+export type ClientMsg = Hello | { type: "intent"; seq: number; i: PlayerInput } | { type: "name"; name: string } | { type: "again" }
 
 export function decodeClient(raw: unknown): (ClientMsg | RoomClientFrame<PlayerInput>) | null {
   if (typeof raw !== "string" || raw.length > 2048) return null
@@ -64,6 +66,7 @@ export function decodeClient(raw: unknown): (ClientMsg | RoomClientFrame<PlayerI
   if (!m || typeof m !== "object") return null
   if (m.type === "ping" && typeof m.t === "number") return { type: "ping", t: m.t }
   if (m.type === "hello") return { type: "hello", token: typeof m.token === "string" ? m.token.slice(0, 64) : undefined, build: typeof m.build === "string" ? m.build.slice(0, 32) : undefined, name: cleanPlayerName(m.name, MAX_NAME, "") }
+  if (m.type === "again") return { type: "again" }
   if (m.type === "name") { const name = cleanPlayerName(m.name, MAX_NAME, ""); return name ? { type: "name", name } : null }
   if (m.type === "intent" && typeof m.seq === "number" && Number.isInteger(m.seq) && m.seq >= 0 && Array.isArray(m.i)) return { type: "intent", seq: m.seq, i: unpackIntent(m.i as number[]) }
   return null
@@ -71,9 +74,21 @@ export function decodeClient(raw: unknown): (ClientMsg | RoomClientFrame<PlayerI
 
 // ---------------------------------------------------------------- room → client
 
-/** Player row: id, x·100, z·100, vx·100, vz·100, yaw·1000, pitch·1000, bits, tie progress·100, tie tree (−1). */
+/** Player row: id, x·100, z·100, vx·100, vz·100, yaw·1000, pitch·1000, bits, tie progress·100, tie tree (−1), battery·100. */
 export type PlayerRow = number[]
-export const BIT = { light: 1, flicker: 2, bot: 4, signal: 8, untie: 16, map: 32, away: 64 } as const
+export const BIT = { light: 1, flicker: 2, bot: 4, signal: 8, untie: 16, map: 32, away: 64, spare: 128, swap: 256 } as const
+
+/** The night as a room sends it when it changes (`NightState` without what a client works out from the seed). */
+export type NightWire = { seed: number; phase: NightPhase; start: number; dawn: number; end: number; reason: NightReason; finds: number[][]; taken: number[]; calls: number }
+const ms = (v: number) => Math.round(v * 1000) / 1000
+export function nightWire(n: NightState): NightWire {
+  return { seed: n.seed, phase: n.phase, start: ms(n.start), dawn: ms(n.dawn), end: ms(n.end), reason: n.reason, finds: n.finds.map((f) => (f.held === undefined ? [f.clue, f.by, ms(f.at)] : [f.clue, f.by, ms(f.at), f.held])), taken: n.taken.slice(), calls: n.calls }
+}
+/** A client's night from the room's (its layout is placed again only when the seed changes). */
+export function applyNightWire(n: NightState, w: NightWire): void {
+  Object.assign(n, { phase: w.phase, start: w.start, dawn: w.dawn, end: w.end, reason: w.reason, taken: w.taken.slice(), calls: w.calls ?? 0 })
+  n.finds = w.finds.map(([clue, by, at, held]) => (held === undefined ? { clue: clue!, by: by!, at: at! } : { clue: clue!, by: by!, at: at!, held }))
+}
 
 /** Who is in the room: seat id (public), player id in the sim, name, connected. */
 export type RosterRow = { id: string; pid: number; name: string; connected: boolean }
@@ -99,6 +114,8 @@ export type Snapshot = {
   map?: MapDelta
   /** The room's distant-sound schedule, on join only (`distant` events carry each sound after). */
   distant?: DistantState
+  /** The night (clock, finds, spares taken), when it changes. */
+  night?: NightWire
 }
 
 /**
@@ -112,18 +129,21 @@ export type MapDelta = {
   tapes?: number[]
   gone?: number[]
   markers?: number[]
+  /** Clue ids on your map, all of them, when that changes. */
+  clues?: number[]
   heard?: { from: number; at: number; trail: number[] }[]
   unheard?: number[]
 }
 
 /** A client's copy of its map from the room's deltas. */
 export function applyMapDelta(m: MapKnowledge, d: MapDelta): void {
-  if (d.reset) { m.trail = []; m.tapes = []; m.markers = []; m.heard = [] }
+  if (d.reset) { m.trail = []; m.tapes = []; m.markers = []; m.heard = []; m.clues = [] }
   m.trail.length = Math.min(m.trail.length, d.from)
   m.trail.push(...d.trail)
   if (d.gone) m.tapes = m.tapes.filter((id) => !d.gone!.includes(id))
   if (d.tapes) for (const id of d.tapes) if (!m.tapes.includes(id)) m.tapes.push(id)
   if (d.markers) m.markers = d.markers
+  if (d.clues) m.clues = d.clues
   if (d.unheard) m.heard = m.heard.filter((h) => !d.unheard!.includes(h.from))
   for (const h of d.heard ?? []) {
     let e = m.heard.find((x) => x.from === h.from)
@@ -136,8 +156,8 @@ export function applyMapDelta(m: MapKnowledge, d: MapDelta): void {
 export type ServerMsg = RoomFrame<RosterRow, WoodsEvent> | Snapshot
 
 export function playerRow(p: Player, away: boolean): PlayerRow {
-  const bits = (p.light ? BIT.light : 0) | (p.flickerLeft > 0 ? BIT.flicker : 0) | (p.bot ? BIT.bot : 0) | (p.signal > SIGNAL_HOLD_SECONDS ? BIT.signal : 0) | (p.tie?.removing ? BIT.untie : 0) | (p.mapRaise > 0.5 ? BIT.map : 0) | (away ? BIT.away : 0)
-  return [p.id, Math.round(p.x * 100), Math.round(p.z * 100), Math.round(p.vx * 100), Math.round(p.vz * 100), Math.round(wrapAngle(p.yaw) * 1000), Math.round(p.pitch * 1000), bits, p.tie ? Math.round(p.tie.progress * 100) : 0, p.tie ? p.tie.tree : -1]
+  const bits = (p.light ? BIT.light : 0) | (p.flickerLeft > 0 ? BIT.flicker : 0) | (p.bot ? BIT.bot : 0) | (p.signal > SIGNAL_HOLD_SECONDS ? BIT.signal : 0) | (p.tie?.removing ? BIT.untie : 0) | (p.mapRaise > 0.5 ? BIT.map : 0) | (away ? BIT.away : 0) | (p.spare ? BIT.spare : 0) | (p.swap > 0 ? BIT.swap : 0)
+  return [p.id, Math.round(p.x * 100), Math.round(p.z * 100), Math.round(p.vx * 100), Math.round(p.vz * 100), Math.round(wrapAngle(p.yaw) * 1000), Math.round(p.pitch * 1000), bits, p.tie ? Math.round(p.tie.progress * 100) : 0, p.tie ? p.tie.tree : -1, Math.ceil(p.charge * 100)]
 }
 
 export const tapeRow = (t: Tape): number[] => [t.id, t.tree, Math.round(t.yaw * 1000), t.by, Math.round(t.at * 10)]

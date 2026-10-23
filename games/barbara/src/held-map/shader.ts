@@ -3,11 +3,11 @@ import { physicalLightWgsl } from "@arcade/kit/gpu/lights/physical"
 import { beamWgsl } from "@arcade/kit/gpu/lights/beam"
 import { woodsUniformWgsl } from "@arcade/kit/forest/shaders"
 import { COMPASS, PLATE_PX } from "./compass-face"
-import { MAT } from "./mesh"
-import { CAPSULE } from "./props"
+import { MAT, OBJ_COUNT } from "./mesh"
+import { CAPSULE, WATCH_DIAL } from "./props"
 
 /** Floats in the held props' uniform (`Held` below). */
-export const HELD_FLOATS = 16 * 3 + 7 * 16 + 20 * 4
+export const HELD_FLOATS = 16 * 3 + OBJ_COUNT * 16 + 20 * 4
 const f = (x: number) => x.toFixed(6)
 
 /**
@@ -36,7 +36,7 @@ struct Held {
   proj: mat4x4f,
   invView: mat4x4f,
   plateInv: mat4x4f,   // world → compass-local (plate centre on its underside, m)
-  obj: array<mat4x4f, 7>,
+  obj: array<mat4x4f, ${OBJ_COUNT}>,
   eye: vec4f,          // world eye, time
   amb: vec4f,          // ambient rgb, own torch level
   paper: vec4f,        // sheet w, h (m), translucency, sheen
@@ -282,6 +282,8 @@ const MAT_BUBBLE: u32 = ${MAT.bubble}u;
 const MAT_BEZEL_SIDE: u32 = ${MAT.bezelSide}u;
 const MAT_PLATE_EDGE: u32 = ${MAT.plateEdge}u;
 const MAT_JEWEL: u32 = ${MAT.jewel}u;
+const MAT_DIAL: u32 = ${MAT.dial}u;
+const MAT_HAND: u32 = ${MAT.hand}u;
 
 /** Opaque surfaces: lit colour and coverage. */
 fn shadeOpaque(o: VOut, front: bool) -> vec4f {
@@ -393,6 +395,28 @@ fn shadeOpaque(o: VOut, front: bool) -> vec4f {
     let r = length(o.local.xz) / 0.0168;
     // The reflector: bright rings and the LED, seen when you look into the beam.
     emit = vec3f(1.0, 0.97, 0.92) * H.glove.w * (smoothstep(0.35, 0.0, r) * 6.0 + 0.6 * (0.5 + 0.5 * sin(r * 40.0)) * smoothstep(1.0, 0.3, r));
+  } else if (o.mat == MAT_DIAL) {
+    // The watch's black field dial (uv: dial-plane metres, +y at 12): white hour bars with luminous paint, a minute
+    // track, the 12 doubled.
+    let p = o.uv;
+    let r = length(p) / ${f(WATCH_DIAL)};
+    let a = atan2(p.x, p.y);
+    let aa = max(gmpp, 0.00003);
+    let hq = abs(fract(a / (PI / 6.0) + 0.5) - 0.5) * (PI / 6.0) * length(p);
+    let mq = abs(fract(a / (PI / 30.0) + 0.5) - 0.5) * (PI / 30.0) * length(p);
+    let quarter = abs(fract(a / (PI * 0.5) + 0.5) - 0.5) < 0.05;
+    let top = abs(a) < 0.3;
+    let hw = select(0.00045, 0.0008, quarter);
+    let hourBar = smoothstep(hw + aa, hw - aa, select(hq, abs(hq - 0.0009), top)) * step(select(0.7, 0.62, quarter), r) * step(r, 0.88);
+    let minute = smoothstep(0.00012 + aa, 0.00012 - aa, mq) * step(0.9, r) * step(r, 0.97);
+    albedo = mix(vec3f(0.016, 0.017, 0.018), vec3f(0.78, 0.77, 0.72), clamp(hourBar + minute * 0.8, 0.0, 1.0));
+    emit += vec3f(0.35, 0.75, 0.45) * hourBar * H.bezelEye.w * 1.6;
+    rough = 0.55;
+  } else if (o.mat == MAT_HAND) {
+    albedo = vec3f(0.8, 0.79, 0.74);
+    rough = 0.35;
+    let lume = smoothstep(0.25, 0.35, o.uv.y) * (1.0 - smoothstep(0.85, 0.95, o.uv.y));
+    emit += vec3f(0.35, 0.75, 0.45) * lume * H.bezelEye.w * 1.6;
   } else if (o.mat == MAT_CORD) {
     albedo = vec3f(0.02, 0.02, 0.022);
     rough = 0.65;

@@ -1,7 +1,6 @@
 import type { LabPanel } from "@arcade/kit/lab-panel"
-import { VOICE_LINES } from "../shared/lines.gen"
 import { BOT_ID, type WoodsState } from "../shared/sim"
-import { CAST_NAMES, openingLines, voiceRoles, type VoiceEvent } from "../shared/voices"
+import { lineOf, openingLines, voiceRoles, VOICE_NAMES, type VoiceEvent } from "../shared/voices"
 import { terrainHeight, type WoodsWorld } from "../shared/world"
 import type { voiceHeard, WoodsAudio } from "./audio"
 
@@ -34,6 +33,11 @@ export class StoryHud {
     audio.onLine = (e, heard) => this.subtitle(e, heard)
   }
 
+  /** The opening has begun this night (the goal line shows from then). */
+  get started(): boolean {
+    return this.begun
+  }
+
   get subtitles() {
     return this.audio.voice.subtitles
   }
@@ -49,7 +53,13 @@ export class StoryHud {
     panel.addControls(this.audio.voice, [{ key: "subtitles", label: "Subtitles", group: "Voices", type: "toggle", change: (v) => { this.subtitles = !!v } }])
   }
 
-  /** Your first step out: the opening plays around where you stand, facing `yaw`. Once per page. */
+  /** The next night (Search again): its opening plays at your next step out, the short one. */
+  again(): void {
+    this.begun = false
+    this.opening = []
+  }
+
+  /** Your first step out: the opening plays around where you stand, facing `yaw`. Once per night. */
   begin(world: WoodsWorld, state: WoodsState, me: number, x: number, z: number, yaw: number): void {
     if (this.begun) return
     this.begun = true
@@ -92,11 +102,11 @@ export class StoryHud {
 
   private subtitle(e: VoiceEvent, heard: ReturnType<typeof voiceHeard>): void {
     if (!this.audio.voice.subtitles || heard.lufs < SUBTITLE_FLOOR) return
-    const line = VOICE_LINES.find((l) => l.id === e.line)
+    const line = lineOf(e.line)
     if (!line) return
     const el = document.createElement("div")
     const who = document.createElement("b")
-    who.textContent = CAST_NAMES[e.cast]
+    who.textContent = VOICE_NAMES[e.cast]
     el.append(who, line.text)
     if (heard.distance > 70) el.className = "far"
     el.style.opacity = String(Math.max(0.5, Math.min(1, (heard.lufs - SUBTITLE_FLOOR) / 18 + 0.5)))

@@ -114,6 +114,7 @@ export function buildSheet(s: PaperShape, shoulder: V3): { opaque: Float32Array<
   m.grid(nu, nv, (a, b) => paperPoint(a * SHEET.w, b * SHEET.h, s, rest), (a, b) => [a, b], OBJ.sheet, MAT.paper, true)
   lanyard(m, s, rest)
   leftGlove(m, s, shoulder)
+  watchHands(m)
   return { opaque: m.build() }
 }
 
@@ -248,6 +249,59 @@ function leftGlove(m: MeshBuilder, s: PaperShape, shoulder: V3) {
   m.tube(t.path, t.radii, OBJ.left, MAT.glove, 24, true, t.along, { up: [0, 0, 1], k: t.k })
   const wrist = inHand(f, [0.004, -0.115, -0.006])
   cuffAndSleeve(m, wrist, inHand(f, [0.002, -0.085, -0.004]), shoulder, OBJ.left)
+  watch(m, shoulder)
+}
+
+// ---------------------------------------------------------------- watch
+
+/** The watch's dial radius (m); the case is a little wider. */
+export const WATCH_DIAL = 0.0135
+const WATCH = { case: 0.0168, back: 0.0003, height: 0.0085, dial: 0.0072, band: 0.0095 }
+const LEFT_WRIST: V3 = [0.004, -0.115, -0.006]
+
+/**
+ * The watch on the inside of the left wrist, worn face-in over the cuff so it reads while you hold the map (the night's
+ * clock, NIGHT.md). Its frame in the sheet frame: origin on the case back, x towards 3 o'clock (the hand), y towards
+ * 12, z out of the glass.
+ */
+export function watchFrame(shoulder: V3): { o: V3; x: V3; y: V3; z: V3 } {
+  const f = leftFrame()
+  const wrist = inHand(f, LEFT_WRIST)
+  const towards = v3.norm(v3.sub(shoulder, wrist))
+  const palmSide = v3.scale(f.z, -1)
+  const z = v3.norm(v3.sub(palmSide, v3.scale(towards, v3.dot(palmSide, towards))))
+  const x = v3.scale(towards, -1)
+  const y = v3.cross(z, x)
+  return { o: v3.add(v3.add(wrist, v3.scale(towards, 0.03)), v3.scale(z, 0.0392)), x, y, z }
+}
+
+/** Case, dial and strap (sheet frame, with the left glove). The hands are `watchHands`, turned per frame. */
+function watch(m: MeshBuilder, shoulder: V3) {
+  const w = watchFrame(shoulder), W2 = WATCH
+  const at = (p: V3): V3 => v3.add(w.o, v3.add(v3.add(v3.scale(w.x, p[0]), v3.scale(w.y, p[1])), v3.scale(w.z, p[2])))
+  // Lathe profiles turn about +y; this lays them round the dial's z.
+  const lay = (p: V3) => at([p[0], -p[2], p[1]])
+  m.lathe([[0.001, -W2.back], [W2.case - 0.001, -W2.back], [W2.case, 0.0015], [W2.case + 0.0004, W2.height - 0.002], [W2.case - 0.0008, W2.height], [WATCH_DIAL + 0.0006, W2.height + 0.0003], [WATCH_DIAL + 0.0003, W2.dial]], 48, OBJ.left, MAT.metal, lay)
+  m.grid(48, 4, (u, v) => { const a = -u * Math.PI * 2, r = WATCH_DIAL * (0.02 + 0.98 * v); return at([Math.cos(a) * r, Math.sin(a) * r, W2.dial]) }, (u, v) => { const a = -u * Math.PI * 2, r = WATCH_DIAL * (0.02 + 0.98 * v); return [Math.cos(a) * r, Math.sin(a) * r] }, OBJ.left, MAT.dial)
+  // A nylon strap round the cuff, either side of the case.
+  const c = v3.sub(w.o, v3.scale(w.z, 0.0392)), b = v3.cross(v3.scale(w.x, -1), w.z)
+  m.grid(40, 2, (u, v) => {
+    const a = u * Math.PI * 2, s = (v - 0.5) * W2.band * 2
+    return v3.add(v3.add(c, v3.add(v3.scale(w.z, Math.cos(a) * 0.0398), v3.scale(b, Math.sin(a) * 0.0398))), v3.scale(w.x, s))
+  }, (u, v) => [u * 40, v * 0.02], OBJ.left, MAT.cord)
+}
+
+/** The watch's hour and minute hands in the dial frame (`watchFrame`, at 12): flat painted blades and a pin. */
+export function watchHands(m: MeshBuilder) {
+  const blade = (obj: number, len: number, w: number, z: number) => {
+    const tail = len * 0.22
+    const pts: [number, number][] = [[-w * 0.5, -tail], [w * 0.5, -tail], [w * 0.55, len * 0.7], [0, len], [-w * 0.55, len * 0.7]]
+    const p = (q: [number, number]): V3 => [q[0], q[1], z]
+    m.fan(pts.map(p), [0, 0, 1], (q) => [q[0] / w, q[1] / len], obj, MAT.hand, [0, 1, 0])
+  }
+  blade(OBJ.hour, WATCH_DIAL * 0.6, 0.0016, WATCH.dial + 0.0004)
+  blade(OBJ.minute, WATCH_DIAL * 0.88, 0.0011, WATCH.dial + 0.0007)
+  m.lathe([[0.0006, WATCH.dial], [0.0006, WATCH.dial + 0.0009], [0, WATCH.dial + 0.001]], 12, OBJ.minute, MAT.metal, (p) => [p[0], -p[2], p[1]])
 }
 
 // ---------------------------------------------------------------- compass

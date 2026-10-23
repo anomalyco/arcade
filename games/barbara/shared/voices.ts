@@ -1,4 +1,6 @@
-import { VOICE_LINES, type VoiceLine } from "./lines.gen"
+import { VOICE_LINES } from "./lines.gen"
+import type { ClueKind } from "./night"
+import { NIGHT_LINES, type NightLine } from "./night-lines.gen"
 import { nextRandom, terrainHeight, type WoodsWorld } from "./world"
 
 /**
@@ -16,9 +18,16 @@ import { nextRandom, terrainHeight, type WoodsWorld } from "./world"
 export const CAST = ["walt", "joyce", "gary", "dale", "tess", "owen"] as const
 export type CastId = (typeof CAST)[number]
 export const CAST_NAMES: Readonly<Record<CastId, string>> = { walt: "Walt", joyce: "Joyce", gary: "Gary", dale: "Dale", tess: "Tess", owen: "Owen" }
+/** Every voice a line can be in: the searchers, and Barbara on her cassette (`shared/night.ts`). */
+export type Voice = CastId | "barbara"
+export const VOICE_NAMES: Readonly<Record<Voice, string>> = { ...CAST_NAMES, barbara: "Barbara (tape)" }
 /** How loud a line is where it's said: a full shout carries through the woods, quiet words barely reach the next person. */
 export type Loudness = "shout" | "call" | "talk" | "quiet"
-export const POOLS = ["open", "call", "ask", "answer", "keep", "where", "here", "hear", "dismiss", "tape", "torch", "apart", "regroup", "light", "sighting", "sightreply", "clue", "coming", "bark"] as const
+export const POOLS = [
+  "open", "call", "ask", "answer", "keep", "where", "here", "hear", "dismiss", "tape", "torch", "apart", "regroup", "light", "sighting", "sightreply", "clue", "coming", "bark",
+  // The night's (NIGHT.md): a reaction to each clue, dawn coming and come, the cassette, and the extra searcher's call.
+  "car", "page", "badge", "cassette", "strip", "dawn", "daylight", "tape-tower", "extra",
+] as const
 export type Pool = (typeof POOLS)[number]
 
 /** People take searchers in this order; bots (by id) take these. Solo, you are Owen. */
@@ -28,7 +37,7 @@ export const BOT_ORDER: readonly CastId[] = ["walt", "joyce", "gary", "dale", "t
 export type VoiceEvent = {
   kind: "voice"
   line: string
-  cast: CastId
+  cast: Voice
   /** The walker saying it, or −1 for a searcher out in the woods nobody plays. */
   by: number
   /** Where it's said (m), mouth height. */
@@ -70,7 +79,9 @@ export type VoiceFeel = { chatter: number; voicePeople: number }
 export type Walker = { id: number; bot: boolean; x: number; z: number; light: boolean; flickerLeft: number; signal: number }
 export type VoiceCue =
   | { kind: "tape-tied"; by: number; x: number; z: number }
-  | { kind: "marker-found"; by: number; x: number; z: number }
+  | { kind: "clue-found"; by: number; x: number; z: number; what: ClueKind }
+  | { kind: "dawn" }
+  | { kind: "daylight" }
   | { kind: "signal"; by: number; x: number; z: number }
   | { kind: "distant"; x: number; z: number; at: number }
   | { kind: "creature"; x0: number; z0: number; x1: number; z1: number; at: number; dur: number }
@@ -100,7 +111,10 @@ export function voiceRoles(walkers: readonly { id: number; bot: boolean }[], bot
   return { byWalker, roaming: CAST.filter((c) => !used.has(c)) }
 }
 
-const linesOf = (cast: CastId, pool: Pool) => VOICE_LINES.filter((l) => l.cast === cast && l.pool === pool)
+const ALL_LINES: readonly NightLine[] = [...VOICE_LINES, ...NIGHT_LINES]
+const linesOf = (cast: Voice, pool: Pool) => ALL_LINES.filter((l) => l.cast === cast && l.pool === pool)
+/** A line by id, from the searchers' or the night's. */
+export const lineOf = (id: string): NightLine | undefined => ALL_LINES.find((l) => l.id === id)
 const dist = (ax: number, az: number, bx: number, bz: number) => Math.sqrt((ax - bx) * (ax - bx) + (az - bz) * (az - bz))
 
 /** A random unit direction by rejection sampling (no trig, so every engine agrees). */
@@ -196,13 +210,18 @@ export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly 
 
   // ── reactions ──
   for (const c of cues) {
-    if (c.kind === "marker-found") {
+    if (c.kind === "clue-found") {
+      // The finder says what it is, in their own words; someone near answers.
       const finder = all.find((s) => s.by === c.by)
       if (finder && (!finder.person || keyPeople)) {
-        plan(vs, { at: t + 0.4, cast: finder.cast, pool: "clue", key: true })
+        plan(vs, { at: t + 0.4, cast: finder.cast, pool: c.what, key: true })
         const other = nearestTo(all, c.x, c.z, 160, { not: finder.cast, people: keyPeople })
-        if (other) plan(vs, { at: t + 0.5, cast: other.cast, pool: "coming", key: true })
+        if (other && c.what !== "strip") plan(vs, { at: t + 0.5, cast: other.cast, pool: "coming", key: true })
       }
+    } else if (c.kind === "dawn" || c.kind === "daylight") {
+      // Whoever has a line for it and isn't one of the people (Walt first).
+      const s = (["walt", "joyce", "gary"] as const).map((k) => all.find((x) => x.cast === k && !x.person)).find((x) => x && linesOf(x.cast, c.kind).length)
+      if (s) plan(vs, { at: t + 0.2, cast: s.cast, pool: c.kind, key: true })
     } else if (c.kind === "creature") {
       // Shaken and quiet, from whoever is nearest the crossing, while it crosses.
       const mx = (c.x0 + c.x1) / 2, mz = (c.z0 + c.z1) / 2
@@ -316,16 +335,28 @@ export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly 
   return out
 }
 
-function say(vs: VoiceState, world: WoodsWorld, line: VoiceLine, s: Speaker, people: readonly Walker[], t: number): VoiceEvent {
+function say(vs: VoiceState, world: WoodsWorld, line: NightLine, s: Pick<Speaker, "by" | "x" | "z">, people: readonly Walker[], t: number): VoiceEvent {
   let reach = 0
   for (const p of people) reach = Math.max(reach, Math.min(dist(s.x, s.z, p.x, p.z), CARRY[line.loud]))
   // The next line waits for this one to reach everyone and end, then a breath.
   vs.busyUntil = t + reach / SPEED_OF_SOUND + line.seconds + 0.5
-  vs.last[CAST.indexOf(line.cast)] = t
+  if (line.cast !== "barbara") vs.last[CAST.indexOf(line.cast)] = t
   vs.recent.push(line.id)
   if (vs.recent.length > 14) vs.recent.shift()
   const cm = (v: number) => Math.round(v * 100) / 100
   return { kind: "voice", line: line.id, cast: line.cast, by: s.by, x: cm(s.x), y: cm(terrainHeight(world.terrain, s.x, s.z) + MOUTH), z: cm(s.z), at: Math.round(t * 1000) / 1000, seq: vs.seq++ }
+}
+
+/** Barbara's cassette, played from the hand of whoever found it (`shared/night.ts`): where she said she was going. */
+export function sayTape(vs: VoiceState, world: WoodsWorld, from: { id: number; x: number; z: number }, walkers: readonly Walker[], t: number): VoiceEvent {
+  const line = linesOf("barbara", "tape-tower")[0]!
+  return say(vs, world, line, { by: from.id, x: from.x, z: from.z }, walkers.filter((w) => !w.bot), t)
+}
+
+/** The extra searcher (STORY.md key moment 5): Walt's voice shouting "Over here!" from the ridge, where none of them is. */
+export function sayExtra(vs: VoiceState, world: WoodsWorld, x: number, z: number, walkers: readonly Walker[], t: number): VoiceEvent {
+  const line = linesOf("walt", "extra")[0]!
+  return say(vs, world, line, { by: -1, x, z }, walkers.filter((w) => !w.bot), t)
 }
 
 /** Until when the woods' distant sounds should wait for the voices (`holdDistant`). */

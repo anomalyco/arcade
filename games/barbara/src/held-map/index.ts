@@ -6,11 +6,12 @@ import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
 import type { MapKnowledge, WoodsState } from "../../shared/sim"
 import type { WoodsWorld } from "../../shared/world"
 import { COMPASS } from "./compass-face"
-import { VERTEX_FLOATS, v3, type V3 } from "./mesh"
+import { OBJ_COUNT, VERTEX_FLOATS, v3, type V3 } from "./mesh"
 import { MipGen, mippedTexture } from "./mips"
 import { PencilLayer } from "./pencil"
 import type { PrintReply, PrintRequest } from "./print-jobs"
-import { buildCompass, buildSheet, buildTorch, CAPSULE, COMPASS_ON_SHEET, compassRest, leftThumb, type PaperShape } from "./props"
+import { watchMinutes } from "../../shared/night"
+import { buildCompass, buildSheet, buildTorch, CAPSULE, COMPASS_ON_SHEET, compassRest, leftThumb, watchFrame, type PaperShape } from "./props"
 import { heldShader, HELD_FLOATS } from "./shader"
 import { scaleOf, SHEET } from "./sheet"
 
@@ -349,6 +350,8 @@ export class HeldMap {
   private fibreAsked = false
   private shapeKey = ""
   private thumb: V3[] = []
+  /** The watch on the left wrist (sheet frame), for its hands. */
+  private watch: ReturnType<typeof watchFrame> | null = null
   private wear: ImageBitmap | null = null
   private imagesReady = false
   private u = new Float32Array(HELD_FLOATS)
@@ -565,7 +568,9 @@ export class HeldMap {
     const first = !this.shapeKey
     this.shapeKey = key
     const inv = invertRigid(this.sheetPose(1, 0, 0, 0))
-    const sheet = buildSheet(this.shape(), point(inv, HeldMap.LEFT_SHOULDER))
+    const shoulder = point(inv, HeldMap.LEFT_SHOULDER)
+    const sheet = buildSheet(this.shape(), shoulder)
+    this.watch = watchFrame(shoulder)
     this.pass.setMesh("opaque", 0, sheet.opaque)
     this.thumb = leftThumb(this.shape())
     if (first) {
@@ -705,9 +710,13 @@ export class HeldMap {
     u.set(perspective(s.vmFov * DEG, f.aspect, 0.02, 4), 0)
     u.set(invView, 16)
     u.set(invertRigid(mul(invView, compass)), 32)
-    const objs = [sheet, compass, bezel, needle, bubble, sheet, torch]
+    // The watch's hands: the night's clock (`watchMinutes`), turning clockwise from 12 about the dial's z.
+    const wf = this.watch, wb = wf ? mul(sheet, basis(wf.x, wf.y, wf.z, wf.o)) : sheet
+    const mins = watchMinutes(f.state.night, f.state.t)
+    const hour = mul(wb, rotZ(-((mins / 720) % 1) * Math.PI * 2)), minute = mul(wb, rotZ(-((mins / 60) % 1) * Math.PI * 2))
+    const objs = [sheet, compass, bezel, needle, bubble, sheet, torch, hour, minute]
     objs.forEach((m, i) => u.set(m, 48 + i * 16))
-    let o = 48 + 7 * 16
+    let o = 48 + OBJ_COUNT * 16
     u.set([eye[0], eye[1], eye[2], f.time], o); o += 4
     const tone = s.gloveTone
     u.set([0.0016 * s.ambient, 0.002 * s.ambient, 0.003 * s.ambient, 0], o); o += 4
@@ -782,5 +791,5 @@ export class HeldMap {
   }
 
   /** Automation readout. */
-  get debug() { return { floor: [...this.u.slice(176, 188)].map((x) => +x.toFixed(4)), visible: this.pass.visible, active: this.pass.active, raise: this.raise.x, needle: this.needle.phi, bubble: [this.bubble.x, this.bubble.y], timings: this.timings, printSize: this.printSize(), compassOnSheet: COMPASS_ON_SHEET } }
+  get debug() { return { floor: [...this.u.slice(48 + OBJ_COUNT * 16 + 16, 48 + OBJ_COUNT * 16 + 28)].map((x) => +x.toFixed(4)), visible: this.pass.visible, active: this.pass.active, raise: this.raise.x, needle: this.needle.phi, bubble: [this.bubble.x, this.bubble.y], timings: this.timings, printSize: this.printSize(), compassOnSheet: COMPASS_ON_SHEET } }
 }
