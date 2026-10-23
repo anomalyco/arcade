@@ -3,9 +3,8 @@ import { writeFile } from "node:fs/promises"
 import type { Browser } from "playwright-core"
 import type { VoiceChat } from "../../packages/kit/voice"
 import type { WoodsAudio } from "../../games/barbara/src/audio"
-import type { OnlineSession } from "../../games/barbara/src/session"
 
-type Woods = { voice: VoiceChat; audio: WoodsAudio; session: OnlineSession; frames: number; autoplay: boolean; drop(): void }
+type Woods = { voice: VoiceChat; audio: WoodsAudio; session: { me: number; close(): void }; frames: number; autoplay: boolean; drop(): void }
 declare const woods: Woods
 declare global {
   interface Window {
