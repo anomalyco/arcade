@@ -14,6 +14,12 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Explicit desktop Ultra (BARBARA).** Shared quality accepts an optional `ultra` profile; Auto remains capped at
+  High. Ultra sheds resolution/tiers on slow frames and the shared Settings readout reports the actual tier and
+  scale. One M4 Pro Metal run at 1600×900: High 15.4–15.5 ms/frame, Ultra 19.2–19.5; at DPR 2 (2400×1350 vs
+  native 3200×1800), 23.9–24.1 vs 40.6–41.0 ms. Static warmed view, cached shadows, before combined deploy #476;
+  this is not a walking/60 fps guarantee. Settings and proof method: [perf/barbara-ultra.md](../perf/barbara-ultra.md).
+
 - **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
   halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
   non-emissive surfaces in HDR alpha; `forest/post.ts` limits those source taps before the bloom downsample.

@@ -10,8 +10,52 @@ import {
   type QualityTiers,
 } from "./quality"
 import { GameQuality, qualityStorageKey } from "./client/quality"
+import { FOREST_QUALITY } from "./forest/settings"
 
 describe("@arcade/kit/quality", () => {
+  test("Ultra is per-game opt-in, saved and pinned without making Auto choose it", () => {
+    const store = new Map<string, string>()
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }
+    const q = new GameQuality({ game: "forest", tiers: FOREST_QUALITY, storage, stepDown: "slow-frames" })
+    expect(q.modes).toEqual(["auto", "ultra", "high", "balanced", "low"])
+    for (let i = 1; i < 1000; i++) q.frame(i * 16.7)
+    expect(q.tier).toBe("high")
+    q.setMode("ultra")
+    const canvas = { width: 0, height: 0 }
+    q.fit(canvas, 1600, 900, 2)
+    expect(canvas).toEqual({ width: 3200, height: 1800 })
+    expect(new GameQuality({ game: "forest", tiers: FOREST_QUALITY, storage }).mode).toBe("ultra")
+    const pinned = new GameQuality({ game: "forest", tiers: FOREST_QUALITY, storage, params: new URLSearchParams("quality=ultra") })
+    for (let i = 1; i < 600; i++) pinned.frame(i * 50)
+    expect(pinned.tier).toBe("ultra")
+    expect(pinned.resolutionScale).toBe(1)
+    const standard = new GameQuality({ game: "forest", tiers: QUALITY_PROFILES, storage })
+    expect(standard.mode).toBe("high")
+    expect(standard.modes).not.toContain("ultra")
+    standard.setMode("ultra")
+    expect(standard.settings.quality).toBe("high")
+    expect(standard.profile).toBe(QUALITY_PROFILES.high)
+  })
+
+  test("Ultra adapts on slow frames, keeps the requested mode and recovers only as far as High", () => {
+    const q = new AdaptiveQualityController({ mode: "ultra", profiles: FOREST_QUALITY, warmupFrames: 0, adaptWindowMs: 100, minWindowSamples: 2 })
+    let now = 100
+    for (let i = 0; i < 100; i++) q.recordFrame(16.7, 20, now += 16.7)
+    expect(q.getActiveTier()).toBe("ultra") // GPU headroom alone never demotes Ultra.
+    expect(q.getResolutionScale()).toBe(1)
+    for (let i = 0; i < 30; i++) q.recordFrame(33.4, 25, now += 33.4)
+    expect(q.getActiveTier()).not.toBe("ultra")
+    expect(q.getMode()).toBe("ultra")
+    for (let i = 0; i < 3000; i++) q.recordFrame(16.7, 3, now += 16.7)
+    expect(q.getActiveTier()).toBe("high")
+    q.setMode("ultra")
+    expect(q.getActiveTier()).toBe("ultra")
+    expect(q.getResolutionScale()).toBe(1)
+    q.setMode("auto")
+    for (let i = 0; i < 1000; i++) q.recordFrame(16.7, 3, now += 16.7)
+    expect(q.getActiveTier()).toBe("high")
+  })
+
   test("resolves quality modes and storage persistence", () => {
     expect(resolveQualityMode("auto")).toBe("auto")
     expect(resolveQualityMode("high")).toBe("high")

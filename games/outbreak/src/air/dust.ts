@@ -12,7 +12,7 @@ export const FLASH_MOTES = 18432
 /** Mote cells per lamp (cells grow with the lamp's reach so its box fits). */
 export const LAMP_MOTES = 768
 /** How many lamps get motes, by quality tier; the flashlight's always do. */
-export const DUST_LAMPS_BY_TIER: Readonly<Record<QualityTier, number>> = { high: 12, balanced: 6, low: 0 }
+export const DUST_LAMPS_BY_TIER: Readonly<Record<QualityTier, number>> = { ultra: 12, high: 12, balanced: 6, low: 0 }
 
 /**
  * Dust motes drifting in the light. Air is a world-anchored lattice of cells, each holding at most one mote that

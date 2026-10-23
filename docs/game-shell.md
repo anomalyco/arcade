@@ -14,6 +14,10 @@ tool; the shell is what players see.
 2. **Default graphics is High (Auto starts High).** Build quality with `createShellQuality`: Auto starts at the
    game's High tier and steps down only on measured slow frames (startup and runtime), never on GPU headroom alone.
    The pick is saved per game (`arcade.quality.<game>.v1`) and applies live. `?quality=` pins a mode for automation.
+   A game can opt into **Ultra** by supplying `tiers.ultra`; other games keep their four choices. Auto never picks
+   Ultra. An explicit Ultra choice starts at full resolution, then may shed resolution and tiers on slow frames.
+   Once it leaves Ultra, recovery stops at High until the player selects Ultra again. `?quality=ultra` pins it
+   for measurement. Unsupported Ultra requests fall back to High.
 3. **Volume and mute are always reachable from the title and the Escape menu**: the speaker and gear buttons in the
    card's corner, and M (unless the game gives M to something else, like Outbreak's map, and passes `muteKey: false`).
 4. **No game ships its own volume or quality UI.** The Lab panel may keep designer mix levels (renamed "Mix level"
@@ -78,6 +82,15 @@ keeps High unless the startup frames miss the budget (over 1.25× → Balanced, 
 windows shed resolution, then a tier. The older `"headroom"` policy, still the controller's default, also stepped down
 when GPU time alone left little headroom. Record frames only in play (`shell.playing`): the title and the menu are
 not the game's real load.
+
+Settings reads the active tier live, including while a room keeps running behind it: `Auto: Balanced`, or
+`Ultra: High` after a downgrade. Reduced resolution is reported as a percentage of that tier's DPR, for example
+`Ultra: Ultra · 90% resolution`. The requested mode stays selected and saved.
+
+Barbara's Ultra draws at native DPR up to 2, with 12 fog samples and mist steps, full-detail trunks to 60 m,
+ferns to 22 m and distant geometry to 180 m (the camera already reaches 300 m). Its shadow cap remains 2048,
+the spot-shadow API's current limit; the authored shadow-size setting still applies. It retains High's two
+torch-shadow slots and 4K map print. Measurements: [Barbara Ultra](../perf/barbara-ultra.md).
 
 ## Checklist for a new game
 

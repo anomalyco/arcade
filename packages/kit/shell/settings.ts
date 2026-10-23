@@ -9,6 +9,9 @@ export interface ShellQuality {
   readonly mode: QualityMode
   /** The tier in force: what Auto settled on, or the pinned tier. */
   readonly tier: QualityTier
+  /** Omitted by older adapters: Auto, High, Balanced and Low. */
+  readonly modes?: readonly QualityMode[]
+  readonly resolutionScale?: number
   setMode(mode: QualityMode): void
 }
 

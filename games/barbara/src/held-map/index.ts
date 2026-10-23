@@ -443,7 +443,7 @@ export class HeldMap {
 
   private printSize() {
     const r = this.settings.printRes
-    return r === "auto" ? (this.tier === "high" ? 4096 : 2048) : Number(r)
+    return r === "auto" ? (this.tier === "high" || this.tier === "ultra" ? 4096 : 2048) : Number(r)
   }
 
   private rebind() {

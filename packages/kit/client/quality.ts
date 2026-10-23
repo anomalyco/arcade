@@ -19,7 +19,7 @@ export type GameQualityOptions<P extends QualityScaling> = {
   /** The game's id; the player's choice is saved per game. */
   game: string
   tiers: QualityTiers<P>
-  /** `?quality=auto|high|balanced|low` pins a mode for automation (not saved). */
+  /** `?quality=auto|ultra|high|balanced|low` pins a mode for automation (not saved); Ultra requires a profile. */
   params?: URLSearchParams
   storage?: QualityStorage | null
   /** Latest GPU frame time in ms (hardware timestamps, or queue wait); 0 or null when unknown. */
@@ -59,8 +59,8 @@ export class GameQuality<P extends QualityScaling> {
     this.pinned = Boolean(pinned)
     const automated = typeof navigator !== "undefined" && navigator.webdriver
     const mode = pinned ? resolveQualityMode(pinned) : (!automated && loadSavedQualityMode(this.storage, this.key)) || "auto"
-    this.controller = new AdaptiveQualityController({ mode, profiles: options.tiers, stepDown: options.stepDown })
-    this.settings = { quality: mode }
+    this.controller = new AdaptiveQualityController({ mode, profiles: options.tiers, stepDown: options.stepDown, adaptUltra: !this.pinned })
+    this.settings = { quality: this.mode }
   }
 
   get mode(): QualityMode {
@@ -76,12 +76,20 @@ export class GameQuality<P extends QualityScaling> {
     return this.controller.getActiveTier()
   }
 
+  get modes(): readonly QualityMode[] {
+    return this.controller.profiles.ultra ? ["auto", "ultra", "high", "balanced", "low"] : ["auto", "high", "balanced", "low"]
+  }
+
+  get resolutionScale(): number {
+    return this.controller.getResolutionScale()
+  }
+
   /** Picks a mode (Auto restarts its startup probe) and, unless `persist` is false, saves it as the player's choice. */
   setMode(mode: QualityMode | string, persist = true): void {
     const next = resolveQualityMode(mode)
     const changed = this.controller.setMode(next)
-    this.settings.quality = next
-    if (persist) saveQualityMode(this.storage, next, this.key)
+    this.settings.quality = this.mode
+    if (persist) saveQualityMode(this.storage, this.mode, this.key)
     this.lastFrame = 0
     if (changed) this.onChange?.(this.profile)
   }
@@ -133,6 +141,7 @@ export class GameQuality<P extends QualityScaling> {
       group,
       options: [
         { value: "auto", label: "Auto (adaptive)" },
+        ...(t.ultra ? [{ value: "ultra", label: t.ultra.label }] : []),
         { value: "high", label: t.high.label },
         { value: "balanced", label: t.balanced.label },
         { value: "low", label: t.low.label },
@@ -161,7 +170,7 @@ export class GameQuality<P extends QualityScaling> {
 
   /** Whether GPU timing should run: Auto needs it, and a `?quality=` pin is automation that reports it. */
   get wantsGpuTiming(): boolean {
-    return this.mode === "auto" || this.pinned
+    return this.mode === "auto" || this.mode === "ultra" || this.pinned
   }
 }
 

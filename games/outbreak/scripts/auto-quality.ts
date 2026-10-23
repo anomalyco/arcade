@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { AdaptiveQualityController, type QualityTier } from "@arcade/kit/quality"
+import { AdaptiveQualityController, type StandardQualityTier as QualityTier } from "@arcade/kit/quality"
 import { type Page } from "playwright-core"
 import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
@@ -146,6 +146,7 @@ try {
     const intervals: [number, number, number][] = []
     while (now - start < seconds * 1000) {
       const st = ctrl.state(dpr)
+      if (st.activeTier === "ultra") throw new Error("Outbreak Auto must not select Ultra")
       const g = gpuAt(scene, st.activeTier, st.pixelRatio) * (1 + (rand() - 0.5) * 0.2) * (++frame % 40 === 0 ? 1.5 : 1)
       const interval = Math.max(1, Math.ceil((cpuMs + g + 0.6) / TICK - 1e-6)) * TICK
       now += interval
@@ -167,6 +168,7 @@ try {
     })
   }
   const settled = ctrl.state(dpr)
+  if (settled.activeTier === "ultra") throw new Error("Outbreak Auto must not select Ultra")
 
   // 3. Stills: High against Auto's pick at the crossroads.
   const shoot = async (tier: QualityTier, scale: number, name: string) => {
