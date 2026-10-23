@@ -132,10 +132,11 @@ describe("@arcade/kit/shell flow", () => {
     expect(flow.screen).toBe("title")
   })
 
-  test("pointer lock: losing it pauses, its own Escape is not a second press, a refusal never strands the menu", () => {
+  test("pointer lock: losing it pauses, its own Escape is not a second press, a refusal never strands the menu", async () => {
     const doc = new FakeDoc(), win = new EventTarget(), canvas = {} as HTMLElement
+    const relockMs = { afterEsc: 40, retry: 20 }
     let panel = false
-    const flow = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, blocked: () => panel, requestLock: (el) => doc.setLock(el as never) })
+    const flow = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, blocked: () => panel, requestLock: (el) => doc.setLock(el as never), relockMs })
     flow.play()
     expect(flow.screen).toBe("playing")
     doc.setLock(null) // the browser ate Esc
@@ -145,11 +146,26 @@ describe("@arcade/kit/shell flow", () => {
     panel = true
     expect(flow.overlay).toBe(null)
     panel = false
+    // One click on Resume right after the player's Esc: the request waits out the browser's cooldown, no second click.
+    flow.resume()
+    expect(flow.arming).toBe(true)
+    expect(flow.screen).toBe("paused")
+    await Bun.sleep(60)
+    expect(flow.arming).toBe(false)
+    expect(flow.screen).toBe("playing")
+    // The shell's own release (pause, Settings) has no cooldown: Resume takes the lock at once.
+    flow.pause()
+    expect(flow.screen).toBe("paused")
     flow.resume()
     expect(flow.screen).toBe("playing")
-    const refusing = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, requestLock: () => doc.dispatchEvent(new Event("pointerlockerror")) })
-    doc.setLock(null)
-    refusing.resume()
+    // A refusal is retried once quietly; refused again, the menu stays up and says so.
+    let asked = 0
+    const other = new FakeDoc()
+    const refusing = new ShellFlow({ doc: other as never, win: win as never, pointerLock: canvas, requestLock: () => (asked++, other.dispatchEvent(new Event("pointerlockerror"))), relockMs })
+    refusing.play()
+    expect(refusing.lockRefused).toBe(false)
+    await Bun.sleep(80)
+    expect(asked).toBe(2)
     expect(refusing.screen).toBe("title")
     expect(refusing.lockRefused).toBe(true)
   })

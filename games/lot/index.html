@@ -10,6 +10,9 @@
       html, body { margin: 0; height: 100%; background: #0d1016; color: #e8eef4; font-family: monospace; overflow: hidden; }
       #view { width: 100vw; height: 100vh; display: block; }
       #hud { position: fixed; bottom: 22px; left: 24px; pointer-events: none; font-size: 12px; display: flex; gap: 18px; align-items: center; opacity: 0.65; }
+      /* The shell's hint row says the same while the title or the Escape menu is up. */
+      #hud { transition: opacity 0.3s; }
+      html[data-shell] #hud { opacity: 0; }
       #credits { position: fixed; bottom: 24px; right: 24px; color: #c6c9ca; font-size: 11px; opacity: .65; }
     </style>
   </head>

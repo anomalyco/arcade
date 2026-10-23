@@ -24,6 +24,8 @@ export type ShellFlowOptions = {
   start?: "title" | "playing"
   /** Requests the lock (tests swap it out); `requestCanvasPointerLock` by default. */
   requestLock?: (el: HTMLElement) => void
+  /** How long a click's lock request waits after the player's Esc, and before its one retry (tests shorten them). */
+  relockMs?: { afterEsc: number; retry: number }
   doc?: Doc
   win?: Win
 }
@@ -42,7 +44,16 @@ export class ShellFlow {
   private settingsFromPlay = false
   /** When the pointer lock last went: an Escape right after it is the one that released it, not a second press. */
   private lostAt = -Infinity
+  /** The player let go of the lock (Esc, a Cmd-Tab), not the shell: the browser refuses a new lock for a moment. */
+  private userLost = false
+  /** The shell is releasing the lock itself (pause, Leave), which the browser doesn't hold against the next lock. */
+  private releasing = false
   private _lockRefused = false
+  /** A click's lock request, held until the browser's cooldown after Esc is over. */
+  private pending: ReturnType<typeof setTimeout> | null = null
+  /** When the click asked for the lock, and whether its one quiet retry is spent. */
+  private askedAt = -Infinity
+  private retried = false
   private readonly listeners = new Set<() => void>()
   private readonly doc: Doc
   private readonly win: Win
@@ -56,6 +67,12 @@ export class ShellFlow {
     this.begun = o.start === "playing"
     this.on(this.doc, "pointerlockchange", () => this.lockChanged())
     this.on(this.doc, "pointerlockerror", () => {
+      // Refused (still the browser's cooldown): the click's activation lasts a few seconds, so ask once more quietly.
+      if (!this.retried && now() - this.askedAt < RETRY_WITHIN_MS && this.target) {
+        this.retried = true
+        this.schedule(this.o.relockMs?.retry ?? RETRY_AFTER_MS)
+        return
+      }
       this._lockRefused = true
       this.emit()
     })
@@ -82,9 +99,14 @@ export class ShellFlow {
     return this._settingsOpen && this.screen !== "playing"
   }
 
-  /** The browser refused the last lock request (too soon after Esc); the menu stays and says to click again. */
+  /** The browser refused the last lock request even after waiting; the menu stays and says to click again. */
   get lockRefused(): boolean {
     return this._lockRefused
+  }
+
+  /** A click asked for the lock and the shell is waiting out the browser's cooldown after Esc to take it. */
+  get arming(): boolean {
+    return this.pending !== null
   }
 
   /** Has the player left the title since the page (or the last Leave)? */
@@ -116,7 +138,7 @@ export class ShellFlow {
   pause(): void {
     if (!this.begun) return
     if (this.target) {
-      if (this.locked) this.doc.exitPointerLock?.()
+      if (this.locked) this.release()
     } else this.pausedFlag = true
     this.emit()
   }
@@ -138,7 +160,8 @@ export class ShellFlow {
     this.begun = false
     this.pausedFlag = false
     this._settingsOpen = false
-    if (this.target && this.locked) this.doc.exitPointerLock?.()
+    this.cancelLock()
+    if (this.target && this.locked) this.release()
     this.emit()
   }
 
@@ -168,6 +191,7 @@ export class ShellFlow {
   }
 
   dispose(): void {
+    this.cancelLock()
     for (const off of this.abort) off()
     this.listeners.clear()
   }
@@ -176,9 +200,38 @@ export class ShellFlow {
     return this.target !== null && this.doc.pointerLockElement === this.target
   }
 
+  /** Asks for the lock from a click. Right after the player's own Esc the browser refuses it, so the request waits out that cooldown (well inside the click's activation): one click is always enough. */
   private lock(): void {
     if (!this.target) return
-    ;(this.o.requestLock ?? defaultLock)(this.target)
+    this.askedAt = now()
+    this.retried = false
+    this.schedule(this.userLost ? this.lostAt + (this.o.relockMs?.afterEsc ?? RELOCK_AFTER_MS) - now() : 0)
+  }
+
+  private schedule(wait: number): void {
+    this.cancelLock()
+    const target = this.target
+    if (!target) return
+    const ask = () => {
+      this.pending = null
+      if (this.begun && this.locked) return
+      ;(this.o.requestLock ?? defaultLock)(target)
+      this.emit()
+    }
+    if (wait <= 0) return ask()
+    this.pending = setTimeout(ask, wait)
+    this.emit()
+  }
+
+  private cancelLock(): void {
+    if (this.pending === null) return
+    clearTimeout(this.pending)
+    this.pending = null
+  }
+
+  private release(): void {
+    this.releasing = true
+    this.doc.exitPointerLock?.()
   }
 
   private lockChanged(): void {
@@ -186,7 +239,12 @@ export class ShellFlow {
       this.begun = true
       this._settingsOpen = false
       this._lockRefused = false
-    } else this.lostAt = now()
+      this.cancelLock()
+    } else {
+      this.lostAt = now()
+      this.userLost = !this.releasing
+    }
+    this.releasing = false
     this.emit()
   }
 
@@ -215,6 +273,10 @@ export class ShellFlow {
 }
 
 const now = () => (typeof performance === "undefined" ? Date.now() : performance.now())
+/** Chrome refuses a lock for about a second after the player's Esc (crbug 40779661); a click's activation lasts 5 s. */
+const RELOCK_AFTER_MS = 1100
+const RETRY_AFTER_MS = 500
+const RETRY_WITHIN_MS = 4000
 
 function defaultLock(el: HTMLElement): void {
   const c = el as HTMLElement & { requestPointerLock(o?: { unadjustedMovement?: boolean }): Promise<void> | void }
