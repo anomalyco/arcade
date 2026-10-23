@@ -402,9 +402,9 @@ function walkTsFiles(dir: string): string[] {
   return out
 }
 
-function listRepoTsFiles(root: string, relDir: string): string[] {
+function listRepoTsFiles(root: string, relDirs: readonly string[]): string[] {
   if (existsSync(join(root, ".git"))) {
-    const res = spawnSync("git", ["ls-files", "-co", "--exclude-standard", "--", relDir], {
+    const res = spawnSync("git", ["ls-files", "-co", "--exclude-standard", "--", ...relDirs], {
       cwd: root,
       encoding: "utf8",
     })
@@ -417,18 +417,21 @@ function listRepoTsFiles(root: string, relDir: string): string[] {
         .filter((full) => existsSync(full))
     }
   }
-  return walkTsFiles(resolve(root, relDir))
+  return relDirs.flatMap((relDir) => walkTsFiles(resolve(root, relDir)))
 }
 
 export function collectGameSharedImports(repoRoot: string): Record<ArchitectureGameId, Set<string>> {
   const root = resolve(repoRoot)
   const kitRoot = resolve(root, "packages/kit")
   const result = {} as Record<ArchitectureGameId, Set<string>>
+  const files = listRepoTsFiles(root, ARCHITECTURE_GAMES.flatMap((game) => [...game.dirs]))
 
   for (const game of ARCHITECTURE_GAMES) {
     const specs = new Set<string>()
     for (const relDir of game.dirs) {
-      for (const file of listRepoTsFiles(root, relDir)) {
+      const prefix = resolve(root, relDir) + "/"
+      for (const file of files) {
+        if (!file.startsWith(prefix)) continue
         const src = readFileSync(file, "utf8")
         for (const match of src.matchAll(/from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g)) {
           const raw = match[1] ?? match[2]
@@ -476,8 +479,10 @@ export function findUnclassifiedSharedImports(
   return [...unclassified].sort()
 }
 
-export function buildArchitectureMapTable(repoRoot: string): string {
-  const gameImports = collectGameSharedImports(repoRoot)
+export function buildArchitectureMapTable(
+  repoRoot: string,
+  gameImports = collectGameSharedImports(repoRoot),
+): string {
   const headers = [
     "Shared module (`@arcade/kit` / `@arcade/knobs`)",
     "Responsibility",

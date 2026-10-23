@@ -3,7 +3,11 @@ import { LINKS, LinkQueue, TcpLink } from "./net/link-sim"
 import { InputRelay, RollbackClient, type RollbackSim, TickPacer } from "./net/rollback"
 import { mulberry32 } from "./sim/rng"
 
-const soak = process.env.ARCADE_TEST_SOAK === "1"
+const soakSetting = process.env.ARCADE_TEST_SOAK
+if (soakSetting !== undefined && soakSetting !== "0" && soakSetting !== "1") {
+  throw new Error("ARCADE_TEST_SOAK must be unset, 0 or 1")
+}
+const soak = soakSetting === "1"
 
 /** Two counters: each tick adds each seat's input; a "wrap" event every time one passes a multiple of 10. */
 type S = { x: [number, number] }

@@ -25,6 +25,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 
 ## Shared code and conventions
 
+- [../packages/kit/TESTING.md](../packages/kit/TESTING.md): fast tests, opt-in soaks and the nightly network/audio/Walkers training checks.
+
 - [prototyping.md](prototyping.md): the toy-first workflow (`bun scripts/new-toy.ts <name>`): how to prove game feel
   on `@arcade/kit` primitives and `LabPanel` knobs before building custom meshes, shaders or multiplayer rooms.
 - [shared-code.md](shared-code.md): what the games still duplicate and what belongs in `packages/kit/`. Check

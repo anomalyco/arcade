@@ -7,7 +7,11 @@ import { jointAngle, makeBox, makeJoint, makeStatics, World, worldHash } from ".
 import { initParams, Policy } from "../shared/policy"
 import { envFor, TASK_IDS } from "../shared/tasks"
 
-const soak = process.env.ARCADE_TEST_SOAK === "1"
+const soakSetting = process.env.ARCADE_TEST_SOAK
+if (soakSetting !== undefined && soakSetting !== "0" && soakSetting !== "1") {
+  throw new Error("ARCADE_TEST_SOAK must be unset, 0 or 1")
+}
+const soak = soakSetting === "1"
 
 describe("fmath", () => {
   test("matches Math closely", () => {

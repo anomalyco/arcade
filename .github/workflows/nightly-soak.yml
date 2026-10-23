@@ -1,0 +1,35 @@
+name: nightly-soak
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: kit soak
+            directory: packages/kit
+            script: test:soak
+          - name: walkers soak
+            directory: games/walkers
+            script: test:soak
+          - name: walkers training
+            directory: games/walkers
+            script: test:training
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd ${{ matrix.directory }} ${{ matrix.script }}

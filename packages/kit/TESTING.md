@@ -1,5 +1,8 @@
 # Fast tests and opt-in soaks
 
+The full network/audio checks and Walkers physics/training checks run nightly at 03:17 UTC in
+[`nightly-soak.yml`](../../.github/workflows/nightly-soak.yml), which also supports manual dispatch.
+
 Run the default suite through a cargo worker from the repository root:
 
 ```sh
@@ -10,6 +13,8 @@ Rollback tests cover all four room rates over 10 seconds. Seed 3 and a change ev
 arrival estimate enough samples to settle: each run requires at least 200 input changes, ten head-of-line holds
 and ten packets delayed over 100 ms. Link tests use 4–10 second windows and separately exercise loss and stalls.
 TCP delivers in order; loss delays delivery rather than dropping application messages.
+
+`ARCADE_TEST_SOAK` accepts only unset, `0` (fast) or `1` (full); other values fail immediately.
 
 The default audio suite renders a half-second seeded cue twice and checks identical WAV bytes, clipping, audible
 signal and silence after stop. The emitter, cooldown, spatialization and lifecycle unit tests still run normally.
