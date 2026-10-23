@@ -4,6 +4,7 @@
 - Work goes to `main` by PR like every game; the `woods` branch is retired. Internal names stay "woods" where renaming would be churn (`window.woods`, `WoodsState`, `stepWoods`, `@arcade/kit/forest`, the Lab's `woods.*` setting keys).
 - Defaults Kit set at the ship: realistic friends on (blocky one setting away), the creature on (rooms too), the catalogue night sky on (`skyMode: "physical"` in `src/world-view.ts`; Today one setting away; the software-GPU smoke keeps Today and blocky friends), the highlight shoulder on, camera looks off, Today looks one setting away.
 - Phase 2 (rooms) is built on `@arcade/kit/server` (Archers' pattern: kit `RoomCore` + `RoomObject` + `LobbyObject`).
+- Camp detail is on by default in `src/world-view.ts` (Kit's round 8–11 approval): grounded steps, firewood, matte paths and the cold stone ring. `woods.campDetail` stays a reload setting for Looks presets; `WorldView.setWorld` rebuilds its geometry. Shared kit default is off. Surface lights pack game sources before bounce and camp, including under the 64-light cap (`packages/kit/forest/lights.test.ts`).
 
 ## Layout
 

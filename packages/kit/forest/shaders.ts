@@ -235,11 +235,15 @@ const vertex = "o.world += woodsWind(o.world, v.matAux, v.color, fract(v.matAux.
 
 const material = /* wgsl */ `
   let layer = i32(floor(o.aux + 0.001));
-  let wts = pow(max(o.color, vec3f(0.0)), vec3f(1.0 / 2.2));
+  var wts = pow(max(o.color, vec3f(0.0)), vec3f(1.0 / 2.2));
   let geo = normalize(o.normal);
   woodsOpen = woodsField(o.world).r;
   pbrMetal = 0.0;
-  if (mat == ${MAT.terrain}) {
+  if (mat == ${MAT.terrain} || mat == ${MAT.path}) {
+    if (mat == ${MAT.path}) {
+      let wear = 1.0 - smoothstep(0.35, 0.98, abs(o.uv.x) + (noise2(o.world.xz * 7.0) - 0.5) * 0.2);
+      wts = vec3f(0.0, wear * 0.85, wear * 0.05);
+    }
     let rot = mat2x2f(0.8, 0.6, -0.6, 0.8);
     let ta = 2.4;
     let a = woodsTex(${LAYER["ground-needles"]}, o.world.xz / ta, wDpx.xz / ta, wDpy.xz / ta);
@@ -280,7 +284,7 @@ const material = /* wgsl */ `
     n = nn;
     woodsAo = ao;
     pbrRough = clamp(rough + woodsVariance(a.n) * 0.3, 0.05, 1.0);
-  } else if (mat == ${MAT.bark} || mat == ${MAT.prop} || mat == ${MAT.wood}) {
+  } else if (mat == ${MAT.bark} || mat == ${MAT.prop} || mat == ${MAT.wood} || mat == ${MAT.campWood} || mat == ${MAT.charcoal}) {
     let s = woodsTex(layer, o.uv, wDux, wDuy);
     var alb = s.base.rgb;
     var nn = woodsPerturb(s.n, geo, wDpx, wDpy, wDux, wDuy, 1.0);
@@ -306,9 +310,20 @@ const material = /* wgsl */ `
       alb *= mix(vec3f(0.92, 0.95, 1.0), vec3f(1.06, 1.0, 0.94), fract(o.aux));
     }
     // Wet boards on the dock and porch (blue channel): darker and glossier.
-    let damp = select(0.0, wts.b, mat == ${MAT.wood});
+    let damp = select(0.0, wts.b, mat == ${MAT.wood} || mat == ${MAT.campWood});
     alb *= mix(1.0, 0.55, damp);
     rough = mix(rough, 0.28, damp);
+    if (mat == ${MAT.campWood}) {
+      // Weathering varies along the fibres, not as a new high-contrast noise coat.
+      let age = fbm(o.uv * vec2f(4.0, 0.65) + o.world.xz * 0.07);
+      alb = mix(alb, vec3f(dot(alb, vec3f(0.2126, 0.7152, 0.0722))), 0.22);
+      alb *= mix(0.62, 1.03, smoothstep(0.15, 0.8, age)) * mix(1.0, 0.62, wts.r);
+      rough = max(rough, 0.8);
+    }
+    if (mat == ${MAT.charcoal}) {
+      alb = vec3f(0.012) + vec3f(dot(alb, vec3f(0.2126, 0.7152, 0.0722))) * 0.16;
+      rough = 0.96;
+    }
     // Cavity: furrows hold their own shade even under a light from the eye, which flattens everything else.
     albedo = alb * mix(1.0, s.orm.r * s.orm.r, 0.75);
     n = nn;
@@ -330,16 +345,19 @@ const material = /* wgsl */ `
     n = nn;
     woodsAo = mix(0.5, 1.0, wts.r);
     pbrRough = 0.62;
-  } else if (mat == ${MAT.path}) {
-    let t = woodsTex(layer, o.world.xz / 2.7, wDpx.xz / 2.7, wDpy.xz / 2.7);
-    let edge = smoothstep(0.65, 0.96, abs(o.uv.x));
-    albedo = t.base.rgb * mix(vec3f(0.48, 0.46, 0.43), vec3f(1.12, 1.04, 0.88), edge);
-    n = normalize(mix(geo, woodsPerturb(t.n, geo, wDpx, wDpy, wDpx.xz / 2.7, wDpy.xz / 2.7, 1.0), mix(0.12, 0.5, edge)));
-    woodsAo = mix(0.92, t.orm.r, edge);
-    pbrRough = mix(0.38, 0.78, edge);
+  } else if (mat == ${MAT.ash}) {
+    let edge = smoothstep(0.45, 1.0, length(o.uv));
+    let grit = woodsTex(${LAYER["ground-trail"]}, o.world.xz * 1.4, wDpx.xz * 1.4, wDpy.xz * 1.4);
+    let flakes = clamp(woodsLum(grit.base.rgb) * 4.0, 0.0, 1.0);
+    albedo = mix(vec3f(0.22, 0.21, 0.2), vec3f(0.035, 0.031, 0.026), edge) * mix(0.22, 1.25, flakes);
+    n = woodsPerturb(grit.n, geo, wDpx, wDpy, wDpx.xz * 1.4, wDpy.xz * 1.4, 0.65);
+    pbrRough = 0.98;
+  } else if (mat == ${MAT.litter}) {
+    albedo = o.color;
+    pbrRough = 0.94;
   } else if (mat == ${MAT.cable}) {
     albedo = vec3f(0.012, 0.014, 0.013);
-    pbrRough = 0.24;
+    pbrRough = 0.62;
   } else if (mat == ${MAT.concrete}) {
     albedo = vec3f(0.17, 0.175, 0.16) * (0.8 + 0.3 * noise2(o.world.xz * 24.0));
     pbrRough = 0.92;
