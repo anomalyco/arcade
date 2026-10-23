@@ -1,4 +1,4 @@
-// Life-around-you captures (seabirds, canopy rain, the radio subtitle) from a dev server: the real game offline on a
+// Life-around-you captures (seabirds, canopy rain) from a dev server: the real game offline on a
 // fixed seed, the free camera on a flock, then heavy rain through the canopy-rain preview (no jet needed).
 //
 //   bun run dev:client   (or any dev server)  then   bun scripts/life-shot.ts --base=http://localhost:5197/ --out=/tmp/opencode/juice-life
@@ -42,7 +42,7 @@ type C = {
   arch: { islands: Isl[] }
   camera: { set(v: { x: number; z: number; yaw: number; pitch: number; dist: number }): void }
   lab?: { force(kind: string, fade: number): void }
-  life: { birds: { flocks: Flock[] }; canopyRain: { count: number }; radio: { say(l: string): boolean }; settings: { canopyRain: { preview: number; previewSpeed: number } } }
+  life: { birds: { flocks: Flock[] }; canopyRain: { count: number }; settings: { canopyRain: { preview: number; previewSpeed: number } } }
 }
 const shot = async (name: string) => {
   await page.screenshot({ path: join(out, `${name}.png`) })
@@ -76,8 +76,6 @@ await page.evaluate(() => {
   c.life.settings.canopyRain.previewSpeed = 180
 })
 await page.waitForTimeout(3500)
-await page.evaluate(() => (globalThis as unknown as { carrier: C }).carrier.life.radio.say("spike"))
-await page.waitForTimeout(600)
 await shot("canopy-rain-fast")
 await page.evaluate(() => {
   const c = (globalThis as unknown as { carrier: C }).carrier

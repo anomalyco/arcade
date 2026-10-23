@@ -12,11 +12,10 @@ const PICKS_KEY = "carrier.sfx.picks"
 /** One-shot slots that play a random take each time (variation): the user's rated-up takes, or every take not rated
  *  down. Everything else plays its picked take. */
 const POOLED = new Set(["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb-water", "boom-crash-sea", "boom-crash-land", "boom-far", "impact-water", "impact-metal", "thunder-near", "thunder-far", "hull-slam", "flares"])
-for (const s of SLOTS) if (s.category === "radio") POOLED.add(s.id)
 /** Default reverb send per category (open air is most of what makes it sound big). */
-const REVERB: Record<SlotCategory, number> = { carrier: 0.25, gun: 0.3, missile: 0.35, bomb: 0.3, boom: 0.5, ship: 0.15, sea: 0, ui: 0, hooks: 0.35, radio: 0 }
+const REVERB: Record<SlotCategory, number> = { carrier: 0.25, gun: 0.3, missile: 0.35, bomb: 0.3, boom: 0.5, ship: 0.15, sea: 0, ui: 0, hooks: 0.35 }
 /** Default bus per category. */
-const BUS: Record<SlotCategory, Bus> = { carrier: "sfx", gun: "weapons", missile: "weapons", bomb: "weapons", boom: "weapons", ship: "weather", sea: "weather", ui: "ui", hooks: "weapons", radio: "radio" }
+const BUS: Record<SlotCategory, Bus> = { carrier: "sfx", gun: "weapons", missile: "weapons", bomb: "weapons", boom: "weapons", ship: "weather", sea: "weather", ui: "ui", hooks: "weapons" }
 /**
  * The voice budget: at most VOICES recorded one-shots at once, no slot retriggering within its cooldown, and priority
  * (explosion > weapons > deck events > thunder > accents and interface): a louder-mattering sound ducks the lesser ones
@@ -24,7 +23,7 @@ const BUS: Record<SlotCategory, Bus> = { carrier: "sfx", gun: "weapons", missile
  * accents (priority ≤ 1) from starting at all. One clear sound per moment.
  */
 const VOICES = 6
-const PRIORITY: Record<SlotCategory, number> = { boom: 5, gun: 4, missile: 4, bomb: 4, hooks: 4, carrier: 3, sea: 2, ship: 1, ui: 1, radio: 2 }
+const PRIORITY: Record<SlotCategory, number> = { boom: 5, gun: 4, missile: 4, bomb: 4, hooks: 4, carrier: 3, sea: 2, ship: 1, ui: 1 }
 const SLOT_PRIORITY: Record<string, number> = { sinking: 3, "ship-horn": 0, "hull-creak": 0, "ui-kill": 2 }
 /** Per-slot retrigger cooldown (s). */
 const COOLDOWN = 0.15
@@ -34,7 +33,7 @@ for (const k of ["boom-air", "boom-missile", "boom-bomb-land", "boom-bomb-water"
 type Voice = { prio: number; start: number; end: number; input: GainNode; stop(fade?: number): void }
 
 /** Load order after the first gesture. */
-const ORDER: readonly SlotCategory[] = ["sea", "carrier", "ui", "radio", "gun", "missile", "boom", "bomb", "ship", "hooks"]
+const ORDER: readonly SlotCategory[] = ["sea", "carrier", "ui", "gun", "missile", "boom", "bomb", "ship", "hooks"]
 
 export type Place = {
   /** World position (needs the listener: mixer.listener, set by jet-audio.ts each frame). */

@@ -16,7 +16,6 @@ import { WeaponAudio } from "../src/audio/weapon-audio"
 import { WeatherAudio } from "../src/audio/weather-audio"
 import { JetSfx } from "../src/audio/jet-sfx"
 import { UiAudio } from "../src/audio/ui-audio"
-import { Radio, type RadioLine } from "../src/audio/radio"
 import type { PlaneDrawPose } from "../src/render/plane-pass"
 
 const RATE = 48000
@@ -728,37 +727,10 @@ function pitch(dry = false): Scene {
   }
 }
 
-/** Radio chatter over a sortie: every line once through the radio, with the cockpit's lock and missile tones. */
-function radio(): Scene {
-  let r: Radio | null = null
-  const cues: [number, RadioLine][] = [[0.4, "launch"], [3.6, "spike"], [6.4, "break-left"], [9.2, "splash"], [11.4, "hit"], [13.8, "mother"], [16.4, "zone-captured"], [18.6, "zones-moving"], [21.8, "ball"]]
-  return {
-    dur: 24.5,
-    setup: (s) => {
-      const o = s.makeOwn("hornet", "chase")
-      o.draw.y = 400
-      o.draw.throttle = 0.8
-      yawQ(o.draw, Math.PI)
-      s.arm()
-      r = new Radio(mixer(), sfx(mixer()), false)
-    },
-    step: (s, t, dt) => {
-      const d = s.own!.draw
-      d.vz = -170
-      d.z += d.vz * dt
-      s.chase()
-      s.weapons!.update(dt, false, 0, 0, t > 3.4 && t < 6.2 ? 1 : t > 6.2 && t < 8.4 ? 2 : 0)
-      for (const [at, line] of cues) if (Math.abs(t - at) < dt / 2) r!.say(line)
-      r!.update(dt)
-    },
-  }
-}
-
 const SCENES: Record<string, () => Scene> = {
   pitch: () => pitch(),
   // The engines alone (no sea, wind or ship ambience), for measuring them.
   "pitch-dry": () => pitch(true),
-  radio,
   launch,
   landing,
   montage,

@@ -103,7 +103,7 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `vehicle.tyre.chirp` | 1 | tyre | 0.38 | 5 | reuses Getaway's `skid_short.mp3` |
 | `ui.click` | 1 | ui | 0.48 | 6 | reuses Getaway's `ui_click.mp3` |
 | `ui.tick` | 1 | ui | 0.48 | 7 | reuses Carrier's `ui-click-1.ogg` |
-| Carrier's 48 recorded slots (`aircraft.carrier.trap`, `impact.{bullet.water,cannon.metal}`, `missile.*`, `bomb.*`, `explosion.*`, `gun.{ciws,naval.five-inch}`, `vehicle.boat.engine`, `ship.*`, `ambience.{carrier.deck,ocean.*,wind.*,rain.sea.*,rain.canopy}`, `weather.{thunder.sea.*,lightning.crack}`, `ui.kill-confirm`, `voice.radio.*` radio chatter) | 1–4 | various | 0.48–7.85 | 4.4 MB total, not library-owned | reuse in place the takes Carrier plays (`games/carrier/public/sfx/v3/`), see "Carrier" below |
+| Carrier's 38 recorded slots (`aircraft.carrier.trap`, `impact.{bullet.water,cannon.metal}`, `missile.*`, `bomb.*`, `explosion.*`, `gun.{ciws,naval.five-inch}`, `vehicle.boat.engine`, `ship.*`, `ambience.{carrier.deck,ocean.*,wind.*,rain.sea.*,rain.canopy}`, `weather.{thunder.sea.*,lightning.crack}`, `ui.kill-confirm`) | 1–4 | various | 0.48–7.85 | 4.4 MB total, not library-owned | reuse in place the takes Carrier plays (`games/carrier/public/sfx/v3/`), see "Carrier" below |
 
 ## Making and curating sounds
 

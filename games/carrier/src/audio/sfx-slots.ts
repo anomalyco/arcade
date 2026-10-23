@@ -5,7 +5,7 @@
 // (scripts/sfx-cinematic.ts generates and transcodes them). Which take plays is the user's pick (sfx-bank.ts: picks.json,
 // overridden in localStorage from the SOUNDS tab). DOM-free data.
 
-export type SlotCategory = "carrier" | "gun" | "missile" | "bomb" | "boom" | "ship" | "sea" | "ui" | "hooks" | "radio"
+export type SlotCategory = "carrier" | "gun" | "missile" | "bomb" | "boom" | "ship" | "sea" | "ui" | "hooks"
 
 export type Slot = {
   id: string
@@ -71,24 +71,12 @@ const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, nu
   ["ciws", "hooks", "CIWS (loop)", true, 3, 5, `Phalanx CIWS close-in weapon system firing continuously: brutal tearing brrrt of a 20 mm gatling gun, deep body, ${L}`],
   ["sam-launch", "hooks", "SAM launch", false, 3, 5, `Surface-to-air missile launching from a warship vertical launch cell: explosive ignition blast, roaring rocket climbing away, deep sub, ${C}`],
   ["naval-gun", "hooks", "5-inch gun", false, 3, 4, `Five-inch naval deck gun firing: massive concussive boom, deep sub, rolling echo across the ocean, ${C}`],
-  // Radio chatter (radio.ts, through its radio filter): ElevenLabs text to speech (eleven_v4), two takes per line, three
-  // voices: the carrier (Rolando), your wingman (Jerry B.) and the controller (Eryn). The prompt is the spoken line.
-  ["radio-launch", "radio", "Radio: cleared, good shot", false, 2, 2.7, "TTS Rolando: Hornet two, you're cleared. Good shot."],
-  ["radio-ball", "radio", "Radio: call the ball", false, 2, 1.7, "TTS Rolando: Hornet, call the ball."],
-  ["radio-mother", "radio", "Radio: Mother's taking hits", false, 2, 1.5, "TTS Rolando: [urgent] Mother's taking hits!"],
-  ["radio-spike", "radio", "Radio: spike", false, 2, 2.2, "TTS Jerry B.: [shouting] Spike! Spike!"],
-  ["radio-break-left", "radio", "Radio: missile, break left", false, 2, 2, "TTS Jerry B.: [shouting] Missile! Break left!"],
-  ["radio-break-right", "radio", "Radio: missile, break right", false, 2, 1.9, "TTS Jerry B.: [shouting] Missile! Break right!"],
-  ["radio-splash", "radio", "Radio: splash one", false, 2, 1.2, "TTS Jerry B.: Splash one!"],
-  ["radio-hit", "radio", "Radio: I'm hit", false, 2, 2.1, "TTS Jerry B.: [strained] I'm hit! I'm hit!"],
-  ["radio-zone-captured", "radio", "Radio: zone captured", false, 2, 1.5, "TTS Eryn: Zone captured."],
-  ["radio-zones-moving", "radio", "Radio: zones moving", false, 2, 3, "TTS Eryn: Heads up, all flights, zones are moving."],
   ["boat-engine", "hooks", "Boat engine (loop)", true, 3, 7, `Fast patrol boat with waterjet engines running at speed, exterior: diesel drone, waterjet whine, rushing water and spray, ${L}`],
 ]
 
 export const SLOTS: readonly Slot[] = RAW.map(([id, category, label, loop, count, dur, prompt]) => ({ id, category, label, loop, count, dur, prompt }))
 export const SLOT_BY_ID: ReadonlyMap<string, Slot> = new Map(SLOTS.map((s) => [s.id, s]))
-export const CATEGORIES: readonly SlotCategory[] = ["carrier", "gun", "missile", "bomb", "boom", "ship", "sea", "ui", "hooks", "radio"]
+export const CATEGORIES: readonly SlotCategory[] = ["carrier", "gun", "missile", "bomb", "boom", "ship", "sea", "ui", "hooks"]
 
 /** Each slot's id in the shared sound library (`@arcade/kit/audio/library`), which reuses the takes Carrier plays in place,
  *  so the Lab's Sound library and other games can audition and play them. tests/sfx-library.test.ts keeps both in step:
@@ -133,14 +121,4 @@ export const SLOT_LIBRARY_ID: Readonly<Record<string, string>> = {
   "sam-launch": "missile.sam.launch",
   "naval-gun": "gun.naval.five-inch",
   "boat-engine": "vehicle.boat.engine",
-  "radio-launch": "voice.radio.launch",
-  "radio-ball": "voice.radio.ball",
-  "radio-mother": "voice.radio.mother",
-  "radio-spike": "voice.radio.spike",
-  "radio-break-left": "voice.radio.break-left",
-  "radio-break-right": "voice.radio.break-right",
-  "radio-splash": "voice.radio.splash",
-  "radio-hit": "voice.radio.hit",
-  "radio-zone-captured": "voice.radio.zone-captured",
-  "radio-zones-moving": "voice.radio.zones-moving",
 }

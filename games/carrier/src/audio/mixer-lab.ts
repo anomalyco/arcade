@@ -16,7 +16,6 @@ const LEVELS: readonly (readonly [Level, string])[] = [
   ["weapons", "Weapons"],
   ["weather", "Weather & sea"],
   ["ui", "Interface"],
-  ["radio", "Radio chatter"],
 ]
 
 /** Live tuning: [object, field, label, max]. Every value is a gain multiplier (0 silences it), read each frame. */

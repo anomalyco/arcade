@@ -53,7 +53,7 @@ const local: Vec3 = [0, 0, 0]
  *   tumbling past the canopy if the kill was close, and one sting with the callout.
  * - Callouts with a streak counter: SPLASH ONE, DOUBLE / TRIPLE / MULTI KILL, SHIP HIT, CARRIER SUNK, DECK JET
  *   DESTROYED, CLOSE CALL (an enemy missile passing close or decoyed by our flares near us, or skimming the sea, land, a
- *   deck or an island at speed). `onCallout` (callouts.ts) lets radio chatter voice them.
+ *   deck or an island at speed).
  */
 export class Feedback {
   readonly overlay: FeedbackOverlay
