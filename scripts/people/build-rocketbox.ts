@@ -13,16 +13,26 @@ import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { luminance } from "../../packages/kit/gpu/materials/wear"
+import { checkSkin, skinTone } from "../../packages/kit/people/skin"
 
 const COMMIT = "0943055db6ec570bcef9f2c8b41c9e5467c808f9"
 const RAW = `https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/${COMMIT}/Assets/Avatars`
 /** Texture size (px) for every map; the sources are 2048. */
 const PX = 1024
+/**
+ * Rocketbox's photo faces read about 1.7× darker than measured skin (baked shade and capture exposure): its fairest
+ * face, f04, has a median luminance of 0.32 against Fitzpatrick II's 0.54. Skin type is read at this exposure.
+ */
+const PHOTO_EXPOSURE = 1.7
 
 /** `tag` is the avatar's texture prefix in its Textures folder. */
 const AVATARS = [
   { id: "m05", avatar: "Adults/Male_Adult_05", tag: "m009", outfit: "field vest over a long-sleeved shirt, work trousers, boots" },
   { id: "f04", avatar: "Adults/Female_Adult_04", tag: "f004", outfit: "hooded leather jacket, cargo trousers, boots" },
+  { id: "m04", avatar: "Adults/Male_Adult_04", tag: "m006", outfit: "dark zip jacket over a T-shirt, cargo trousers, trainers" },
+  { id: "f07", avatar: "Adults/Female_Adult_07", tag: "f007", outfit: "brown jacket, jeans, knee boots" },
+  { id: "m07", avatar: "Adults/Male_Adult_07", tag: "m013", outfit: "dark cardigan over a shirt, jeans, brown shoes" },
 ] as const
 
 const root = join(import.meta.dir, "../..")
@@ -87,13 +97,24 @@ for (const a of jobs) {
   if (!line) throw new Error(`no PERSON line:\n${log.slice(-3000)}`)
   const stats = JSON.parse(line.slice(7))
   stats.loose = Number(log.match(/^LOOSE (\d+)/m)?.[1] ?? 0)
+  // Each skin material's median texel takes a measured skin's hue at its own lightness (`skin.ts`). The skin type comes
+  // from the face, so hands match it.
+  const skin = JSON.parse(log.match(/^SKIN (.*)$/m)![1]!) as Record<string, [number, number, number]>
+  const typeLuminance = luminance(skin.head!) * PHOTO_EXPOSURE
   const doc = await io.read(raw)
   for (const m of doc.getRoot().listMaterials()) {
     const [kind, piece] = (m.getName() as string).split(".")
-    m.setBaseColorFactor([1, 1, 1, 1])
+    const median = kind === "skin" ? skin[piece] : undefined
+    const target = median && skinTone(median, typeLuminance)
+    m.setBaseColorFactor(median && target ? [target[0] / median[0], target[1] / median[1], target[2] / median[2], 1] : [1, 1, 1, 1])
+    if (median && target) {
+      const check = checkSkin(target)
+      if (!check.ok) throw new Error(`${a.id} ${piece}: skin ${target.map((c) => c.toFixed(3))} is outside the measured range`)
+      stats[`skin.${piece}`] = { median, albedo: target.map((c) => Math.round(c * 1000) / 1000), redGreen: [Math.round((median[0] / median[1]) * 100) / 100, Math.round(check.redGreen * 100) / 100] }
+    }
     m.setMetallicFactor(0)
     if (kind === "hair") { m.setAlphaMode("MASK"); m.setAlphaCutoff(0.4); m.setDoubleSided(true) }
-    m.setExtras({ people: { kind, piece, albedo: null, mean: 1 } })
+    m.setExtras({ people: { kind, piece, albedo: null, mean: 1, ...(median && target ? { skin: { median, albedo: target } } : {}) } })
   }
   doc.getRoot().getAsset().extras = { people: { id: `${a.id}-rocketbox`, person: a.id, look: "rocketbox", outfit: a.outfit, licence: "MIT", source: `Microsoft Rocketbox ${a.avatar} @ ${COMMIT.slice(0, 7)}` } }
   await doc.transform(fn.prune(), fn.dedup(), fn.meshopt({ encoder: mo.MeshoptEncoder, level: "medium" }))

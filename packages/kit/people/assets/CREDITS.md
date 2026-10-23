@@ -31,13 +31,15 @@ loads them.
 
 No attribution is required for any of the above.
 
-## Rocketbox avatars (`m05-rocketbox.glb`, `f04-rocketbox.glb`): MIT
+## Rocketbox avatars (`m05`, `f04`, `m04`, `f07`, `m07` `-rocketbox.glb`): MIT
 
-From the Microsoft Rocketbox Avatar Library, https://github.com/microsoft/Microsoft-Rocketbox, commit `0943055d`:
-`Assets/Avatars/Adults/Male_Adult_05` (m05) and `Assets/Avatars/Adults/Female_Adult_04` (f04). Source files and their
-SHA-256s are in `rocketbox-sources.json`. Changes: the Biped bones renamed to the `game_engine` names, thighs moved
-under the pelvis and clavicles under the chest, the mesh split by material and bone weights into clothes, skin, eyes
-and hair, a decimated LOD1, textures downscaled from 2048 to 1024 and re-encoded as WebP, specular maps dropped.
+From the Microsoft Rocketbox Avatar Library, https://github.com/microsoft/Microsoft-Rocketbox, commit `0943055d`, under
+`Assets/Avatars/Adults/`: `Male_Adult_05` (m05), `Female_Adult_04` (f04), `Male_Adult_04` (m04), `Female_Adult_07`
+(f07) and `Male_Adult_07` (m07). Source files and their SHA-256s are in `rocketbox-sources.json`. Changes: the Biped
+bones renamed to the `game_engine` names, thighs moved under the pelvis and clavicles under the chest, the mesh split
+by material and bone weights into clothes, skin, eyes and hair, a decimated LOD1, textures downscaled from 2048 to
+1024 and re-encoded as WebP, specular maps dropped, the clothes' lining strips given the UVs and normals of the
+panels over them, and a colour factor on the skin moving its hue onto measured skin.
 
 ```
 MIT License

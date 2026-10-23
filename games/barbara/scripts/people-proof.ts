@@ -1,8 +1,9 @@
 // Headless, muted proof of the realistic people (`@arcade/kit/people`) in the woods, on the production build:
 //   bun run build && bun scripts/people-proof.ts [--out <dir>] [--shots close,group,...] [--clip] [--past 4,10] [--gpu] [--size 1600x900]
 // Stills on a synthetic clock (deterministic, so headless frame rate never shows): a close-up in your beam (and the
-// same with today's blocky friend), the five friends in a group at mid distance with their torches, and with --clip
-// the group walking past, one PNG per 1/30 s, encoded to people-group.mp4 with ffmpeg. --gpu times the GPU frame
+// same with today's blocky friend), the five friends in a group at mid distance with their torches (group-row: side by
+// side in your beam), and with --clip the group walking past, one PNG per 1/30 s, encoded to people-group.mp4 with
+// ffmpeg. --gpu times the GPU frame
 // (timestamp queries, median of 48) with the five friends in view, realistic against blocky, alternating three times.
 // --past 4,10: one friend walking across your beam at each distance (m), you standing still: past-<m>.mp4.
 // --cast makehuman,rocketbox: every shot and clip once per people model, named <shot>-<cast> (Barbara's `?cast=`).
@@ -45,7 +46,7 @@ type Woods = {
 }
 declare const woods: Woods
 
-type Group = { dx: number; dz: number; ahead: number; spread: number; light: boolean; pitch: number; mode: string; walk?: [number, number] }
+type Group = { dx: number; dz: number; ahead: number; spread: number; light: boolean; pitch: number; mode: string; walk?: [number, number]; row?: boolean }
 /** You at camp + (dx, dz) looking along −z; friends in a loose arc `ahead` m away, facing about, or walking by. */
 const group = (page: Page, o: Group) =>
   page.evaluate(({ o, n }) => {
@@ -55,9 +56,9 @@ const group = (page: Page, o: Group) =>
     woods.state.brains.forEach((b, k) => {
       const p = woods.state.players.find((q) => q.id === b.id)!
       const u = n > 1 ? k / (n - 1) - 0.5 : 0
-      p.x = x + u * o.spread + (k % 2) * 0.6; p.z = z - o.ahead - (k % 3) * 1.4 + Math.abs(u) * 2
+      p.x = x + u * o.spread + (o.row ? 0 : (k % 2) * 0.6); p.z = z - o.ahead - (o.row ? (k % 2) * 0.5 : (k % 3) * 1.4 + Math.abs(u) * 2)
       b.mode = o.mode; b.timer = 99; b.sweep = k * 1.3
-      b.heading = Math.atan2(-(x - p.x), -(z - p.z)) + (k - 2) * 0.5
+      b.heading = Math.atan2(-(x - p.x), -(z - p.z)) + (k - 2) * (o.row ? 0.2 : 0.5)
       if (o.walk) { b.tx = p.x + o.walk[0]; b.tz = p.z + o.walk[1]; b.heading = Math.atan2(-o.walk[0], -o.walk[1]) }
     })
     woods.face(x, z - o.ahead, o.pitch)
@@ -103,6 +104,8 @@ const shots: Record<string, { real: boolean; setup: (page: Page) => Promise<unkn
   group: { real: true, setup: (page) => group(page, MID) },
   "group-blocky": { real: false, setup: (page) => group(page, MID) },
   "group-lit": { real: true, setup: (page) => group(page, { ...MID, light: true, ahead: 7, pitch: -0.1 }) },
+  // All five side by side in your beam at the close-up's clear spot, turned about to you: faces and outfits compared.
+  "group-row": { real: true, setup: (page) => group(page, { ...MID, dx: CLOSE.dx, dz: CLOSE.dz, light: true, ahead: 7, spread: 5, pitch: -0.12, row: true }) },
 }
 
 const browser = await chromium.launch({ headless: true, timeout: 120000, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })

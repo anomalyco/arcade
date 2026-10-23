@@ -58,8 +58,8 @@ export class FriendsView {
   readingLevel = 0.003
   private aims = new Map<number, Aim>()
 
-  /** People model for realistic friends (Lab › Friends › People model, `?cast=rocketbox`). */
-  constructor(private renderer: Renderer, public realistic = false, public cast: CastName = "makehuman") {
+  /** People model for realistic friends (Lab › Friends › People model, `?cast=makehuman`). */
+  constructor(private renderer: Renderer, public realistic = false, public cast: CastName = "rocketbox") {
     this.parts = registerPersonModels((m) => renderer.addModel(m))
     const torch = new Mesh()
     torch.box(-0.1, -0.022, -0.022, 0.06, 0.022, 0.022, [0.05, 0.05, 0.055], MAT.shiny)

@@ -5,7 +5,9 @@ import { MeshoptDecoder } from "meshoptimizer"
 import { animate, newAvatar } from "../avatar/anim"
 import { spring, type V3 } from "../rig"
 import { readPerson, SRC_FLOATS } from "./asset"
+import { luminance, type Rgb } from "../gpu/materials/wear"
 import { qRot } from "./quat"
+import { checkSkin, SKIN_TONES, skinTone } from "./skin"
 import { gaitBody, newGait, type GaitState } from "./gait"
 import type { HumanBody } from "../human-pose"
 import { personHooks } from "./hooks"
@@ -331,7 +333,8 @@ test("people keep a game's full direct light on their upright surfaces (no wall 
 })
 
 // Rocketbox avatars (scripts/people/build-rocketbox.ts): a Biped skeleton renamed onto the game_engine names.
-const ROCKETBOX = await Promise.all(["m05", "f04"].map(async (id) => readPerson(await io.read(new URL(`./assets/${id}-rocketbox.glb`, import.meta.url).pathname), `${id}-rocketbox`)))
+const ROCKETBOX_DOCS = await Promise.all(["m05", "f04", "m04", "f07", "m07"].map(async (id) => [id, await io.read(new URL(`./assets/${id}-rocketbox.glb`, import.meta.url).pathname)] as const))
+const ROCKETBOX = ROCKETBOX_DOCS.map(([id, doc]) => readPerson(doc, `${id}-rocketbox`))
 
 describe("Rocketbox cast", () => {
   test("reads as an 80-bone skeleton with two LODs, a person's height and leg scale, and clean vertices", () => {
@@ -394,5 +397,34 @@ describe("Rocketbox cast", () => {
         expect(off(tip)).toBeLessThan(0.05)
       }
     }
+  })
+
+  test("skin is moved onto measured skin, with the photo's own lightness", () => {
+    for (const [id, doc] of ROCKETBOX_DOCS) {
+      const skins = doc.getRoot().listMaterials().filter((m) => m.getName().startsWith("skin."))
+      expect(skins.length).toBe(2)
+      for (const m of skins) {
+        const { median, albedo } = (m.getExtras() as { people: { skin: { median: Rgb; albedo: Rgb } } }).people.skin
+        const f = m.getBaseColorFactor()
+        expect(checkSkin(albedo).ok, `${id} ${m.getName()}`).toBe(true)
+        for (let c = 0; c < 3; c++) expect(median[c]! * f[c]!).toBeCloseTo(albedo[c]!, 4)
+        expect(luminance(albedo)).toBeCloseTo(luminance(median), 3)
+      }
+    }
+  })
+})
+
+describe("skin tones", () => {
+  test("measured tones pass their own check; photo-orange skin does not", () => {
+    for (const t of SKIN_TONES) expect(checkSkin(t).ok).toBe(true)
+    expect(checkSkin([0.47, 0.22, 0.14]).ok).toBe(false)
+    expect(checkSkin([0.9, 0.9, 0.9]).ok).toBe(false)
+  })
+
+  test("keeps the input's luminance and takes the hue of the type at typeLuminance", () => {
+    const photo: Rgb = [0.47, 0.22, 0.14], t = skinTone(photo, luminance(SKIN_TONES[2]!))
+    expect(luminance(t)).toBeCloseTo(luminance(photo), 6)
+    expect(t[0] / t[1]).toBeCloseTo(SKIN_TONES[2]![0] / SKIN_TONES[2]![1], 6)
+    expect(skinTone([0.2, 0.2, 0.2], 2)[0] / skinTone([0.2, 0.2, 0.2], 2)[1]).toBeCloseTo(SKIN_TONES[0]![0] / SKIN_TONES[0]![1], 6)
   })
 })
