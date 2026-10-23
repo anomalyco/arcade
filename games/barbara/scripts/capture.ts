@@ -73,6 +73,18 @@ export function tapeShot(d: number): { tree: number; x: number; z: number } {
 }
 
 export const shots: Record<string, (page: Page) => Promise<void>> = {
+  lake: async (page) => { await page.evaluate(() => {
+    woods.setPose(-22, 89, Math.PI, -0.12)
+    woods.camera.flashlight = false
+    for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
+    for (const p of woods.state.players.slice(1)) { p.x = 0; p.z = 40 }
+  }) },
+  lakeTorch: async (page) => { await page.evaluate(() => {
+    woods.setPose(-22, 89, Math.PI, -0.33)
+    woods.camera.flashlight = true
+    for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
+    for (const p of woods.state.players.slice(1)) { p.x = 0; p.z = 40 }
+  }) },
   trunkFoot: async (page) => { await page.evaluate(() => {
     const c = woods.world.camp
     const t = woods.world.trees.filter(t => t.radius > 0.3).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 55) - Math.hypot(b.x - c.x, b.z - c.z + 55))[0]!
