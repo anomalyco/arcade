@@ -1137,6 +1137,19 @@ Raw results, scope and follow-up work are recorded in [the ledger](../../perf/ni
     rule working.
   - It costs nothing measurable on Metal: paired `ab-gpu.ts` on `pro` at 3456×1894 gives Δ −0.02 to +0.04 ms at 0.5 m
     and 0.25 m texels, inside the noise. Kit picked ×3 (D-47), so it is on by default; Today is one Lab setting away.
+- **Finished props: bake into spare vertex bytes, wear in the shader (BARBARA camp, Outbreak kitchen, Oct 2026).**
+  `@arcade/kit/gpu/finish` chamfers code-built boxes, bakes AO, curvature and sky exposure with a BVH into two bytes
+  the vertex layouts already carried (no stride change), and `materials/wear.ts` derives edge wear, grime, damp, rain
+  streaks, dust and rust from them (`docs/realism.md` › Finished props).
+  - A box face is a few vertices, so a corner that touches a post darkens the whole plank. Split faces to ≤ 1.3 m
+    (`splitLong`; 0.6 m doubled the build), start each ray partway towards the triangle's
+    centre (`inset` 0.35), and ignore back faces closer than 5 cm (`buried`: the hidden side of the box they sit on).
+  - The inset defeats most of the per-corner ray sharing: the camp bakes 118k sample points for 263k vertices, ~0.85 s
+    of the build. Indoors pass `exposure: 0` to skip the sky rays.
+  - Bake stats mislead: Outbreak's cabinet tops average AO 0.39 because most of those vertices sit under the worktop
+    or against the wall. Check the faces the camera sees (fronts 0.8–0.97).
+  - Single-run GPU timings swung +70% between browser launches on a shared worker; in-page alternation gave +1.3 ms
+    (BARBARA) and +2% (Outbreak). Pair in one page before believing a cost.
 
 ## Art direction
 

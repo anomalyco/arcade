@@ -27,8 +27,9 @@ Creatures and rooms: see the method rows in [docs/assets.md](../../../docs/asset
 3. **TRELLIS.2 and Blender cleanup.** `bun scripts/props/generate.ts --ids <ids>` runs both on `mini` (never Studio;
    `--worker pro` is the fallback). Done when `<work>/report.json` lists no failure and the three preview renders read
    as the object.
-4. **Finish.** Today the cleanup bakes Cycles AO and vertex colour. The shared finish pass (wear, edges, material
-   sanity) is landing on `kit-finish`; textured props, which keep TRELLIS's 2048² texture instead of collapsing it to
+4. **Finish.** The cleanup bakes Cycles AO and vertex colour. Code-built props go through the shared finish pass
+   (`@arcade/kit/gpu/finish`: chamfers, baked AO/curvature/exposure, wear looks); `bun scripts/finish-prop.ts`
+   reports albedo range and AO for `.prop` files, which have no spare bytes for wear yet. Textured props, which keep TRELLIS's 2048² texture instead of collapsing it to
    vertex colour, are landing on `kit-textured-props`. Each branch updates this step when it merges.
 5. **Check.** `bun test props/` in `packages/kit` (two LODs, floor pivot, size, triangle budget). Then look at it in
    the Lab's `props` station (`bun run arcade station props`) and at the game's own camera, beside its target. Done

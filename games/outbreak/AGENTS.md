@@ -78,6 +78,13 @@
   Windows (`windows.ts`), fitted cabinets (`cabinetry.ts`), skirting and wall wear follow the interior material
   standard in [docs/outbreak-art-direction.md](../../docs/outbreak-art-direction.md); the **Interior craft** setting
   (Today / Craft pass) gates them.
+- Finished props (`src/interiors/finish.ts`, kit `@arcade/kit/gpu/finish`): with the craft pass on, Ash's fitted
+  kitchen timber is built chamfered and tagged old wood (`finishedCabinetry`), `level.ts` bakes AO and curvature into
+  the spare vertex bytes before packing (`bakeFinishedProps`, exposure 0 indoors), and the scene wears it from them plus
+  a CC0 wood-grain scan in one `RugPool` detail layer (requested only while wear and the scan are on). Lab: Backquote ›
+  Rugs & interiors › Finished props (`propFinish`, structural; Today = 0) and its wear knobs, plus the Albedo check
+  view. Cost: +2% GPU paired at 3456×1894. Stills and pairs: `bun scripts/finish-stills.ts` (via `hivemind run --kind
+  browser`; `--shots none --rounds n` for pairs only). Tests: `tests/finished-props.test.ts`.
 - Generated furniture (`@arcade/kit/props`, pipeline in `scripts/props/README.md`) furnishes the start block's houses
   from `src/props/`: anchors replace the gameplay furniture's boxes one for one (collisions stay `PROP_SHAPES`), and
   clutter is client-only. The level bake reads the same plan through `propDressingState`: floor clutter over 0.3 m

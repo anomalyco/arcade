@@ -59,7 +59,7 @@ days, L a week.
 | Analytic puddle light mirrors and LEAN glints | Outbreak `src/reflections/` | `gpu/reflections` | Blackout, Getaway; LEAN for the Lot's asphalt | M | AR-135 |
 | Motion-stability metric | Lot and Outbreak `scripts/motion.ts` | root `scripts/motion/` | Night Shift, woods | M | AR-136 |
 | Baked bounce and lamp pools | Blackout `bakeBounce`, Outbreak `bakeOutbreakBounce` + `src/lightbake.ts` | `gpu/level` | Top-down games | M | Not carded: only top-down games bake |
-| World-space wear, damp and wax | Lot `src/interior/finishes.ts` | shared wear materials | Every interior | M | Landing (branch `kit-finish`) |
+| World-space wear, damp and wax | Lot `src/interior/finishes.ts` | shared wear materials | Every interior | M | In the kit (`gpu/materials/wear.ts`); the Lot still uses its own |
 
 Intentional copy, not to extract: Carrier's ocean rain (`src/render/rain.ts`, displaced onto Gerstner waves) is not
 `@arcade/kit/weather`.

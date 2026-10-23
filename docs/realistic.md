@@ -21,7 +21,7 @@ branch fills in the row when it merges.
 | Fog only where lit | Lamp airlight and fog bank (`gpu/fog-scatter.ts`); pooled mist with a mask and `FogLamp.glowRange`; clear air near the eye (forest) | Shipped | Mist gets no sky light at night; distant darks fade into fog. |
 | Indirect light | Top-down: plan bounce (`gpu/gi/plan-bounce.ts`). Interiors: baked lightmaps, landing on `kit-lightmaps` | Shipped / Landing | First-person torch hit bounce is not built. |
 | Surfaces | Scans (Poly Haven, ambientCG; [assets.md](assets.md)); footprint-filtered recipes (`gpu/surface-materials.ts`); `normal-mips`, `image-mips` | Shipped | No flat colour near the camera. |
-| Wear and finish materials | Landing on `kit-finish` | Landing | Until then: the Lot's `src/interior/finishes.ts`, Outbreak's vertex tone stamp. |
+| Wear and finish materials | `gpu/finish.ts` (chamfer, baked AO/curvature/exposure), `gpu/materials/wear.ts` (six looks, CC0 triplanar scans, albedo check) | Shipped | Opt-in per game: BARBARA's camp, Outbreak's kitchen. `.prop` files have no spare bytes yet. |
 | Textured props | Landing on `kit-textured-props` | Landing | Until then: `.prop` vertex-colour props, background only. |
 | Glass and interiors | `thinGlassHooks`, `interiorWindowHooks` (`gpu/materials/glass.ts`) | Shipped | |
 | Wet ground and reflections | `gpu/reflections/wet.ts`; SSR (`gpu/reflections/ssr.ts`) where wet or glossy floors face the camera | Shipped | SSR is Lot-only so far. |

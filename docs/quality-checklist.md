@@ -51,9 +51,11 @@ motion and stability gates; the rest waits until the toy graduates.
 
 - Does every model have contact AO, bevels on hard edges, believable roughness and wear where hands and weather
   reach? Today: `Mesh.bevelBox`, Outbreak's vertex tone stamp (`stampOutbreakVertexTone`), the prop pipeline's Cycles
-  AO. The shared finish pass is landing on `kit-finish`.
+  AO, and the shared finish pass: `finish(mesh, { look })` or `Mesh.finishPart` (`@arcade/kit/gpu/finish`) chamfers,
+  bakes AO, curvature and sky exposure and wears the surface in the shader ([realism.md](realism.md#materials-and-wear)).
 - Are albedos in range? Nothing near black or pure white unless it's metal or a light; kit vertex colours are sRGB and
-  get linearised ([realism.md](realism.md#materials-and-wear)).
+  get linearised ([realism.md](realism.md#materials-and-wear)). The Lab's Albedo check view (BARBARA, Outbreak)
+  shows what falls outside 50–243 sRGB; `bun scripts/finish-prop.ts` reports it for `.prop` files.
 - Does every surface the camera gets close to use a scan or a footprint-filtered recipe rather than flat colour?
 - Do held and inspected objects follow [close-up hero objects](assets.md#close-up-hero-objects)?
 
