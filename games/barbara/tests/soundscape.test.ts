@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { UNCANNY_SOUNDS } from "../shared/distant"
 import { makeWorld } from "../shared/world"
 import { WOODS_FILES } from "../src/audio/files"
 import { SOUND } from "../src/audio/settings"
@@ -26,23 +27,39 @@ function fakeContext() {
 }
 
 const fileCount = Object.values(WOODS_FILES).reduce((n, l) => n + l.length, 0)
+const deferredUrls = (Object.entries(WOODS_FILES) as [string, readonly { file: string }[]][]).filter(([id]) => (UNCANNY_SOUNDS as readonly string[]).includes(id)).flatMap(([, l]) => l.map((f) => "/a/" + f.file))
 
-test("a file that fails is skipped, the woods still start, and the next load fetches only what is missing", async () => {
+test("a file that fails is skipped, the woods still start, and the next load fetches what is missing and the uncanny tier", async () => {
   const { ctx } = fakeContext()
   const scape = new Soundscape(ctx, ctx.destination, { ...SOUND }, "/a/", () => world)
   const urls: string[] = []
   const bad = "/a/" + WOODS_FILES["tree.knock"][1]!.file
   const ok = await scape.load(async (url) => { urls.push(url); if (url === bad) throw new Error("404"); return new TextEncoder().encode(url).buffer as ArrayBuffer })
   expect(ok).toBe(false)
-  expect(urls.length).toBe(fileCount)
+  // The first pass leaves the uncanny tier (none can play in the first eight minutes) for the next.
+  expect(deferredUrls.length).toBeGreaterThan(0)
+  expect(urls.length).toBe(fileCount - deferredUrls.length)
+  for (const u of deferredUrls) expect(urls).not.toContain(u)
   expect(scape.loaded).toBe(true)
   expect(scape.complete).toBe(false)
-  // The missing take falls back to one that loaded.
+  // The missing take falls back to one that loaded; an uncanny sound not loaded yet plays nothing.
   expect(scape.oneShot("tree.knock", 1, ear.x + 10, 4, ear.z, ear, 0.1)).not.toBeNull()
+  expect(scape.oneShot("far.howl", 0, ear.x + 200, 1, ear.z, ear, 0.1)).toBeNull()
+  scape.distant({ kind: "distant", sound: "far.taken", x: ear.x + 100, y: 1, z: ear.z, at: 0, take: 0, seq: 0 }, ear, 0)
+  expect(scape.heard).toEqual([])
   urls.length = 0
   expect(await scape.load(async (url) => { urls.push(url); return new TextEncoder().encode(url).buffer as ArrayBuffer })).toBe(true)
-  expect(urls).toEqual([bad])
+  expect(urls.sort()).toEqual([bad, ...deferredUrls].sort())
   expect(scape.complete).toBe(true)
+  expect(scape.oneShot("far.howl", 0, ear.x + 200, 1, ear.z, ear, 0.1)).not.toBeNull()
+})
+
+test("an offline render (or a Lab trigger) loads everything in one pass", async () => {
+  const { ctx } = fakeContext()
+  const scape = new Soundscape(ctx, ctx.destination, { ...SOUND }, "/a/", () => world)
+  const urls: string[] = []
+  expect(await scape.load(async (url) => { urls.push(url); return new ArrayBuffer(4) }, true)).toBe(true)
+  expect(urls.length).toBe(fileCount)
 })
 
 test("nothing plays mid-load, and a missing bed keeps the woods waiting", async () => {
