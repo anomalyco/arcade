@@ -442,7 +442,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     })
     const fogLamps: FogLamp[] = []
     for (const t of f.torches) {
-      if (!t.on) continue
+      if (!t.on || (t !== local && debug.friendAir === false)) continue
       const id = lights.indexOf(1000 + t.id)
       fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: colorOf(t), intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, motion: t === local || debug.beamMotion === false ? 0 : beamSweep(t, s.torchReach), uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
     }
@@ -469,7 +469,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       // The lens is seen only from in front (the body hides it from behind); its radiance follows the beam profile at
       // the eye's angle, so the sprite (a 2 cm core) holds its brightness and shrinks with distance.
       const prof = cosT > 0 ? beamProfileCpu(ang, profile) : 0
-      if (prof <= 0.002 || spriteCount >= 8) continue
+      if (prof <= 0.002 || spriteCount >= 8 || debug.lensGlare === false) continue
       const intensity = torchPower * 5 * prof * (t.level ?? 1)
       glare += (intensity / (d * d)) * 0.004
       // A lens-sized source (6 cm quad, same energy as the old 40 cm one): the glare round it is the bloom's, in screen

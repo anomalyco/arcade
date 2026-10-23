@@ -16,13 +16,14 @@ import { customPostGradeWgsl } from "../gpu/post-uniform"
  */
 export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, grain: 0, vignette: 0.35,
   bloomSource: /* wgsl */ `
-    // Negative alpha identifies a nearby rough, non-emissive forest surface.
-    // Suppress its reflected hotspot at the SOURCE, before spatial spreading.
-    // Emitters, friends' lenses, sky and the held overlay keep their ordinary alpha
-    // and therefore feed the full pyramid, even where their halo lands on black air.
-    if (P.z > 0.5 && (u32(grade.custom.w) & 4u) != 0u && c.a < 0.0) {
+    // Alpha at or below 0 identifies a nearby rough, non-emissive surface (the forest's and its batches': a friend
+    // in your beam). Suppress its reflected hotspot at the SOURCE, before spatial spreading.
+    // Emitters, friends' lenses, sky and the held overlay keep alpha >= 1 and therefore feed the full pyramid, even
+    // where their halo lands on black air. Alpha between 0 and 1 is a silhouette pixel the MSAA/TAA resolve mixed:
+    // suppressed by its share of the marked surface, or a lit body's bright edge would still bloom into a halo.
+    if (P.z > 0.5 && (u32(grade.custom.w) & 4u) != 0u && c.a < 1.0) {
       let peak = max(max(c.r, c.g), max(c.b, 1e-5));
-      return c.rgb * mix(1.0, min(1.0, 0.2 / peak), clamp(-c.a, 0.0, 1.0));
+      return c.rgb * mix(1.0, min(1.0, 0.2 / peak), clamp(1.0 - c.a, 0.0, 1.0));
     }
     return c.rgb;
   `, composite: /* wgsl */ `
