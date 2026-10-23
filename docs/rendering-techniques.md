@@ -92,6 +92,21 @@ should try a different cloud-structure technique rather than more density or sam
 
 ### Entries — Shadows
 
+- **BARBARA shadow pops (parked, October 2026):** Matched six-second walks on mini/Metal at 1600×900 High measured
+  depth-reprojected luminance excursions; genuine moving light and wind also count. The lens-radius candidate
+  reduced excursions **14%** and the peak **32%** versus shipped Today, at roughly **+0.75 ms**. Follow-up probes
+  used lens-only as their control, changing one layer at a time:
+  - Fixed near-detail casters across the walk and torch reach removed camera-frustum, chunk-LOD and distance-cutoff
+    changes; the effect was negligible. Texel-snapping the torch projection at a world anchor, with stable near/far
+    planes, was also negligible.
+  - Disabling visible wind to match the windless shadow geometry reduced excursions **8.1%**; this also removes
+    genuine motion, so it is not a measured wind-matching fix.
+  - Bypassing only TAA colour-history clipping reduced excursions **25%**. Bounded clipping fixes added at most
+    **2.4%** improvement over lens-only and worsened the peak; they were reverted.
+  **TAA history on shadow edges is the biggest remaining lever**, but retaining stale light can lower this score
+  without fixing pops. No combined trial qualified to ship. Candidate and probes are parked on
+  `barbara-shadow-pops`; [synced review and full findings](https://studio.taila8e7c7.ts.net:8444/raw/barbara-shadow-pops-2026-10-22/index.html).
+
 - **GPU polar 1D ray-cast shadow map (`polarShader`):** Casts `POLAR_RAYS = 512` rays per culled light in a compute pass (`workgroup_size(64)`) against axis-aligned wall/furniture slabs and circular person casters. Stores the nearest full-height blocker (`full`) plus the two nearest partial-height blockers `(t0, t1, h)` per ray (`polarOut`), so low tables, counters, sofas, and window sills cast finite-length shadows (`partialShadow`) while walls cast infinite shadows. **Why it matters:** Gives omnidirectional point-light and cone-light shadows for up to 64 lights in a single compute pass without 64 cubemap render passes. **Status:** **have** (`packages/kit/gpu/shaders.ts:63–343`). Cross-link: [game-notes.md](game-notes.md#rendering-webgpu).
 - **Interpolated multi-tap polar visibility PCF:** Evaluates `tapVis` at adjacent integer rays `(lo, lo + 1)` and interpolates *visibility* (never blocker distance, which leaks across silhouettes) across a 5-tap (Outbreak) or 9-tap world-hashed (Blackout) angular kernel, reusing `prevVis` when `lo == prevLo`. **Why it matters:** Eliminates radial staircase bands on floors and tables without a fullscreen blur pass. **Status:** **have** (`packages/kit/gpu/shaders.ts:293–336`). Cross-link: [game-notes.md](game-notes.md#rendering-webgpu).
 - **Static CPU-rasterised radial depth atlas for local lamps (`openPlanLampLighting.ts`):** Rasterises opaque scene triangles once on the CPU (or in a Web Worker: `openPlanSceneWorker.ts`) into a `512×512` R32F radial-depth atlas (`16` tiles of `128×128`), sampled with 2×2 PCF (`officeLampVisibility`) for both surface pools and volumetric lamp air. **Why it matters:** Static room/porch/desk lamps never move; pre-rasterising their blocker depth once per seed eliminates per-frame shadow-caster gathering and compute ray-casting for static fixtures. **Status:** **missing** in Arcade. **Cost:** `+0.075 ms` paired frame delta on M2 Max (`perf/open-plan-lamps.md`); `1.01 MiB` texture. **Source:** Blog (`src/articles/opencode-2-0/openPlanLampLighting.ts:136`).
