@@ -1,8 +1,10 @@
 import { gameWorker } from "@arcade/kit/server/worker"
 import { ROOM_CODE } from "../shared/net-protocol"
 import type { RoomEnv } from "./room"
+import { lobbyOf } from "./lobby"
 
 export { OutbreakRoom } from "./room"
+export { Lobby } from "./lobby"
 
 export default gameWorker<RoomEnv>({
   game: "outbreak",
@@ -10,5 +12,9 @@ export default gameWorker<RoomEnv>({
     const code = raw.toLowerCase()
     return ROOM_CODE.test(code) ? code : null
   },
-  api: (path) => (path === "/api/health" ? Response.json({ ok: true, session: "coop" }) : new Response("Not found", { status: 404 })),
+  api: async (path, _req, env) => {
+    if (path === "/api/health") return Response.json({ ok: true, session: "coop" })
+    if (path === "/api/stats") return Response.json(await lobbyOf(env).stats(), { headers: { "cache-control": "no-store" } })
+    return new Response("Not found", { status: 404 })
+  },
 })

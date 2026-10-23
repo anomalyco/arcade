@@ -60,6 +60,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 
 ## Releases and game plans
 
+- [deploy-pipeline.md](deploy-pipeline.md): output-based deploy skips, the bounded room wait, first rollout, and the
+  follow-up plan for room recovery across games.
 - [agent-state.md](agent-state.md): live deploy/branch policy (`deploys: on|off`, `allowed_base`, `retired_branches`),
   proof defaults, preview worktree rules, and hot-file contention rules enforced by `scripts/agent-ops.ts` and `pr-guard.yml`.
 - [integration.md](integration.md): how to assemble and verify a release integration branch, and the past release

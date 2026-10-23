@@ -14,7 +14,7 @@
     "not_found_handling": "none", "run_worker_first": ["/arcade/outbreak/api/*", "/arcade/outbreak/ws/*", "/api/*", "/ws/*"]
   },
   "durable_objects": {
-    "bindings": [{ "name": "ROOM", "class_name": "OutbreakRoom" }]
+    "bindings": [{ "name": "ROOM", "class_name": "OutbreakRoom" }, { "name": "LOBBY", "class_name": "Lobby" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OutbreakRoom"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OutbreakRoom"] }, { "tag": "v2", "new_sqlite_classes": ["Lobby"] }]
 }

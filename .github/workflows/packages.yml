@@ -33,4 +33,5 @@ jobs:
         with:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
+      - run: bun test scripts/deploy-game.test.ts
       - run: bun run check:packages
