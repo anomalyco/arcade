@@ -6,7 +6,7 @@
  */
 import { REACTIVE_TARGET, reactivePipelineDescriptor } from "../gpu/reactive"
 import { attachSky } from "../sky/controller"
-import { moonLight } from "../sky/model"
+import { moonLight, moonSkyIlluminance } from "../sky/model"
 import { Renderer, TEMPORAL_DEFAULTS, type Batch, type FrameInput } from "../gpu/renderer"
 import { makeSceneShader, spriteShader } from "../gpu/shaders"
 import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "../gpu/pass-graph"
@@ -23,14 +23,14 @@ import { loadForestModels, loadForestTextures, type ForestTextures } from "./ass
 import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
-import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, torchReactiveShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
+import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, MOON_SHADOW_ID, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_MOONLIT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, torchReactiveShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
 import type { ForestStormView } from "./storm"
 import { BoltPass, BOLT_LOOK } from "../weather/lightning-pass"
 import type { Strike, StrikeLight } from "../weather/lightning"
 import type { WeatherEave, WeatherExcludeRect, WeatherLight, WeatherPrepareInput } from "../weather"
 import { forestPost } from "./post"
 import { FOREST_WIND_DIR } from "./wind"
-import { stepForestExposure, forestExposureTarget } from "./exposure"
+import { stepDarkAdaptation, stepForestExposure, forestExposureTarget } from "./exposure"
 import { indexForestMesh } from "./index-mesh"
 import { appendForestLights } from "./lights"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
@@ -142,13 +142,15 @@ export type ForestView = {
   /** Median GPU ms of the last frame's input over `n` timed frames. */
   measure(n?: number): Promise<{ median: number; samples: number[] } | null>
   stats(): Record<string, number | string>
-  /** Exposure the camera has settled on (× base) and the torch's hit distance (m). */
-  readonly camera: { exposure: number; hit: number }
+  /** Exposure the camera has settled on (× base), the torch's hit distance (m) and the eye's dark adaptation (0..1). */
+  readonly camera: { exposure: number; hit: number; dark: number }
   /** Profiling switches (automation only). */
   readonly debug: Record<string, boolean>
 }
 
 const TAU = Math.PI * 2
+/** How far along a ray the moon's shafts are marched (m), inside the moon shadow map's ~100 m reach. */
+const MOON_SHAFT_REACH = 36
 
 /** The forest's fog volume: mist pools in the hollows (the bank sits at absolute heights) and thickens over the lake. */
 export const forestFogVolume = (smoke: boolean) => fogScatterVolume({
@@ -169,8 +171,34 @@ fn fogDistanceSigma(p: vec3f, eye: vec3f) -> f32 {
   return N.pad.y * clamp((distance(p, eye) - N.pad.z) / 12.0, 0.0, 1.0);
 }
 fn fogDistanceColor() -> vec3f { return vec3f(0.000015, 0.00002, 0.00003); }
+// The physical moon scattered by the mist bank (and, by its share, the clear air) along the ray, where the canopy's
+// moon shadow lets it through: shafts where a gap and the mist line up, nothing under closed crowns. Zero without a
+// physical moon.
+fn woodsMoonShafts(ro: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec3f {
+  if (N.misc.w < 0.5 || N.moon.w <= 0.0 || (N.moonlit.z <= 0.0 && N.moonlit.w <= 0.0)) { return vec3f(0.0); }
+  let reach = min(dist, N.moonlit2.y);
+  let n = max(u32(N.moonlit2.x), 1u);
+  let dt = reach / f32(n);
+  let g = FOG.scatter.z;
+  let hg = (1.0 - g * g) / pow(max(1.0 + g * g - 2.0 * g * dot(rd, N.moon.xyz), 1e-4), 1.5);
+  let phase = mix(hg, 1.0, FOG.bank3.w) / 12.566371;
+  var sum = 0.0;
+  for (var i = 0u; i < n; i++) {
+    let s = (f32(i) + jitter) * dt;
+    let p = ro + rd * s;
+    // The bank's mean density (not its billows): the canopy's shadow gives the shafts their shape, and it is far cheaper.
+    let local = fogBankLocal(p);
+    let sig = fogBankMeanSigmaAt(p, local) * fogBankMask(p) * N.moonlit.z + fogSigma(p) * N.moonlit.w;
+    if (sig <= 1e-6) { continue; }
+    let vis = spotShadowAir(${MOON_SHADOW_ID}u, p);
+    if (vis <= 0.0) { continue; }
+    let toEye = exp(-fogBankDepth(ro, p, local) - fogOpticalDepth(ro, p) - fogDistanceDepth(ro, p));
+    sum += sig * vis * toEye * (1.0 - smoothstep(0.7 * N.moonlit2.y, N.moonlit2.y, s)) * dt;
+  }
+  return vec3f(N.moon.w * phase * sum);
+}
 `), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true, torches: true,
-  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)", distanceFog: true, distanceFogSky: "N.misc.w < 0.5" } : {}),
+  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)", distanceFog: true, distanceFogSky: "N.misc.w < 0.5", extraScatter: "woodsMoonShafts(ro, rd, dist, jitter)" } : {}),
   // Only glossy ground mirrors the lamps (water, wet boards, shore mud); dry litter and the camp's dirt do not.
   cutoff: "0.4", spotShadows: !smoke, surface: !smoke, reflectionSamples: 2, reflectionCap: "3.0",
   bankMask: "1.0 + 0.6 * (1.0 - smoothstep(0.85, 1.5, length((p.xz - N.lake.xy) / N.lake.zw)))",
@@ -269,7 +297,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const unjitteredInv = new Float32Array(16)
   const maskView = textures.base.createView({ dimension: "2d-array" })
   const foliageMask: SpotShadowMask = { view: maskView, cutoff: 0.45, layerFromAux: true, lod: 1 }
-  const cam = { exposure: 1, hit: 40, stops: 0, pending: true, wait: 0 }
+  const cam = { exposure: 1, hit: 40, stops: 0, pending: true, wait: 0, dark: 0 }
   let previousEye: Vec3 | null = null
   function resetExposure() {
     Object.assign(cam, { exposure: 1, hit: 40, stops: 0, pending: true, wait: 0 })
@@ -374,7 +402,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const spot = local ? (torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
     // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
-    const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 * (1 - Math.min(1, Math.max(0, s.nearScatter))) : 0)
+    const fallback = spot + 0.004 * s.sky + 0.0005, offset = s.clearAir && !smoke && local ? -0.25 * (1 - Math.min(1, Math.max(0, s.nearScatter))) : 0
+    // Dark adaptation lifts the cap only once the scene alone already holds the camera at its lift.
+    cam.dark = stepDarkAdaptation(cam.dark, f.dt, !!local, forestExposureTarget(metered, fallback, s, offset) >= s.adaptLift - 0.05, s)
+    const targetStops = forestExposureTarget(metered, fallback, s, offset, s.darkAdapt * cam.dark)
     // While a lightning flash is in the meter the storm's eye adaptation answers it; this clock waits.
     if (!st?.holdExposure) stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
     cam.exposure = Math.pow(2, cam.stops)
@@ -407,7 +438,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1), ...(t.shadowNear ? { near: t.shadowNear } : {}) }))
     // A distant narrow spotlight approximates parallel lunar shadow rays over the
     // 100 m near field, reusing the host's cut-out foliage/terrain shadow casters.
-    const moonShadowId = 65000
+    const moonShadowId = MOON_SHADOW_ID
     if (physicalMoon) candidates.push({ id: moonShadowId, pos: [Math.round(f.eye[0] / 8) * 8 + lunar.direction[0] * 512, f.eye[1] + lunar.direction[1] * 512, Math.round(f.eye[2] / 8) * 8 + lunar.direction[2] * 512], axis: [-lunar.direction[0], -lunar.direction[1], -lunar.direction[2]], cosOuter: 0.98, range: 650, intensity: 1e8 })
     if (flashShadow) { const d = st!.flashDir; candidates.push({ id: FLASH_SHADOW_ID, pos: [Math.round(f.eye[0] / 8) * 8 + d[0] * 512, f.eye[1] + d[1] * 512, Math.round(f.eye[2] / 8) * 8 + d[2] * 512], axis: [-d[0], -d[1], -d[2]], cosOuter: 0.98, range: 650, intensity: 1e9 }) }
     const wide = physicalMoon || flashShadow
@@ -520,6 +551,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), sky.active ? 1 : 0], 72)
     custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, s.nearScatter], 76)
     custom.set(st ? [...st.flashDir, st.flash, st.flashSky, st.wetness, st.puddles, flashShadow ? 1 : 0] : [0, 1, 0, 0, 0, 0, 0, 0], WOODS_STORM)
+    // The physical moon's undirected light (the moonlit dome, what the crowns pass down) and its shafts in the mist.
+    custom.set(physicalMoon
+      ? [moonSkyIlluminance(s) * s.skylight, lunar.illuminanceLux * Math.max(0, lunar.direction[1]) * s.canopyScatter, s.moonMist, s.moonMist * s.moonAir, quality.mistSteps, MOON_SHAFT_REACH, s.skyMoonScatter, s.skyExtinction]
+      : [0, 0, 0, 0, 0, 0, 0, 0], WOODS_MOONLIT)
     renderer.setCustomUniforms(custom)
 
     // ---- Storm: the cloud base over the sky, the channel, the rain.
@@ -550,7 +585,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       view: [-reach, -reach, reach, reach], batches: f.batches ?? [], alphaSprites: f.sprites?.alpha ?? empty, alphaCount: f.sprites?.alphaCount ?? 0, addSprites: sprites, addCount: spriteCount,
       grade: [f.time, s.noise, s.vignette, s.exposure * cam.exposure * eye],
       postParams: [s.aberration, s.halation, s.bloom],
-      postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, cam.stops)) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje) + 4 * Number(s.highlightShoulder)],
+      // Noise gain stops at the camera's own lift: dark adaptation past it is the eye's sensitivity, not more gain.
+      postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, Math.min(cam.stops, s.adaptLift))) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje) + 4 * Number(s.highlightShoulder)],
       postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
       volume: volumes, fogBlur: fog.blurInput(), weather,

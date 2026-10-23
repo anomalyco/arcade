@@ -23,13 +23,15 @@ export type SkySettings = {
   skyMoonEarthshine: number
   /** Normal-incidence illuminance of a full moon before local atmospheric extinction. */
   skyMoonLux: number
+  /** Moonlight the air scatters over the whole dome (Krisciunas–Schaefer; 1 is physical, 0 the halo alone). */
+  skyMoonScatter: number
 }
 export const SKY_DEFAULTS: Readonly<SkySettings> = {
   skyMode: "today", skyClock: "host", skyVision: "adapted", skyLatitude: 45, skyLongitude: -73,
   skyYear: 2026, skyDay: 295, skyHour: 6, skyStars: 1, skyExtinction: 0.15,
   skyScintillation: 0.035, skyMilkyWay: 1, skyAirglow: 1, skyZodiacal: 0.2,
   skyHaze: 0.15, skyMoon: "none", skyMoonAzimuth: 220, skyMoonAltitude: 34,
-  skyMoonEarthshine: 0.0002, skyMoonLux: 0.25,
+  skyMoonEarthshine: 0.0002, skyMoonLux: 0.25, skyMoonScatter: 1,
 }
 export function createSkySettings(values: Partial<SkySettings> = {}): SkySettings { return { ...SKY_DEFAULTS, ...values } }
 export function skyUtc(s: SkySettings): number { return Date.UTC(s.skyYear, 0, 1) + ((s.skyDay - 1) * 24 + s.skyHour) * 3600000 }
@@ -57,5 +59,6 @@ export function skyControls(): LabControl[] {
     range("skyMoonAltitude", "Moon altitude", -10, 90, 1, "°"),
     range("skyMoonLux", "Full moon illuminance", 0.1, 0.35, 0.01, "lx"),
     range("skyMoonEarthshine", "Earthshine", 0, 0.001, 0.00005, "×"),
+    range("skyMoonScatter", "Moonlit sky", 0, 3, 0.05, "×"),
   ]
 }

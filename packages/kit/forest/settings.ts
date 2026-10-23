@@ -18,6 +18,12 @@ export type ForestLookSettings = SkySettings & {
   stars: number
   /** Skylight that reaches the forest floor through the canopy. */
   skylight: number
+  /** Share of the physical moon's light on the crowns that they scatter down to the floor as diffuse light. */
+  canopyScatter: number
+  /** Physical moonlight scattered by the mist bank (shafts where a canopy gap and the mist line up; 1 is physical). */
+  moonMist: number
+  /** Share of that the clear air above the mist scatters too (0 mist only, 1 physical). */
+  moonAir: number
   // Fog and mist
   fogDensity: number
   fogFalloff: number
@@ -118,6 +124,10 @@ export type ForestLookSettings = SkySettings & {
   adaptBrighten: number
   /** Maximum stop-down below the base, in stops; adaptLift independently bounds opening. */
   adaptRange: number
+  /** Dark adaptation: extra stops of lift the eye gains over minutes with your torch off in the dark. */
+  darkAdapt: number
+  /** Its time constant (s, 63%); your torch going on resets it in about a second. */
+  darkAdaptTime: number
   /** Sensor noise in the dark, as 1/255 at midtones; it grows with the exposure gain. */
   noise: number
   chromaNoise: number
@@ -138,7 +148,7 @@ export type ForestLookSettings = SkySettings & {
 
 export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   ...SKY_DEFAULTS,
-  moon: 0.06, moonHeading: 220, moonElevation: 34, sky: 1, stars: 1, skylight: 1,
+  moon: 0.06, moonHeading: 220, moonElevation: 34, sky: 1, stars: 1, skylight: 1, canopyScatter: 0.03, moonMist: 1, moonAir: 0,
   fogDensity: 0.008, fogFalloff: 0.02, fogBrightness: 0.0035, fogHue: 215,
   mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, phaseFloor: 0.03, beamAir: 1, beamMist: 1,
   clearAir: true,
@@ -151,7 +161,7 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   fernDensity: 1, litter: 1, moss: 1, smoothTrunks: true,
   windows: 1, stringLights: 1, water: 1, campDetail: false,
   lakeLook: "today", lakeRipples: 1, lakeRain: 0, lakeScatter: 0.12, lakeMist: 0.6,
-  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 8, adaptRange: 1.5,
+  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 8, adaptRange: 1.5, darkAdapt: 0, darkAdaptTime: 60,
   exposureModel: "robust", nightKey: 0.003, nightStops: 0.8, nightStrength: 0.85, adaptLift: 0.8,
   noise: 1, chromaNoise: 0.35, vignette: 0.4, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
   nightDesaturate: true, nightPurkinje: true, nightAcuity: 0.5,
@@ -209,6 +219,9 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     range("skylight", "Skylight on the floor", N, 0, 3, 0.05, "×"),
     range("moonHeading", "Moon heading", N, 0, 360, 1, "°", "Moon"),
     range("moonElevation", "Moon elevation", N, 5, 85, 1, "°", "Moon"),
+    range("canopyScatter", "Moonlight through the leaves", N, 0, 0.2, 0.005, "share", "Moonlight"),
+    range("moonMist", "Moon shafts in the mist", N, 0, 3, 0.05, "×", "Moonlight"),
+    range("moonAir", "Moon in the clear air", N, 0, 1, 0.05, "share", "Moonlight"),
     select("mist", "Mist pockets", F, [{ value: "drift", label: "Drifting in hollows" }, { value: "off", label: "Off" }]),
     toggle("clearAir", "Clear air near you", F),
     range("fogDensity", "Air density", F, 0, 0.03, 0.0005, "/m"),
@@ -263,6 +276,8 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     { ...range("adaptDarken", "Night stop-down response", C, 0.05, 5, 0.05, "s", "Auto exposure"), enabled: () => settings.exposureModel === "robust" },
     { ...range("adaptBrighten", "Night opening response", C, 0.2, 20, 0.1, "s", "Auto exposure"), enabled: () => settings.exposureModel === "robust" },
     range("adaptRange", "Maximum stop-down", C, 0, 3, 0.1, "stops", "Auto exposure"),
+    range("darkAdapt", "Dark adaptation", C, 0, 3, 0.05, "stops", "Auto exposure"),
+    range("darkAdaptTime", "Dark adaptation time", C, 5, 600, 5, "s", "Auto exposure"),
     range("noise", "Sensor noise", C, 0, 3, 0.05, "/255", "Sensor"),
     range("chromaNoise", "Colour noise", C, 0, 1, 0.05, "", "Sensor"),
     range("vignette", "Vignette", C, 0, 1, 0.01, "", "Lens"),

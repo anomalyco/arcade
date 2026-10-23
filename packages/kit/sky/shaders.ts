@@ -6,6 +6,7 @@ struct Sky {
   equatorX: vec4f, equatorY: vec4f, equatorZ: vec4f,
   moon: vec4f, moonRight: vec4f, moonUp: vec4f, sun: vec4f,
   radiometry: vec4f, layers: vec4f, phase: vec4f, flash: vec4f,
+  scatter: vec4f,
 }
 @group(1) @binding(0) var<uniform> S: Sky;
 @group(1) @binding(1) var moonMap: texture_2d<f32>;
@@ -75,8 +76,12 @@ struct V { @builtin(position) pos: vec4f }
   let tex=textureSample(moonMap,moonSampler,uv).rgb;
   let earth=S.phase.z*pow(sin(S.phase.x*0.5),2.0);
   let surface=tex*S.phase.y*(ls+earth);
+  // Moonlight scattered over the dome (model.ts moonSkyLuminance), bright enough to need no rod gain.
+  let mass=1.0/(sin(max(0.0,altitude))+0.50572*pow(max(0.0,altitude*180.0/PI)+6.07995,-1.6364));
+  let path=1.0-exp2(-1.32877124*S.radiometry.y*mass);
+  let moonSky=S.moon.w*S.scatter.x*0.0848*(1.06+cosine*cosine+pow(10.0,0.79-angle*4.5/PI))*path*vec3f(0.9,1.0,1.2);
   // Adapt the diffuse sky and halo, not the already-bright lunar surface.
-  colour=mix(colour*S.equatorZ.w,surface*moonTrans,disk*S.phase.w);
+  colour=mix(colour*S.equatorZ.w+moonSky,surface*moonTrans,disk*S.phase.w);
   colour=colour*smoothstep(-0.025,0.015,d.y)*S.radiometry.x+S.flash.rgb;
   return vec4f(colour,1.0);
 }

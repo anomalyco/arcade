@@ -30,7 +30,7 @@ const OVERCAST: Partial<ForestLookSettings> = { skyMode: "physical", skyMoon: "n
 export const LOOKS: Record<LookId, Look> = {
   today: {
     label: "Today",
-    note: "BARBARA as shipped: the catalogue night sky with no moon, mist in the hollows, torches and camp lights.",
+    note: "BARBARA as shipped: the catalogue night sky with a full moon through the canopy, mist in the hollows, torches and camp lights.",
     forest: {}, storm: {},
   },
   moonlit: {
