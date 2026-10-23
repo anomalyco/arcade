@@ -1,6 +1,6 @@
 // Headless, muted stills of every curated Look at one spot and time, a near strike at its peak, and rough GPU cost of
 // Downpour at High and Low (run after `bun run build`, through HiveMind browser):
-//   bun scripts/looks-proof.ts [--out <dir>] [--size 1600x900] [--looks id,id] [--no-perf] [--probe] [--sweep look:k=v,k=v;k=v] [--tonight 0.1,0.5]
+//   bun scripts/looks-proof.ts [--out <dir>] [--size 1600x900] [--looks id,id] [--no-perf] [--probe] [--sweep look:k=v,k=v;k=v] [--tonight 0.1,0.5] [--tonight-storm]
 // The spot is the camera lab's (70 m north of camp, your torch and two friends'), on a synthetic clock. Scheduled
 // strikes are held off for the Look stills so each is comparable; Storm coming is taken at the peak of a far strike.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -20,7 +20,7 @@ type Woods = {
   frames: number; paused: boolean; autoplay: boolean
   step(ms: number): void
   setPose(x: number, z: number, yaw: number, pitch?: number): void
-  looks: { pick(id: string): void; ids: readonly string[]; tonight: { spells: unknown[]; now: string } }
+  looks: { pick(id: string): void; ids: readonly string[]; tonight: { spells: unknown[]; now: string }; spellsOf(seed: number): { weather: string; at: number }[] }
   storm: { settings: Record<string, number | string>; settle(): void; strike(at: string): void; strikes: { live: readonly { t: number }[]; clock: number }; last: { view: { flash: number; flashSky: number } } | null }
   trigger(what: string): void
   world: { camp: { x: number; z: number }; buildings: { kind: string; rect: number[] }[] }
@@ -90,7 +90,8 @@ const strikePeak = async (at: string) => {
     for (; frames < 90; frames++) {
       woods.step(1000 / 60)
       const now = flash()
-      if (prev > 0 && now < prev) break
+      // Past the leader (≥ 7 frames), so an earlier strike's fading flash isn't taken for this one's peak.
+      if (frames >= 7 && prev > 0 && now < prev) break
       prev = now
     }
     return { clock: woods.storm.strikes.clock, frames, flash: flash(), sky: woods.storm.last?.view.flashSky ?? 0 }
@@ -136,6 +137,37 @@ if (tonightAt) {
     await settle(120)
     await shoot(`tonight-${Math.round(p * 100)}`)
     console.log("tonight", p, JSON.stringify(now))
+  }
+}
+// `--tonight-storm`: a night whose weather brews a storm and breaks into rain (the first such seed from the world's),
+// shot in the middle of each spell: the brewing one at a far strike's peak, the rain as it falls.
+if (process.argv.includes("--tonight-storm")) {
+  await lookAt("today")
+  await page.evaluate(() => woods.looks.pick("tonight"))
+  const plan = await page.evaluate(() => {
+    const n = (woods.state as unknown as { night: { seed: number } }).night
+    for (let seed = n.seed; seed < n.seed + 5000; seed++) {
+      const spells = woods.looks.spellsOf(seed), i = spells.findIndex((x) => x.weather === "brewing")
+      if (i >= 0 && spells[i + 1]?.weather === "rain") {
+        const mid = (k: number) => (spells[k]!.at + (spells[k + 1]?.at ?? 1)) / 2
+        n.seed = seed
+        return { seed, spells, brewing: mid(i), rain: mid(i + 1) }
+      }
+    }
+    return null
+  })
+  console.log("tonight-storm", JSON.stringify(plan))
+  for (const [name, p] of plan ? [["brewing", plan.brewing], ["rain", plan.rain]] as const : []) {
+    await page.evaluate((p) => {
+      const n = (woods.state as unknown as { night: { start: number; dawn: number }; t: number })
+      n.night.start = n.t - p * 1080; n.night.dawn = n.night.start + 1080
+      for (let i = 0; i < 30; i++) woods.step(1000 / 60)
+      woods.storm.settle()
+    }, p)
+    await settle(150)
+    if (name === "brewing") await strikePeak("far")
+    await shoot(`tonight-${name}`)
+    console.log("tonight", name, JSON.stringify(await page.evaluate(() => woods.looks.tonight.now)))
   }
 }
 // Clear moonlit also from the dock, looking south over the lake toward the moon (its glitter path).

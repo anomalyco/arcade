@@ -45,6 +45,7 @@ export type ForestLookSettings = SkySettings & {
   beamMist: number
   /** Thin torch in-scatter within 8 m of the eye; compensate by −0.25 stop only while your torch is on. */
   clearAir: boolean
+  /** How much of the near in-scatter clear air keeps (0 thin, 1 full: then neither thinning nor the −0.25 stop). */
   nearScatter: number
   /** Extra distance extinction beyond the clear near field, forest volume only. */
   depthMist: boolean

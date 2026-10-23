@@ -1,7 +1,7 @@
 import type { ForestLookSettings } from "@arcade/kit/forest/settings"
 import type { ForestStormSettings } from "@arcade/kit/forest/storm"
 import { MOONLIT_LAKE } from "@arcade/kit/water/lake-preset"
-import type { NightWeather } from "../shared/night-weather"
+import { nightProgress, weatherAt, type NightWeather, type WeatherSpell } from "../shared/night-weather"
 
 /**
  * Curated Looks: each bundles the forest's sky, fog, light and camera settings with the storm's rain, lightning and
@@ -43,11 +43,11 @@ export const LOOKS: Record<LookId, Look> = {
   newmoon: {
     label: "New moon, pitch black",
     note: "No moon and clear, dry air: far more stars and the Milky Way over the crowns, no sky light reaching the floor, the camp's power out and the ridge beacon dark. Black outside the torches.",
-    // The eye can't lift the dark as far as Today's (adaptLift 0, exposure down ~0.7 stop); the stars are doubled so
-    // they still read through the gaps.
+    // About 1.4 stops under Today and the eye can't open past its base (adaptLift 0); the stars and Milky Way are
+    // pushed up past that, so the sky through the gaps is the brightest thing that isn't a torch.
     forest: {
-      skyMode: "physical", skyMoon: "none", skyStars: 2.2, skyMilkyWay: 2, skyAirglow: 0.15, skyZodiacal: 0, skyExtinction: 0.08, skyScintillation: 0.06,
-      sky: 0.12, skylight: 0, windows: 0, stringLights: 0, exposure: 1, adaptLift: 0, fogBrightness: 0, mistDensity: 0.02, depthDensity: 0.015, noise: 0.6,
+      skyMode: "physical", skyMoon: "none", skyStars: 3, skyMilkyWay: 2.6, skyAirglow: 0.1, skyZodiacal: 0, skyExtinction: 0.06, skyScintillation: 0.06,
+      sky: 0.08, skylight: 0, windows: 0, stringLights: 0, exposure: 0.6, adaptLift: 0, fogBrightness: 0, mistDensity: 0.015, depthDensity: 0.012, noise: 0.6,
     },
     storm: {},
     feel: { ridgeGlow: 0 },
@@ -57,9 +57,10 @@ export const LOOKS: Record<LookId, Look> = {
     note: "A bank lying knee to waist high in the hollows and between the trunks, still and thick. Your torch is in it, so the beam lights it from inside; dark wherever no light falls.",
     forest: {
       // A height-limited layer the torch sits in (top ~1–2 m with the hollows' lift), so the beam travels inside it,
-      // not above it; no glow of its own (fogBrightness 0, depthMist on), so only lit fog shows.
+      // not above it; no glow of its own (fogBrightness 0, depthMist on), so only lit fog shows. Full near scatter is a
+      // number, not clear air off, so Tonight's fog rolls in without a snap.
       mist: "drift", mistDensity: 0.2, mistHeight: 1.6, mistGaps: 0.02, mistDrift: 0.05, mistScale: 14, fogBrightness: 0, canopyMist: 1,
-      beamMist: 2.5, beamAir: 0.6, phaseFloor: 0.15, phaseG: 0.62, clearAir: false, depthMist: true, depthDensity: 0.03, wind: 0.4,
+      beamMist: 2.5, beamAir: 0.6, phaseFloor: 0.15, phaseG: 0.62, nearScatter: 1, depthMist: true, depthDensity: 0.03, wind: 0.4,
     },
     storm: {},
   },
@@ -112,6 +113,26 @@ export const WEATHER_KEEPS: ReadonlySet<string> = new Set(["windows", "stringLig
 
 /** The Look each spell of the night's weather (`shared/night-weather.ts`) wears. */
 export const WEATHER_LOOK: Record<NightWeather, LookId> = { clear: "today", starry: "newmoon", fog: "groundfog", brewing: "stormcoming", rain: "downpour" }
+
+/** Tonight's weather at shared time `t` as two Looks and the mix, held at the night's end (the end card). */
+export function tonightAt(spells: readonly WeatherSpell[], night: { start: number; dawn: number; end: number }, t: number) {
+  const w = weatherAt(spells, nightProgress(Math.min(t, night.end || t), night.start, night.dawn))
+  return { ...w, a: WEATHER_LOOK[w.from], b: WEATHER_LOOK[w.to] }
+}
+
+/**
+ * Tonight's strike settings at whole second `k` of the shared clock (`SharedStormClock.settingsAt`): read at the
+ * slot, not at a client's frame time, so clients at any frame rate agree on every strike through a change.
+ */
+export function tonightStrikes(spells: readonly WeatherSpell[], night: { start: number; dawn: number; end: number }, k: number, base: Bag) {
+  const w = tonightAt(spells, night, k)
+  const sa = LOOKS[w.a].storm as Bag, sb = LOOKS[w.b].storm as Bag
+  const v = (key: keyof ForestStormSettings) => {
+    const a = (key in sa ? sa[key] : base[key]) as number, b = (key in sb ? sb[key] : base[key]) as number
+    return a + (b - a) * w.mix
+  }
+  return { rate: v("strikes"), cloud: v("strikeCloud"), near: v("strikeNear"), far: v("strikeFar") }
+}
 
 /** Today's values for every key a Look touches, read from the live settings before any Look is applied. */
 export function lookBase(targets: Parts): Parts {

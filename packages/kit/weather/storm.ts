@@ -31,9 +31,15 @@ export type StormStrikeSettings = {
 /**
  * A storm shared by everyone on one clock: scheduled strikes come from the seed and whole seconds of `time` alone (no
  * history), placed round `anchor` (x, z), so every client on the same settings sees the same strike at the same moment
- * from the same place, and hears it after its own travel. Strikes asked for stay local.
+ * from the same place, and hears it after its own travel. Strikes asked for stay local. Settings that change over the
+ * shared clock (a night's weather) come from `settingsAt`, read at each whole second, never at a client's frame time.
  */
-export type SharedStormClock = { time: number; anchor: readonly [number, number] }
+export type SharedStormClock = {
+  time: number
+  anchor: readonly [number, number]
+  /** The strike settings at whole second `k` of the shared clock, over the frame's own (`flashes` stays local). */
+  settingsAt?: (k: number) => Partial<Omit<StormStrikeSettings, "flashes">>
+}
 
 export const STORM_STRIKE_DEFAULTS: Readonly<StormStrikeSettings> = { rate: 0, cloud: 0.25, near: 250, far: 3000, flashes: "full" }
 
@@ -108,7 +114,8 @@ export class StormStrikes {
       if (this.slot === null || now < this.slot || now - this.slot > 30) this.slot = now
       const anchor = [shared.anchor[0], eye[1]!, shared.anchor[1]]
       for (let k = this.slot + 1; k <= now; k++) {
-        const plan = sharedPlan(this.seed, k, rate, gap, s)
+        const sk = shared.settingsAt ? { ...s, ...shared.settingsAt(k), flashes: s.flashes } : s
+        const plan = sharedPlan(this.seed, k, sk.rate * (reduce ? 0.35 : 1), gap, sk)
         if (!plan) continue
         // Its stroke lands at the slot's start on the shared clock, on this storm's own clock.
         this.add(plan, anchor, eye, groundY, reduce, this.time - (shared.time - k))
