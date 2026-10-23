@@ -22,3 +22,14 @@ starting pose derive from the world's lake/dock. The probe uses the same simulat
 as the forest frame.
 
 No paired timing; GPU cost is unmeasured. Proof results for this port are recorded below.
+
+## Port proof (main 097dd477 + lake)
+
+- HiveMind on mini: BARBARA client and server typechecks, kit and root-script typechecks pass;
+  73 targeted tests pass (BARBARA, kit forest, architecture map, Lab stations) with
+  `bun test --max-concurrency 4`; BARBARA production build passes.
+- Mini/Metal stills in BARBARA at night, same pose and clock: no shader/page errors. Real log
+  drag moves the log; Edit blocks walking and pointer lock; the Today control works.
+- Today: milky grey wash with speckled glints and a tiny moon dot. Moonlit: dark water, broken
+  moon glitter path, no wash. The far shore reads as a dark band, not reflected trees.
+- Decision: stays opt-in. It clearly beats Today, but the treeline is not actually reflected.
