@@ -61,8 +61,8 @@ days, L a week.
 | Baked bounce and lamp pools | Blackout `bakeBounce`, Outbreak `bakeOutbreakBounce` + `src/lightbake.ts` | `gpu/level` | Top-down games | M | Not carded: only top-down games bake |
 | Forest renderer | branch `woods-look` | `packages/kit/forest` | Woods first, then the Lot | — | Being built in the kit |
 
-Intentional copies, not to extract: Carrier's ocean rain (`src/render/rain.ts`, displaced onto Gerstner waves) and
-Wings's Three.js rain are not `@arcade/kit/weather`; Wings is an independent project.
+Intentional copy, not to extract: Carrier's ocean rain (`src/render/rain.ts`, displaced onto Gerstner waves) is not
+`@arcade/kit/weather`.
 
 ## Sound
 

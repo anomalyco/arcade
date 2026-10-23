@@ -10,7 +10,7 @@ game's own `AGENTS.md`.
   verify` (below) runs the checks.
 - `bunfig.toml` selects hoisted dependencies for shared tooling and historical benchmark exports. Keep Vite,
   Wrangler, TypeScript and Playwright versions aligned across workspace games.
-- `landing/`, `redirects/` and `games/wings/` are independent projects with their own lockfiles and install/check
+- `landing/` and `redirects/` are independent projects with their own lockfiles and install/check
   commands; do not add them to the workspace implicitly.
 - While iterating, run `hivemind run --kind browser -- bun run verify`: it checks only the targets whose CI workflow
   paths match your changes (vs `origin/main`, including uncommitted files), in parallel, with incremental typecheck,

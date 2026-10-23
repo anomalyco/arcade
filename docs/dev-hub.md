@@ -30,7 +30,6 @@ The router is one Nexus entry. It binds loopback, adds no public routes, and cha
 
 Limits:
 
-- Wings is an independent project with its own install, so it is not mounted. Its card links to production.
 - Carrier's sound-picks save posts to root `/__sfx/picks`. Under the router, as in production, that path does not
   exist and the save fails.
 - One router serves one checkout. Use separate Nexus names for separate worktrees.
@@ -43,7 +42,7 @@ no landing link). Its links depend on how the page is served:
 
 | Served by | Game links | Label |
 | --- | --- | --- |
-| `bun run dev` (router) | Mounted games: same origin, `/arcade/<id>/`. Wings: production | Local |
+| `bun run dev` (router) | Mounted games: same origin, `/arcade/<id>/`. Others: production | Local |
 | Production `anoma.ly/arcade/…` | Same-origin siblings `/arcade/<id>/` | Production |
 | A single game's own Vite server | `https://anoma.ly/arcade/<id>/`, plus a note to run `bun run dev` | Production |
 

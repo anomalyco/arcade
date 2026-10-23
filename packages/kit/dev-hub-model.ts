@@ -10,7 +10,6 @@ export const hubCommands = [
 export const hubGames = [
   { id: "getaway", label: "Getaway", prototype: false },
   { id: "blackout", label: "Blackout", prototype: false },
-  { id: "wings", label: "Wings", prototype: false },
   { id: "carrier", label: "Carrier", prototype: true },
   { id: "outbreak", label: "Outbreak", prototype: true },
 ] as const

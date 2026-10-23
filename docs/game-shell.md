@@ -109,7 +109,7 @@ Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell"
 | Outbreak | Escape menu and Settings; its own lobby stays the title | `games/outbreak/src/main.ts`, `src/lobby/run-tools.ts` |
 | Woods | Not yet (unshipped branch `woods`); see the adoption note below | |
 | Lab | Exempt: it is the authoring tool, not a game. It keeps Key labels and its own Edit-mode mute | |
-| Wings, landing, redirects | Out of scope: independent projects | |
+| Landing, redirects | Out of scope: independent projects | |
 
 ### Deliberate changes in the Lot and Night Shift
 
@@ -156,4 +156,3 @@ What each game had for its player-facing shell. Paths are under `games/<game>/`.
 | Outbreak | Lobby over a practice space (`src/lobby/lobby-ui.ts`) | Solo, host, join by code or link, Copy invite link, ready, start; seed replay link | Solo pause in the lobby (#399): Esc, Resume | Speaker button with sliders (`src/volume/menu.ts`) and the Lab; M is the map (#419) | `AdaptiveQualityController` Auto, headroom, saved `arcade.quality.v1` (`src/quality.ts`) | Key caps everywhere | Lobby field (`src/coop-hud.ts`) | "Loading" status text | `beforeunload` in a night (`src/controls/index.ts`, #419) | Co-op HUD (`src/coop-hud.ts`, `src/net-session.ts`) | `LabPanel` in `src/main.ts` |
 | Walkers | None: a training viewer | None | None | No audio | None | Key caps (`src/main.ts`) | None | None | None | None | `LabPanel` in `src/main.ts` |
 | Woods (branch) | `#start` card: name, Play alone, Play with friends | Create room, Copy invite link, room code on pause | `#pause` card: Esc, Resume, click outside | `SettingsMenu` (`src/menu.ts`): Master, Effects, Ambience, Mute (M) on title and pause | Auto/High/Balanced/Low, starts High, remembered (`woods.quality`) | Key caps (`src/main.ts`) | `woods.name` | None | None | Away players in the room list | `LabPanel` |
-| Wings | Independent Three.js project, out of scope | | | | | | | | | | |

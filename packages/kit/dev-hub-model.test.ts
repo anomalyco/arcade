@@ -13,14 +13,14 @@ describe("developer hub", () => {
     }
   })
   test("prototypes remain separate", () => {
-    expect(hubGames.map(game => game.id).sort()).toEqual(["blackout", "carrier", "getaway", "outbreak", "wings"])
+    expect(hubGames.map(game => game.id).sort()).toEqual(["blackout", "carrier", "getaway", "outbreak"])
     expect(hubGames.filter(game => game.prototype).map(game => game.id)).toEqual(["carrier", "outbreak"])
   })
   test("router pages link mounted games on this origin and fall back to production for the rest", () => {
     const targets = hubTargets("/arcade/getaway/dev.html", router)
     expect(targets).toEqual({ kind: "router", local: ["getaway", "blackout", "outbreak", "carrier"], workers: false })
     for (const id of ["getaway", "blackout", "outbreak", "carrier"]) expect(gameLink(id, targets)).toEqual({ href: `/arcade/${id}/`, source: "local" })
-    expect(gameLink("wings", targets)).toEqual({ href: "https://anoma.ly/arcade/wings/", source: "production" })
+    expect(gameLink("brawl", targets)).toEqual({ href: "https://anoma.ly/arcade/brawl/", source: "production" })
   })
   test("production pages link same-origin siblings; standalone servers link production", () => {
     expect(gameLink("blackout", hubTargets("/arcade/getaway/dev.html", null))).toEqual({ href: "/arcade/blackout/", source: "production" })

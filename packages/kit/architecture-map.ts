@@ -11,7 +11,6 @@ export const ARCHITECTURE_GAMES = [
   { id: "outbreak", label: "Outbreak", dirs: ["games/outbreak"] },
   { id: "carrier", label: "Carrier", dirs: ["games/carrier"] },
   { id: "lab", label: "Lab", dirs: ["games/lab", "packages/kit/lab"] },
-  { id: "wings", label: "Wings", dirs: ["games/wings"] },
   { id: "brawl", label: "Brawl", dirs: ["games/brawl"] },
   { id: "archers", label: "Archers", dirs: ["games/archers"] },
 ] as const

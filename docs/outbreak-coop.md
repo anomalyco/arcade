@@ -35,7 +35,7 @@ Game-agnostic pieces, so Blackout and Getaway can adopt them later (their own be
   a dry tick repeats the last movement without its one-shot edges; when two inputs are consumed in a tick, or a late
   input arrives after its stand-in, its one-shot edges are merged forward instead of dropped (the Blackout/Getaway
   `splice` bug). Small sequence gaps (`≤ 6` ticks) from upstream packet drops keep the stream primed so stand-ins
-  bridge the gap without stalling movement. Wings itself is an independent project and keeps its copy.
+  bridge the gap without stalling movement.
 - `seats.ts`: join, leave, reconnect. Each seat has a public `id` (seen by everyone) and a private `token` (only the
   owner sees it, used to reclaim the seat within the grace window).
 - `bytes.ts`: a small little-endian `ByteWriter`/`ByteReader` (with unsigned/ZigZag LEB128 varints `uvar`/`ivar`,
