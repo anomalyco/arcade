@@ -14,7 +14,7 @@
     "agent-ops": "bun scripts/agent-ops.ts",
     "check:packages": "bun run --filter '@arcade/*' check",
     "typecheck": "bun scripts/typecheck.ts -p scripts/tsconfig.json",
-    "check:scripts": "bun games/blackout/scripts/build-id.ts && bun games/outbreak/scripts/build-id.ts && bun run typecheck && bun test --max-concurrency 4 scripts/verify-scripts.test.ts scripts/typecheck.test.ts",
+    "check:scripts": "bun games/blackout/scripts/build-id.ts && bun games/outbreak/scripts/build-id.ts && bun run typecheck && bun test --max-concurrency 4 scripts/verify-scripts.test.ts scripts/typecheck.test.ts scripts/test-selection.test.ts",
     "verify": "bun scripts/verify.ts",
     "verify:remote": "bun scripts/verify-remote.ts",
     "verify:smoke": "bun scripts/verify.ts --smoke",
