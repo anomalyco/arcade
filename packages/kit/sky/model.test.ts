@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createSkySettings } from "./settings"
-import { equatorialBasis, moonBasis, moonLight, skyClockSettings, sunDirection } from "./model"
+import { equatorialBasis, moonBasis, moonLight, moonSkyIlluminance, moonSkyLuminance, skyClockSettings, sunDirection } from "./model"
 
 test("Today and Moon none cannot add forest light", () => {
   expect(moonLight(createSkySettings({ skyMoon: "full" })).illuminanceLux).toBe(0)
@@ -38,4 +38,24 @@ test("host noon and midnight drive the solar altitude without changing the manua
   expect(s.skyHour).toBe(6)
   const manual = { ...s, skyClock: "utc" as const }
   expect(skyClockSettings(manual, 13)).toBe(manual)
+})
+
+test("the moonlit dome follows Krisciunas–Schaefer: a full moon lights the sky about twenty times a dark night's", () => {
+  const s = createSkySettings({ skyMode: "physical", skyMoon: "full", skyMoonAltitude: 34 })
+  const lux = moonLight(s).illuminanceLux
+  // 60° from the moon at 45° altitude: ~19 mag/arcsec² in V, 0.003–0.006 cd/m² (moonless ~0.0002).
+  const sky = moonSkyLuminance(lux, 60 * Math.PI / 180, 45 * Math.PI / 180, s.skyExtinction)
+  expect(sky).toBeGreaterThan(0.002); expect(sky).toBeLessThan(0.008)
+  expect(moonSkyLuminance(lux, 5 * Math.PI / 180, 45 * Math.PI / 180, s.skyExtinction)).toBeGreaterThan(3 * sky)
+  // The dome's light on the ground is a few percent of the moon's own.
+  const e = moonSkyIlluminance(s)
+  expect(e / lux).toBeGreaterThan(0.02); expect(e / lux).toBeLessThan(0.15)
+  expect(moonSkyIlluminance({ ...s, skyMoonScatter: 0 })).toBe(0)
+  expect(moonSkyIlluminance({ ...s, skyMoon: "none" })).toBe(0)
+})
+
+test("a moon faded to zero light adds nothing, whatever its phase", () => {
+  const s = createSkySettings({ skyMode: "physical", skyMoon: "full", skyMoonLux: 0 })
+  expect(moonLight(s).illuminanceLux).toBe(0)
+  expect(moonSkyIlluminance(s)).toBe(0)
 })

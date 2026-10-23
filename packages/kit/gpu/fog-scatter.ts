@@ -1021,6 +1021,11 @@ export type FogScatterHooks = {
   distanceFog?: boolean
   /** Whether the extra surface-distance medium also covers sky rays. Defaults to true. */
   distanceFogSky?: string
+  /**
+   * WGSL \`vec3f\` of \`ro, rd: vec3f, dist, jitter: f32\`: light the game scatters along the ray (a moon's shafts),
+   * added after the bank with its own extinction to the eye.
+   */
+  extraScatter?: string
 }
 
 /**
@@ -1063,7 +1068,7 @@ ${torches ? `${beamWgsl}\n` : ""}${hooks.spotShadows ? `${spotShadowVolumeWgsl}\
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
 fn fogRoughness(p: vec3f, n: vec3f) -> f32 { return ${hooks.roughness ?? "0.5"}; }
-${hooks.normal ? `fn fogNormal(p: vec3f) -> vec3f { return ${hooks.normal}; }` : ""}
+${hooks.normal ? `fn fogNormal(p: vec3f) -> vec3f { return ${hooks.normal}; }` : ""}${hooks.extraScatter ? `\nfn fogExtraScatter(ro: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec3f { return ${hooks.extraScatter}; }` : ""}
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
@@ -1227,7 +1232,8 @@ ${ext ? `    // The march already dimmed the beams by the bank per sample.
     acc = acc * sqrt(bank.a) + bank.rgb;`}
     trans *= bank.a;
   }
-` : ""}
+` : ""}${hooks.extraScatter ? `
+  acc += fogExtraScatter(eye, rd, dist, fogIgn(px + vec2f(53.0, 29.0) + V.eye.w * 5.588238));` : ""}
   if (!sky && (FOG.reflect.y > 0.0 || FOG.reflect.z > 0.0) && FOG.scatter.w > 0.5) {
     let world = eye + rd * dist;
     ${hooks.normal ? `var nW = normalize(fogNormal(world));` : `var nW = volumeNormalAtTexel(volumeTexel(o.uv), eye);`}

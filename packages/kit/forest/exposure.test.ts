@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { adaptForestExposure, forestExposureTarget, stepForestExposure } from "./exposure"
+import { adaptForestExposure, forestExposureTarget, stepDarkAdaptation, stepForestExposure } from "./exposure"
 import { createForestLookSettings } from "./settings"
 
 test("centre-meter reference retains the previous exposure law", () => {
@@ -105,4 +105,19 @@ test("a timely first reading snaps once, then adapts", () => {
   expect(state.pending).toBe(false)
   stepForestExposure(state, "ready", 1, 1 / 60, s)
   expect(state.stops).toBeLessThan(0)
+})
+
+test("dark adaptation opens over minutes in the dark and your torch resets it", () => {
+  const s = createForestLookSettings({ darkAdapt: 1, darkAdaptTime: 60, adaptLift: 0.8 })
+  let dark = 0
+  for (let i = 0; i < 60 * 60; i++) dark = stepDarkAdaptation(dark, 1 / 60, false, true, s)
+  expect(dark).toBeCloseTo(1 - Math.exp(-1), 3)
+  expect(forestExposureTarget(null, 0, s, 0, s.darkAdapt * dark)).toBeCloseTo(0.8 + dark, 6)
+  expect(forestExposureTarget(null, 0, s)).toBe(0.8)
+  // A bright scene (camp lights) holds it back; the torch going on drops it in about a second.
+  expect(stepDarkAdaptation(0.5, 1 / 60, false, false, s)).toBeLessThan(0.5)
+  let torch = dark
+  for (let i = 0; i < 90; i++) torch = stepDarkAdaptation(torch, 1 / 60, true, true, s)
+  expect(torch).toBeLessThan(0.05 * dark)
+  expect(stepDarkAdaptation(0, 10, false, true, createForestLookSettings({ darkAdapt: 0 }))).toBe(0)
 })

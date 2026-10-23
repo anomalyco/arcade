@@ -122,3 +122,15 @@ test("two clients at different frame rates see the same strikes through a change
   expect(b).toEqual(a)
   expect(a.every(([k]) => k >= 78)).toBe(true)
 })
+
+test("a clear spell turning starry fades the moon's light and keeps its phase", () => {
+  const { targets, base } = gameBase()
+  targets.forest.skyMoon = base.forest.skyMoon = "full"
+  const lux = base.forest.skyMoonLux as number
+  blendLooks(WEATHER_LOOK.clear, WEATHER_LOOK.starry, 0.5, targets, base, WEATHER_KEEPS)
+  expect(targets.forest.skyMoon).toBe("full")
+  expect(targets.forest.skyMoonLux).toBeCloseTo(lux / 2)
+  blendLooks(WEATHER_LOOK.clear, WEATHER_LOOK.starry, 1, targets, base, WEATHER_KEEPS)
+  expect(targets.forest.skyMoonLux).toBe(0)
+  expect(targets.forest.darkAdapt).toBe(0)
+})

@@ -47,3 +47,9 @@ test("every knob lands in one of the sections; storm rows keep their keys under 
   expect(arrangeControl({ key: "x", label: "X", group: "Flashlight", subsection: "Shadows" }).subsection).toBe("Flashlight shadows")
   expect(arrangeControl({ key: "y", label: "Y", group: "Something new" }).group).toBe("Debug")
 })
+
+test("Looks fade the moon by its light, never its phase, and New moon doesn't dark-adapt", () => {
+  for (const id of LOOK_IDS) expect(LOOKS[id].forest.skyMoon ?? "full").toBe("full")
+  for (const id of ["newmoon", "stormcoming", "downpour"] as const) expect(LOOKS[id].forest.skyMoonLux).toBe(0)
+  expect(LOOKS.newmoon.forest.darkAdapt).toBe(0)
+})

@@ -5,7 +5,8 @@ import { join } from "node:path"
 import { makeSceneShader } from "../../packages/kit/gpu/shaders"
 import { fogScatterVolume } from "../../packages/kit/gpu/fog-scatter"
 import { ssrVolume } from "../../packages/kit/gpu/reflections/ssr"
-import { batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "../../packages/kit/forest/shaders"
+import { batchHooks, cutoutDepthWgsl, forestHooks, forestLakeHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "../../packages/kit/forest/shaders"
+import { skyShader as nightSkyShader } from "../../packages/kit/sky/shaders"
 import { forestPost } from "../../packages/kit/forest/post"
 import { forestFogVolume } from "../../packages/kit/forest/view"
 import { MIP_SHADER } from "../../packages/kit/forest/assets"
@@ -18,6 +19,8 @@ const cases: [string, string][] = [
   ["forest scene", makeSceneShader(forestHooks) + treeVertexWgsl + cutoutDepthWgsl],
   ["batch scene", makeSceneShader(batchHooks)],
   ["sky", skyShader],
+  ["night sky", nightSkyShader],
+  ["moonlit lake", makeSceneShader(forestLakeHooks)],
   ["motes", moteShader],
   ["post", typeof forestPost === "string" ? forestPost : (forestPost as { code?: string }).code ?? ""],
   ["fog volume", forestFogVolume(false).code],

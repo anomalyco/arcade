@@ -72,6 +72,23 @@ units per cd/m² and owns exposure. `moonLight()` supplies lux and direction for
 - Pitfalls: do not use a long-exposure photograph's brightness as an eye-level target; do not raise forest ambient
   to make stars visible. Moon mips filter in linear light, and the unlit disk also occludes stars.
 
+**Moonlight through the canopy.** With the torch off the woods read the way they do after your eyes adjust: the
+physical moon lands in pools through the canopy's own cut-out shadow map, it lights the sky dome (Krisciunas–Schaefer)
+so trunks silhouette against it and clearings and the lake open up, the crowns pass a little down (`canopyScatter`),
+and the mist bank scatters it only where the moon's shadow map lets it through (`moonMist`). Dark adaptation
+(`darkAdapt`, `darkAdaptTime`) adds up to N stops over ~60 s once the scene alone holds the camera at `adaptLift`
+with your torch off; the torch resets it, lightning doesn't. No ambient floor: what is in shadow stays black.
+- Where: `kit/sky/model.ts` (`moonSkyLuminance`), `kit/forest/shaders.ts` (`forestMoonDirect`, `forestMoonAmbient`),
+  `forest/view.ts` (`woodsMoonShafts` through the fog volume's `extraScatter` hook), `forest/exposure.ts`
+  (`stepDarkAdaptation`). BARBARA: `skyMoon: "full"`, `darkAdapt: 1` in `src/world-view.ts`; kit defaults stay moonless.
+  To fade the moon (Looks, weather blends) fade `skyMoonLux`, not the `skyMoon` phase string.
+- Cost: about +0.7 ms (mini, High); the moon map re-renders only when you cross an 8 m snap.
+- Kit: asked for it ("Without the flashlight on, it's really hard to see anything. Shouldn't we have some moon
+  beams?"). The BARBARA default is pending his look; moonless is `skyMoon: "none"`.
+- Pitfalls: don't raise `moonMist` to make shafts show (the milky wash Kit rejects); clear-air shafts (`moonAir`) add
+  nothing visible and stay off. A brighter sky shows the far-LOD crowns as a blockier dark band: that is the LOD,
+  not the moon.
+
 **Physical lights and surfaces.** GGX with height-correlated Smith, Karis sphere-light widening so a fixture
 mirrors as a patch, geometric specular AA, and a split-sum sky reflection with a fitted env BRDF. Reads as wet
 asphalt, car paint and metal instead of Blinn hot spots.
