@@ -505,6 +505,23 @@ describe("SAM", () => {
   })
 })
 
+describe("SAM warning", () => {
+  test("a SAM homing on a jet stays inbound only while that jet is among the world's targets (the pilot's MISSILE warning)", () => {
+    for (const listed of [true, false]) {
+      const world = new GunneryWorld({ sea: null, arch: null, ships: [SHIP] }, false)
+      const pos: Vec3 = [0, 0, 0]
+      const dir: Vec3 = [0, 0, 0]
+      muzzleWorld(SHIP, SAM, WEAPON_MOUNTS[SAM]!.restYaw, 0.35, pos, dir, 0)
+      const j = jet(100, 1, pos[0] + dir[0] * 3000, 900, pos[2] + dir[2] * 3000)
+      const e = GUNNERY.sam.eject
+      world.fire({ owner: 7, seq: 1, kind: "sam", ship: SHIP.id!, mount: SAM, t: 0, x: pos[0], y: pos[1], z: pos[2], vx: dir[0] * e, vy: dir[1] * e, vz: dir[2] * e, target: 100 }, 0)
+      for (let t = DT; t < 1; t += DT) world.step(t, { jets: listed ? [j] : [] })
+      if (listed) expect(world.inbound(100, j.x, j.y, j.z)).toBeLessThan(3500)
+      else expect(world.inbound(100, j.x, j.y, j.z)).toBe(Infinity)
+    }
+  })
+})
+
 describe("5-inch gun", () => {
   test("shells fly ~800 m/s under drag and gravity, out to ~6 km flat", () => {
     const p = { x: 0, y: 30, z: 0, vx: 0, vy: 0, vz: -GUNNERY.gun.muzzle }

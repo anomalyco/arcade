@@ -153,7 +153,8 @@ export class Weapons {
   /** When each jet was last shot down (presentation clock), so the host can skip its generic crash effect. */
   private killedAt = new Map<number, number>()
   private net: WeaponsNet | null
-  private own: Target
+  /** Our own jet as a target (position and velocity this frame). */
+  readonly own: Target
   private ownPlane: Plane | null = null
   private ownModel = new Float32Array(16)
   private hasOwnModel = false

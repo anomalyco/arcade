@@ -655,11 +655,13 @@ export class FlightModule {
     q.length = 0
   }
 
-  /** Every other jet as the weapons saw it this frame, and the jets' combat world: what the ship guns shoot at. */
+  /** Every jet as the weapons saw it this frame (ours too while flying), and the jets' combat world: what the ship
+   *  guns shoot at. Our own jet must be there so an enemy SAM keeps homing on it here and lights our MISSILE warning. */
   targets(): { jets: readonly Target[]; world: CombatWorld } {
     const list = this.targetList
     list.length = 0
     for (const j of this.weapons.jets.values()) list.push(j)
+    if (this.weapons.flying && this.weapons.own.alive) list.push(this.weapons.own)
     return { jets: list, world: this.weapons.world }
   }
   private targetList: Target[] = []
