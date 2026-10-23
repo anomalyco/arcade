@@ -281,9 +281,10 @@ export const SCREEN_CHAIR = { x: 15, z: 9.95, half: 0.4, turn: Math.PI / 6, seat
 const RUG = { x0: 14.3, x1: 16.6, z0: 9.0, z1: 10.75 } as const
 /**
  * Where the screen lab looks from: the room's front corner at standing eye height, the set on the right third with its
- * glass 30° off axis, the chair three-quarter on (its lit front 54° from the camera) on the left, the rug between.
+ * glass 35° off axis, the chair three-quarter on (its lit front 46° from the camera) on the left, the rug between, and
+ * the table lamp behind the chair just out of frame (its shade keeps a faint glow when off).
  */
-export const SCREEN_CAMERA = { target: [15.69 - OX, 0.9, 9.277 - OZ] as const, yaw: 0.663, pitch: 0.24, dist: 4.5 } as const
+export const SCREEN_CAMERA = { target: [15.69 - OX, 0.9, 9.277 - OZ] as const, yaw: 0.768, pitch: 0.24, dist: 4 } as const
 export const SCREEN_TUBE: FluorescentTube = { at: [16.45 - OX, 2.55, 8.62 - OZ], length: 1.2, seed: 29, failing: 1.2, power: 1.1 }
 export const SCREEN_BULB: CagedBulb = { at: [18.42 - OX, 1.95, 9.55 - OZ], seed: 31, wander: 0.7, power: 0.55 }
 export const SCREEN_LEDS: { tv: LedIndicator; deck: LedIndicator; deckActivity: LedIndicator } = {

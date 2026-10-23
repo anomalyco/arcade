@@ -83,7 +83,7 @@ try {
   await page.waitForFunction(() => !!(window as any).lab, undefined, { timeout: 60000 })
   // The bench's own preset camera (`SCREEN_CAMERA`): the room's front corner, the set on the right third, the chair
   // three-quarter on at left.
-  const benchCam = { yaw: 0.663, pitch: 0.24, dist: 4.5, target: [15.69 - 19, 0.9, 9.277 - 21] }
+  const benchCam = { yaw: 0.768, pitch: 0.24, dist: 4, target: [15.69 - 19, 0.9, 9.277 - 21] }
   // A hand's breadth from the glass: about six pixels a scanline and a triad at 1280×800.
   const macroCam = { yaw: 0.04, pitch: 0.03, dist: 0.24, target: [16.15 - 19 + 0.05, 1.29, 8.83 - 21] }
 
