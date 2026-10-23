@@ -4,6 +4,7 @@ import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
+import { torchCarry } from "@arcade/kit/people/retarget"
 import { RIG, type V3 } from "@arcade/kit/rig"
 import { SIGNAL_PITCH, viewDir, type Player, type WoodsState } from "../shared/sim"
 import { standHeight, type WoodsWorld } from "../shared/world"
@@ -115,7 +116,7 @@ export class FriendsView {
         const up = Math.max(-0.4, Math.min(1, p.pitch))
         const reach = p.tie && p.tie.progress < 1
           ? { l: [0.42, 0.18, -0.08] as V3, r: [0.44, 0.2 + knot, 0.06] as V3, k: 1 }
-          : { r: (p.pitch > SIGNAL_PITCH ? [0.12, 0.78, 0.16] : [0.4, 0.12 + up * 0.32, 0.17]) as V3, k: 1 }
+          : { r: (p.pitch > SIGNAL_PITCH ? [0.12, 0.78, 0.16] : torchCarry(up)) as V3, k: 1 }
         const torch = real.frame(p, state.t, dt, Math.atan2(dz, dx), [dx, dy, dz], reach, (x, z) => standHeight(world, x, z), this.eye, () => steps(p))
         if (torch) {
           fp.push(this.torch, torch.p[0], torch.p[1], torch.p[2], Math.atan2(torch.x[2], torch.x[0]), [3 * level + 0.02, 2.8 * level + 0.02, 2.4 * level + 0.02], Math.asin(Math.max(-1, Math.min(1, torch.x[1]))), 0, 0)

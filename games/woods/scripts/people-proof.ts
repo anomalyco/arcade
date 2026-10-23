@@ -1,9 +1,10 @@
 // Headless, muted proof of the realistic people (`@arcade/kit/people`) in the woods, on the production build:
-//   bun run build && bun scripts/people-proof.ts [--out <dir>] [--shots close,group,...] [--clip] [--gpu] [--size 1600x900]
+//   bun run build && bun scripts/people-proof.ts [--out <dir>] [--shots close,group,...] [--clip] [--past 4,10] [--gpu] [--size 1600x900]
 // Stills on a synthetic clock (deterministic, so headless frame rate never shows): a close-up in your beam (and the
 // same with today's blocky friend), the five friends in a group at mid distance with their torches, and with --clip
 // the group walking past, one PNG per 1/30 s, encoded to people-group.mp4 with ffmpeg. --gpu times the GPU frame
 // (timestamp queries, median of 48) with the five friends in view, realistic against blocky, alternating three times.
+// --past 4,10: one friend walking across your beam at each distance (m), you standing still: past-<m>.mp4.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { chromium, type Page } from "playwright-core"
@@ -13,6 +14,7 @@ const out = resolve(arg("--out", process.env.LEASE_OUT ?? "captures/woods-people
 const [w, h] = arg("--size", "1600x900").split("x").map(Number) as [number, number]
 const only = arg("--shots", "")
 const clip = process.argv.includes("--clip"), gpu = process.argv.includes("--gpu")
+const past = arg("--past", "").split(",").filter(Boolean).map(Number)
 const FRIENDS = 5
 mkdirSync(out, { recursive: true })
 const root = resolve("dist/arcade/woods"), prefix = "/arcade/woods/"
@@ -147,6 +149,32 @@ if (clip) {
   }
   const ff = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", `${out}/clip/%04d.png`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "21", "-movflags", "+faststart", `${out}/people-group.mp4`])
   console.log("ffmpeg", await ff.exited)
+}
+for (const d of past) {
+  // You at the close-up spot, torch on, aimed at chest height where the friend will cross; they walk from 5 m left to
+  // 5 m right of it, the others far away.
+  await page.evaluate(() => { woods.friends.realistic = true })
+  await page.evaluate(({ o, d }) => {
+    const c = woods.world.camp, x = c.x + o.dx, z = c.z + o.dz
+    woods.setPose(x, z, 0, 0)
+    woods.camera.flashlight = true
+    woods.state.brains.forEach((b, k) => {
+      const p = woods.state.players.find((q) => q.id === b.id)!
+      if (k === 0) { p.x = x - 5; p.z = z - d; b.mode = "regroup"; b.tx = x + 30; b.tz = z - d; b.heading = Math.atan2(-30, 0) }
+      else { p.x = x + 60 + k; p.z = z + 60; b.mode = "wait" }
+      b.timer = 99; b.sweep = 0
+    })
+    woods.face(x, z - d, Math.atan2(1.25 - 1.6, d))
+  }, { o: CLOSE, d })
+  await settle(4)
+  mkdirSync(`${out}/past-${d}`, { recursive: true })
+  for (let f = 0; f < 120; f++) {
+    await page.evaluate(async () => { woods.step(1000 / 60); woods.step(1000 / 60); await new Promise((r) => setTimeout(r, 0)) })
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)))
+    await shot(`${out}/past-${d}/${String(f).padStart(4, "0")}.png`)
+  }
+  const ff = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", `${out}/past-${d}/%04d.png`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", `${out}/past-${d}.mp4`])
+  console.log(`past-${d}`, await ff.exited)
 }
 writeFileSync(`${out}/people-proof.json`, JSON.stringify({ timing, gpuMs, errors }, null, 2))
 if (errors.length) console.log("browser messages:", errors.slice(0, 12))
