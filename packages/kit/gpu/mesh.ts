@@ -25,8 +25,11 @@ export const VERT_BYTES = 24
  * - shiny: lit, glossy (screens off, metal, whiteboards)
  * - haze: additive light cone under a fixture; aux is its map light
  * - mote: a speck of dust drifting in a light; normal holds its quad corner and phase, aux its map light
+ * - retro: retroreflective sheeting (a sign, a reflector): lit as paint, plus a narrow return towards a light near the
+ *   eye (a torch you hold); aux is its gain over paint on that axis (the forest batch caps it at RETRO_MAX). Other
+ *   scenes light it as plain paint.
  */
-export const MAT = { lit: 0, floor: 1, lamp: 2, glow: 3, wall: 4, tape: 5, glass: 6, city: 7, accent: 8, cap: 9, shiny: 10, haze: 11, actor: 12, mote: 13, cloth: 14, chitin: 15, ground: 20, roof: 21, foliage: 22, brick: 23, timber: 24 } as const
+export const MAT = { lit: 0, floor: 1, lamp: 2, glow: 3, wall: 4, tape: 5, glass: 6, city: 7, accent: 8, cap: 9, shiny: 10, haze: 11, actor: 12, mote: 13, cloth: 14, chitin: 15, retro: 16, ground: 20, roof: 21, foliage: 22, brick: 23, timber: 24 } as const
 export type Mat = (typeof MAT)[keyof typeof MAT]
 
 const f16buf = new Float32Array(1)

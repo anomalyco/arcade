@@ -445,6 +445,15 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
   shimmer fix).
 - **Generated textures and props.** Flat-diffuse WebP texture arrays (`packages/kit/textures/`), TRELLIS props with
   baked vertex colour and AO (`packages/kit/props/`), worker-baked rugs (`packages/kit/textures/rug.ts`). Outbreak.
+- **Retroreflective signs (2026-10-22, Barbara).** `MAT.retro` in the forest batch: paint plus a return along each
+  light's own line (`retroLobe(dot(ldir, V))`, half by ~3.5°, gain clamped at `RETRO_MAX` 6, then the tape's roll-off),
+  so a sign is dark until your torch is on it, brighter from 15 m than 4 m, and a flare beside it lights it as reddish
+  paint. A flat gain (`MAT.tape` aux) brightens a sign under every light, flares included. Cost: one `exp` per light
+  on sheeting pixels only. CPU mirror `retroGain`, `packages/kit/forest/retro.test.ts`. Kit asked for it after a
+  Scrawl; awaiting his look.
+- **No `MAT.glass` in the forest batch.** The scene shader's glass sums every light in reach at full power with no
+  shadow or falloff (an arena-lamp shortcut); under physical lights Barbara's car cab burned white-peach at any
+  distance. Use dark `MAT.shiny` for windows there.
 - **Painted ground.** Dirt drifts, stains with dark rims, scuffs and cracks at 0.4–3 m, each fading with the pixel
   footprint (Outbreak `games/outbreak/src/ground.ts`).
 - **World-space wear, damp and wax.** The Lot's interior varies albedo and roughness together in world space
