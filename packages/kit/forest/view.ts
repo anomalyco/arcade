@@ -21,6 +21,7 @@ import { packBeamProfile } from "../gpu/lights/beam"
 import type { ForestWorld, Vec3 } from "../sim/forest-world"
 import { loadForestModels, loadForestTextures, type ForestTextures } from "./assets"
 import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
+import { boxDistanceXZ, boxInFrustum, nearStatic } from "./cull"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, MOON_SHADOW_ID, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_MOONLIT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, torchReactiveShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
@@ -818,7 +819,7 @@ class ForestPass implements ScenePass {
   private pipes: Record<"opaque" | "masked" | "maskedDepth" | "treeOpaque" | "treeMasked" | "treeMaskedDepth" | "maskedSingle" | "treeMaskedSingle", GPURenderPipeline>
   private group: GPUBindGroup
   private templates: { near: { opaque: GpuMesh; masked: GpuMesh }; far: { opaque: GpuMesh; masked: GpuMesh } | null; nearDist: number; maxDist: number; kind: string }[]
-  private chunks: { box: readonly number[]; cx: number; cz: number; near: { opaque: GpuMesh; masked: GpuMesh }; far: { opaque: GpuMesh; masked: GpuMesh }; groups: { template: number; data: Float32Array }[] }[]
+  private chunks: { box: readonly number[]; bakedBox: readonly number[]; cx: number; cz: number; near: { opaque: GpuMesh; masked: GpuMesh }; far: { opaque: GpuMesh; masked: GpuMesh }; groups: { template: number; data: Float32Array }[] }[]
   private water: GpuMesh
   private instanceBuf: GPUBuffer
   private field: GPUTexture
@@ -881,7 +882,7 @@ class ForestPass implements ScenePass {
     this.groupEntries = { layout: layoutEntries, group: groupEntries }
     const pair = (m: { opaque: ArrayBuffer; masked: ArrayBuffer }, indexed = false) => ({ opaque: gpuMesh(d, m.opaque, indexed), masked: gpuMesh(d, m.masked, indexed) })
     this.templates = build.templates.map(t => ({ near: pair(t.near, true), far: t.far ? pair(t.far, true) : null, nearDist: t.nearDist, maxDist: t.maxDist, kind: t.kind }))
-    this.chunks = build.chunks.map(c => ({ box: c.box, cx: c.x + CHUNK / 2, cz: c.z + CHUNK / 2, near: pair(c.near), far: pair(c.far), groups: c.groups }))
+    this.chunks = build.chunks.map(c => ({ box: c.box, bakedBox: c.bakedBox, cx: c.x + CHUNK / 2, cz: c.z + CHUNK / 2, near: pair(c.near), far: pair(c.far), groups: c.groups }))
     this.water = gpuMesh(d, build.water)
     this.instanceBuf = d.createBuffer({ size: this.instanceData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     for (let i = 0; i < build.trunks.length; i += 4) {
@@ -944,17 +945,20 @@ class ForestPass implements ScenePass {
     const scatterShare = q.scatter * Math.min(1, s.fernDensity)
     for (let ci = 0; ci < this.chunks.length; ci++) {
       const c = this.chunks[ci]!
+      // Instances take their LOD from the cell they stand in; baked geometry (the dock, string lights) from its own box.
       const dx = Math.max(Math.abs(eye[0] - c.cx) - CHUNK / 2, 0), dz = Math.max(Math.abs(eye[2] - c.cz) - CHUNK / 2, 0)
       const d = Math.hypot(dx, dz)
+      const bd = boxDistanceXZ(c.bakedBox, eye[0], eye[2])
       // Chunks round the eye stay in even when out of view: they cast the torch's shadows into it.
       const inView = boxInFrustum(planes, c.box)
-      if (!inView && d > 0) continue
-      if (d > q.far + 260) continue
+      if (!inView && bd > 0) continue
+      if (bd > q.far + 260) continue
       if (inView) visible++
-      const nearStatic = d < 70 && (c.near.opaque || c.near.masked)
-      const set = nearStatic ? c.near : c.far
-      if (set.opaque) this.statics.push({ mesh: set.opaque, masked: false, near: !!nearStatic, chunk: ci, d, inView })
-      if (set.masked) this.statics.push({ mesh: set.masked, masked: true, near: !!nearStatic, chunk: ci, d, inView })
+      const baked = nearStatic(c.bakedBox, eye[0], eye[2]) && !!(c.near.opaque || c.near.masked)
+      const set = baked ? c.near : c.far
+      if (set.opaque) this.statics.push({ mesh: set.opaque, masked: false, near: baked, chunk: ci, d: bd, inView })
+      if (set.masked) this.statics.push({ mesh: set.masked, masked: true, near: baked, chunk: ci, d: bd, inView })
+      if (!inView && d > 0) continue
       for (const g of c.groups) {
         const t = this.templates[g.template]!
         // Trees past ~240 m (High) are behind trunks and mist; the terrain still runs to the horizon.
@@ -1054,7 +1058,7 @@ class ForestPass implements ScenePass {
     for (const s of this.statics) {
       if (!s.near || (s.masked && !mask)) continue
       const c = this.chunks[s.chunk]!
-      if (Math.hypot(Math.max(Math.abs(pos[0] - c.cx) - CHUNK / 2, 0), Math.max(Math.abs(pos[2] - c.cz) - CHUNK / 2, 0)) > reach) continue
+      if (boxDistanceXZ(c.bakedBox, pos[0], pos[2]) > reach) continue
       out.push({ buffer: s.mesh.buffer, count: s.mesh.count, stride: 32, ...(s.masked ? { mask: mask! } : {}) })
     }
     for (const d of this.draws) {
@@ -1105,14 +1109,6 @@ class ForestPass implements ScenePass {
     }
     return { hit: false, d: reach, point: [o[0] + dir[0] * reach, o[1] + dir[1] * reach, o[2] + dir[2] * reach] as Vec3, normal: [0, 1, 0] as Vec3, albedo: ground, albedoLum: 0.135 }
   }
-}
-
-function boxInFrustum(planes: number[][], b: readonly number[]): boolean {
-  for (const p of planes) {
-    const x = p[0]! >= 0 ? b[3]! : b[0]!, y = p[1]! >= 0 ? b[4]! : b[1]!, z = p[2]! >= 0 ? b[5]! : b[2]!
-    if (p[0]! * x + p[1]! * y + p[2]! * z + p[3]! < 0) return false
-  }
-  return true
 }
 
 /** The storm's cloud base, added over the sky (Today's or the physical one) in the sky slot. */

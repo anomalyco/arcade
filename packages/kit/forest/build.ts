@@ -38,8 +38,10 @@ export type ForestChunk = {
   key: string
   x: number
   z: number
-  /** Bounding box (x0, y0, z0, x1, y1, z1). */
+  /** Bounding box (x0, y0, z0, x1, y1, z1) of everything the chunk draws, its instances included: the frustum test. */
   box: readonly number[]
+  /** Bounding box of its baked geometry alone: which of `near` and `far` draws, and torch shadow reach. */
+  bakedBox: readonly number[]
   /** Procedural geometry baked in world space (terrain, logs, camp); `near` is empty past the level's edge. */
   near: ChunkMeshes
   far: ChunkMeshes
@@ -145,6 +147,40 @@ function growBox(box: number[], mesh: ArrayBuffer) {
     if (x > box[3]!) box[3] = x
     if (y > box[4]!) box[4] = y
     if (z > box[5]!) box[5] = z
+  }
+}
+
+/** A template's reach about its base: horizontal radius and height range, over both its levels of detail. */
+type TemplateExtent = { r: number; y0: number; y1: number; sway: number; grow: number }
+
+function templateExtent(t: ForestTemplate): TemplateExtent {
+  let r = 0, y0 = Infinity, y1 = -Infinity
+  for (const m of [t.near, t.far]) if (m) for (const mesh of [m.opaque, m.masked]) {
+    const f = new Float32Array(mesh)
+    for (let i = 0; i < f.length; i += 8) {
+      r = Math.max(r, Math.hypot(f[i]!, f[i + 2]!))
+      y0 = Math.min(y0, f[i + 1]!); y1 = Math.max(y1, f[i + 1]!)
+    }
+  }
+  if (y0 > y1) y0 = y1 = 0
+  // Wind sways crowns (`woodsWind`); far ferns draw thinned and 1.25× larger (`ForestPass.update`).
+  return { r, y0, y1, sway: t.kind === "tree" ? 1 : t.kind === "fern" ? 0.2 : 0, grow: t.kind === "fern" ? 1.25 : 1 }
+}
+
+/** Grows a box over instances (`INSTANCE_FLOATS` each) of a template with extent `e`, as `vsTree` places them. */
+function growInstances(box: number[], data: Float32Array, e: TemplateExtent) {
+  for (let i = 0; i < data.length; i += INSTANCE_FLOATS) {
+    const x = data[i]!, y = data[i + 1]!, z = data[i + 2]!, sy = data[i + 5]! * e.grow, param = data[i + 7]!
+    // A tree packs its trunk's xz scale in the param's integer part (×256).
+    const sxz = Math.max(data[i + 4]!, param >= 1 ? Math.floor(param) / 256 : 0) * e.grow
+    const r = e.r * sxz + e.sway
+    if (x - r < box[0]!) box[0] = x - r
+    if (z - r < box[2]!) box[2] = z - r
+    if (x + r > box[3]!) box[3] = x + r
+    if (z + r > box[5]!) box[5] = z + r
+    const a = y + Math.min(e.y0 * sy, e.y1 * sy), b = y + Math.max(e.y0 * sy, e.y1 * sy)
+    if (a < box[1]!) box[1] = a
+    if (b > box[4]!) box[4] = b
   }
 }
 
@@ -448,6 +484,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     field[o + 3] = 255
   }
 
+  const extents = templates.map(templateExtent)
   const out: ForestChunk[] = []
   for (const [key, c] of chunks.map) {
     const near: ChunkMeshes = { opaque: c.near[0].finish(), masked: c.near[1].finish() }
@@ -455,11 +492,13 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     stats.staticTriangles += (near.opaque.byteLength + near.masked.byteLength) / 96
     const groups = [...c.groups].map(([template, list]) => ({ template, data: new Float32Array(list) }))
     for (const g of groups) stats.instances += g.data.length / INSTANCE_FLOATS
-    // The cull box holds all of the chunk's baked geometry, not just its cell: the dock, buildings and string lights are
-    // filed under the cell of one point but reach into the next.
-    const box = [c.x, c.y0, c.z, c.x + CHUNK, c.y1, c.z + CHUNK]
-    for (const mesh of [near.opaque, near.masked, far.opaque, far.masked]) growBox(box, mesh)
-    out.push({ key, x: c.x, z: c.z, box, near, far, groups })
+    // The cull box holds all of the chunk's geometry, not just its cell: the dock, buildings and string lights are filed
+    // under the cell of one point but reach into the next, and so do crowns and saplings standing near its edge.
+    const bakedBox = [c.x, c.y0, c.z, c.x + CHUNK, c.y1, c.z + CHUNK]
+    for (const mesh of [near.opaque, near.masked, far.opaque, far.masked]) growBox(bakedBox, mesh)
+    const box = [...bakedBox]
+    for (const g of groups) growInstances(box, g.data, extents[g.template]!)
+    out.push({ key, x: c.x, z: c.z, box, bakedBox, near, far, groups })
   }
   for (const t of templates) stats.templateTriangles += (t.near.opaque.byteLength + t.near.masked.byteLength + (t.far ? t.far.opaque.byteLength + t.far.masked.byteLength : 0)) / 96
   return { templates, chunks: out, campLights, water: water.finish(), trunks: new Float32Array(trunkData), rocks: new Float32Array(rockData), field, fieldSize, stats, logs: world.logs }
@@ -1030,6 +1069,12 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       box(ch.near[0], cx, level - 1, cz, d.yaw, 0.16, 2, 0.16, MAT.wood, LAYER.log, 0.6, [0, 0, 1, 0])
     }
     box(ch.near[0], d.x + Math.sin(d.yaw) * d.length / 2, level - 0.12, d.z + Math.cos(d.yaw) * d.length / 2, -d.yaw, 0.16, 0.18, d.length, MAT.wood, LAYER.log, 0.8, [0, 0, 0.6, 0])
+    // From across the lake: one deck slab on its end posts.
+    box(ch.far[0], d.x + Math.sin(d.yaw) * d.length / 2, level - 0.04, d.z + Math.cos(d.yaw) * d.length / 2, -d.yaw, d.width, 0.12, d.length, MAT.wood, LAYER.planks, 0.9, [0, 0, 0.75, 0])
+    for (const along of [0.2, d.length - 0.2]) for (const side of [-1, 1]) {
+      const cx = d.x + Math.sin(d.yaw) * along + Math.cos(d.yaw) * side * d.width * 0.45, cz = d.z + Math.cos(d.yaw) * along - Math.sin(d.yaw) * side * d.width * 0.45
+      box(ch.far[0], cx, level - 1, cz, d.yaw, 0.16, 2, 0.16, MAT.wood, LAYER.log, 0.6, [0, 0, 1, 0])
+    }
     chunks.extend(d.x, d.z, level - 2, level + 1)
   }
   // String lights: sagging wire with bulbs; every few bulbs share one light.
@@ -1052,7 +1097,10 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     for (let i = 0; i < sl.bulbs; i++) {
       const p = sample((i + 0.5) / sl.bulbs)
       if (detail) tube(ch.near[0], p, [p[0], p[1] - 0.075, p[2]], 0.025, 0.032, MAT.cable)
-      bulb(ch.near[0], p[0], p[1] - (detail ? 0.105 : 0.06), p[2], 0.035, 1.6 + rand() * 0.5)
+      const glow = 1.6 + rand() * 0.5
+      bulb(ch.near[0], p[0], p[1] - (detail ? 0.105 : 0.06), p[2], 0.035, glow)
+      // The bulbs still read as a string of points from across the camp.
+      bulb(ch.far[0], p[0], p[1] - (detail ? 0.105 : 0.06), p[2], 0.035, glow, 2, 4)
       // Local bulb light reaches its own socket/cable, not the ground. Existing
       // grouped lights still provide the camp's ground illumination.
       if (detail) lights.push({ x: p[0], y: p[1] - 0.105, z: p[2], axis: [0, -1, 0], color: [1, 0.7, 0.4], power: 0.008, range: 0.9, cosOuter: -1, kind: "bulb", surfaceOnly: true })
@@ -1063,6 +1111,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       if (p[1] - g > 2) {
         if (detail) porchPost(ch.near[0], p, p[1], 0, H)
         else box(ch.near[0], p[0], (p[1] + g) / 2, p[2], 0, 0.12, p[1] - g + 0.2, 0.12, MAT.wood, LAYER.log, 0.6)
+        box(ch.far[0], p[0], (p[1] + g) / 2, p[2], 0, 0.12, p[1] - g + 0.2, 0.12, MAT.wood, LAYER.log, 0.6)
       }
     }
   }
@@ -1280,8 +1329,7 @@ function wire(w: VertexWriter, a: Vec3, b: Vec3, r: number) {
   }
 }
 
-function bulb(w: VertexWriter, x: number, y: number, z: number, r: number, glow: number) {
-  const lat = 4, lon = 6
+function bulb(w: VertexWriter, x: number, y: number, z: number, r: number, glow: number, lat = 4, lon = 6) {
   for (let i = 0; i < lat; i++) for (let j = 0; j < lon; j++) {
     const p = (ii: number, jj: number) => { const th = (ii / lat) * Math.PI, ph = (jj / lon) * TAU; return [Math.sin(th) * Math.cos(ph), Math.cos(th) * 1.25, Math.sin(th) * Math.sin(ph)] }
     const q = [p(i, j), p(i + 1, j), p(i + 1, j + 1), p(i, j + 1)]

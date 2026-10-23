@@ -134,6 +134,21 @@ export const shots: Record<string, (page: Page) => Promise<void>> = {
     for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
     for (const p of woods.state.players.slice(1)) { p.x = 0; p.z = 40 }
   }) },
+  // From the lake's south shore, 71 m from the dock's box and looking along it at the camp, your torch off: it draws
+  // its far mesh (only a few pixels at night).
+  dockFar: async (page) => { await page.evaluate(() => {
+    woods.setPose(-22, 162, 0, -0.022)
+    woods.camera.flashlight = false
+    for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
+    for (const p of woods.state.players.slice(1)) { p.x = -40; p.z = 170 }
+  }) },
+  // The camp's string lights from the woods ~45 m east of their nearest end, 75 m from the cell they are filed under.
+  campEast: async (page) => { await page.evaluate(() => {
+    woods.setPose(43, 67, Math.atan2(61.5, 6.6), 0.01)
+    woods.camera.flashlight = false
+    for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
+    for (const p of woods.state.players.slice(1)) { p.x = 60; p.z = 70 }
+  }) },
   trunkFoot: async (page) => { await page.evaluate(() => {
     const c = woods.world.camp
     const t = woods.world.trees.filter(t => t.radius > 0.3).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 55) - Math.hypot(b.x - c.x, b.z - c.z + 55))[0]!
