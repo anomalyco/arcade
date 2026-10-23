@@ -1,0 +1,34 @@
+name: replay-diagnosis
+on:
+  push:
+    branches: [replay-tests]
+    paths: [".github/workflows/replay-diagnosis.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - name: Capture first four ticks in isolation
+        run: |
+          bun -e '
+          import { scavenging } from "./games/outbreak/tests/replays/scenarios";
+          import { replayHash } from "./packages/kit/sim/replay";
+          import { gunzipSync } from "node:zlib";
+          const {recording, golden} = JSON.parse(gunzipSync(await Bun.file("games/outbreak/tests/replays/scavenging.json.gz").bytes()).toString());
+          const state = scavenging.init(recording);
+          for (let tick = 0; tick <= 4; tick++) {
+            if (tick) scavenging.step(state, recording.inputs[tick - 1], recording.tickDt);
+            console.log(tick, replayHash(scavenging.fields(state).ai), golden.fields.ai[tick]);
+          }
+          await Bun.write("linux-tick4.json", JSON.stringify(state.toSnapshot(), null, 2));'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tick4
+          path: linux-tick4.json
+      - run: bun test games/outbreak/tests/replay.test.ts
