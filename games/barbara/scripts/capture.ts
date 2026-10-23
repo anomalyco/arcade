@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { chromium, type Page } from "playwright-core"
+import { makeWorld, standHeight, type WoodsWorld } from "../shared/world"
 
 const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1]! : fallback }
 const out = resolve(arg("--out", process.env.LEASE_OUT ?? "captures/woods"))
@@ -18,6 +19,8 @@ const measure = process.argv.includes("--measure")
 /** `--debug key=false,...`: the forest's draw toggles (`woods.view.forest.debug`); `--quality high` pins the tier. */
 const debugs = Object.fromEntries(arg("--debug", "").split(",").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k!, v !== "false"] }))
 const tier = arg("--quality", "high")
+/** `--steps n`: frames to settle each shot (90 by default; auto exposure needs ~600 to finish opening up). */
+const steps = arg("--steps", "")
 
 type Woods = {
   frames: number; paused: boolean
@@ -72,7 +75,46 @@ export function tapeShot(d: number): { tree: number; x: number; z: number } {
   throw new Error("no tape tree with a clear sightline")
 }
 
+/**
+ * Open, gently sloping ground with no trunk in the first 14 m from -1.1 to +1.2 rad of the view (a yaw flick's room):
+ * where `torch-lag.ts` traces your torch's spot and the torch stills stand.
+ */
+export function openTorchPose(world: WoodsWorld): { x: number; z: number; yaw: number } {
+  const c = world.camp
+  for (let r = 50; r < 150; r += 7) for (let a = 0; a < 24; a++) {
+    const ang = (a / 24) * Math.PI * 2, x = c.x + Math.cos(ang) * r, z = c.z + Math.sin(ang) * r
+    if (Math.abs(x) > world.params.half - 20 || Math.abs(z) > world.params.half - 20) continue
+    for (let k = 0; k < 8; k++) {
+      const yaw = (k / 8) * Math.PI * 2
+      let clear = true
+      for (const t of world.trees) {
+        const dx = t.x - x, dz = t.z - z, d = Math.hypot(dx, dz)
+        if (d > 14) continue
+        const off = Math.atan2(-dx, -dz) - yaw, rel = Math.atan2(Math.sin(off), Math.cos(off))
+        if (d < 2.5 || (rel > -1.1 && rel < 1.2)) { clear = false; break }
+      }
+      if (!clear) continue
+      const g = standHeight(world, x, z)
+      let flat = true
+      for (let s = 2; s <= 8 && flat; s += 2) for (const o of [-0.8, 0, 0.8]) {
+        const gx = x - Math.sin(yaw + o) * s, gz = z - Math.cos(yaw + o) * s
+        if (Math.abs(standHeight(world, gx, gz) - g) > 0.35) flat = false
+      }
+      if (flat) return { x, z, yaw }
+    }
+  }
+  throw new Error("no open pose")
+}
+
 export const shots: Record<string, (page: Page) => Promise<void>> = {
+  // Your torch on open ground (openTorchPose): the spot at ~2.5 m, ~4.5 m and ~11 m (grazing, stretched).
+  ...Object.fromEntries(([["torchNear", -0.5], ["torchGround", -0.3], ["torchGraze", -0.12]] as const).map(([name, pitch]) => [name, async (page: Page) => {
+    await page.evaluate(({ pose, pitch }) => {
+      woods.setPose(pose.x, pose.z, pose.yaw, pitch)
+      for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
+      for (const p of woods.state.players.slice(1)) { p.x = woods.world.camp.x; p.z = woods.world.camp.z }
+    }, { pose: openTorchPose(makeWorld()), pitch })
+  }])),
   lake: async (page) => { await page.evaluate(() => {
     woods.setPose(-22, 89, Math.PI, -0.12)
     woods.camera.flashlight = false
@@ -275,7 +317,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
 await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=${tier}`, { waitUntil: "load" })
 await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 180000 }).catch((e) => { console.log(errors.join("\n")); throw e })
-await page.evaluate(({ sets, looks, debugs }) => { document.getElementById("start")!.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets); Object.assign((woods as unknown as { look: object }).look, looks); Object.assign((woods as unknown as { view: { forest: { debug: object } } }).view.forest.debug, debugs) }, { sets, looks, debugs })
+await page.evaluate(({ sets, looks, debugs }) => { for (const el of document.querySelectorAll<HTMLElement>("#start, .arcade-shell, #hud, #prompt, #objective, #subs, #goal")) el.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets); Object.assign((woods as unknown as { look: object }).look, looks); Object.assign((woods as unknown as { view: { forest: { debug: object } } }).view.forest.debug, debugs) }, { sets, looks, debugs })
 const timing: Record<string, number> = {}
 for (const [name, setup] of Object.entries(shots)) {
   if (only && !only.split(",").includes(name)) continue
@@ -284,10 +326,10 @@ for (const [name, setup] of Object.entries(shots)) {
   const t0 = Date.now()
   // Settle the walk, TAA and fog history at 60 fps.
   // Yield every few steps so async GPU readbacks (the exposure meter) land as they would between real frames.
-  await page.evaluate(async (name) => {
-    const n = name === "ridge" ? 0 : /^l\d$/.test(name) ? 300 : 90
+  await page.evaluate(async ({ name, steps }) => {
+    const n = name === "ridge" ? 0 : steps ? Number(steps) : /^l\d$/.test(name) ? 300 : 90
     for (let i = 0; i < n; i++) { woods.step(1000 / 60); if (i % 5 === 4) await new Promise((r) => setTimeout(r, 0)) }
-  }, name)
+  }, { name, steps })
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   timing[name] = Date.now() - t0
   console.log(name, JSON.stringify(await page.evaluate(() => ({ debug: (woods as unknown as { debug: unknown }).debug, players: woods.state.players.map((p) => [p.id, Math.round(p.x), Math.round(p.z), +p.pitch.toFixed(2), p.light]) }))))

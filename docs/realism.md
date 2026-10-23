@@ -118,6 +118,11 @@ bulb and the ground beside the beam doesn't go black.
   bright wedge from the screen corner" in the woods; near-field scattering must be thin by the lens and fade softly.
 - Research: woods `RESEARCH.md` §D (hotspot 8–16°, beam 25–40°, spill 1–5 %, 2,000–8,000 cd, source 0.25–0.45 m to
   the side of the eye).
+- Woods (Oct 22): a '90s krypton bulb at 3600 K (6000 K read as a clinical LED), a tighter core (1.3 × at 0.3 of the
+  half-angle) and 5 % spill. Each torch warms as its battery fades: T ∝ V^0.42 and light ∝ V^3.4, so T = T₀·level^0.124
+  (30 % light → 3100 K). The spot is locked to the hand: no direction easing, an uneased bounce that doesn't light its
+  own surface, and the beam's change in the TAA reactive mask (game-notes "your torch's spot locked to the hand").
+  Kit's visual decision on the colour and core is pending.
 
 **Flickering and failing practicals.** Stateless functions of seed and time, so co-op clients, replays and paired
 captures agree: sodium restrike, fluorescent starter stutter, incandescent brown-out, beacons. One signal drives the

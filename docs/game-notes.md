@@ -1570,6 +1570,25 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
 - The build runs on a worker (`packages/kit/forest/offthread.ts` `ForestBuilder`, `build-worker.ts`): the page samples the grid (the game's height is a function, so it can't cross), the world without `height` and the models go over by transfer, and the build comes back by transfer; the geometry is byte for byte the page's (`forest/build.test.ts`). Spawn the worker before the asset fetches, or its script queues behind the 58 texture images on the host's six connections (that cost 2 s). Six alternating A/B boots on pro: frame 2 median 7.3 s → 6.7 s; the worker's build is ~1.4× slower than the same build on the page, so the win is the overlap with texture decode and a main thread free for the loading screen, not 2–3 s. Boot marks: `woods:grid`, `:models`, `:worker`, `:textures`, `:build`, `:world`, `:frame1/2` (`scripts/smoke.mjs` prints them on a timeout; `games/barbara/scripts/boot-profile.ts` prints them and the top self time).
 - The forest's fog changes are opt-ins, so the Lot, Outbreak and Night Shift compile the classic shader byte for byte (checked against woods 003c7733 for every game's real hooks; `fog-scatter.test.ts` pins the hashes): `fogScatterVolume({ torches: true })` gives beam-profiled torches without leak, the d²/(d²+size²) near field and `FogSettings.phaseFloor`; `bankLocal` or `bankExtinction` give the stratified bank (floor from the game, soft shoulder, closed-form depth).
 
+### Woods: your torch's spot locked to the hand (2026-10-22)
+
+- Kit: "There's a delayed spot on the ground where you're pointing." `games/barbara/scripts/torch-lag.ts` traces it: a
+  400°/s yaw flick and a 34°/s pan on the synthetic clock, the aim ray's ground hit (`woods.torchTrace`) against the
+  peak of the read-back frame's box-blurred luminance; variants switch single layers off. Three layers lagged, and
+  exposure, the fog/mist history and the torch shadow map did not.
+- **The near-field bounce was the late spot.** A point light 30 cm off the hit point, eased with a 0.1 s time constant,
+  added ~45 % to the spot's own brightness (a lit patch lighting its own plane) and trailed the beam: a 16 % ghost at
+  the old spot after the flick. It is now this frame's hit, never eased, 2 cm inside the lit surface, so only what
+  faces the patch gets it (`packages/kit/forest/view.ts`). Any light derived from a moving light must not be eased.
+- `torchLag` (0.07 s direction easing) defaults to 0: the beam is locked to the view.
+- **TAA smears a view-locked light.** TAA reprojects history as if light were fixed to the world, so on a pan your
+  hotspot trailed ~4 frames. `TorchReactivePass` (forest `alpha` slot, draws only into the reactive mask,
+  `torchReactiveShader`) compares the beam profile now and last frame at the beam's hit distance along each view ray
+  and writes the share of light that changed. A still view writes 0, so TAA keeps its anti-aliasing.
+- Before → after (same pose): flick lag at 50 %/90 % of the turn 8.1/19.2 → −0.1/−0.1 frames, furthest behind 35° → 1.6°,
+  frames to settle within 1.5° 32 → 0, ghost 0.161 → 0.000, pan lag 11.2 → 1.3 frames (noise ±1.5; TAA off −0.3).
+  Page: `~/code/home/artifacts/barbara-torch-2026-10-22/`.
+
 ### Lot storm: one strike envelope, rain only where lit (2026-10-21)
 
 - Kit: "rain, storm and a lightning bolt in the Lot" (+ "Also want sfx"). Research brief: `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md`.

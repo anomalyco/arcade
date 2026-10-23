@@ -4,7 +4,7 @@
  * kit `Renderer`, the forest passes, the torch's spot shadow, the mist and the camera model. See
  * `docs/game-notes.md` (Woods look) for what each trick buys and costs.
  */
-import { reactivePipelineDescriptor } from "../gpu/reactive"
+import { REACTIVE_TARGET, reactivePipelineDescriptor } from "../gpu/reactive"
 import { attachSky } from "../sky/controller"
 import { moonLight } from "../sky/model"
 import { Renderer, TEMPORAL_DEFAULTS, type Batch, type FrameInput } from "../gpu/renderer"
@@ -23,7 +23,7 @@ import { loadForestModels, loadForestTextures, type ForestTextures } from "./ass
 import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
-import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
+import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, torchReactiveShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
 import type { ForestStormView } from "./storm"
 import { BoltPass, BOLT_LOOK } from "../weather/lightning-pass"
 import type { Strike, StrikeLight } from "../weather/lightning"
@@ -248,6 +248,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   renderer.addPass("opaque", pass)
   const motes = new MotePass(renderer.passContext)
   renderer.addPass("alpha", motes)
+  const torchReactive = new TorchReactivePass(renderer.passContext)
+  renderer.addPass("alpha", torchReactive)
+  // Your torch last frame (lens, axis), for the TAA reactive mask; null after a cut.
+  let torchBefore: { pos: Vec3; dir: Vec3 } | null = null
   // The storm's passes exist from its first frame: the cloud base over the sky and the lightning channel.
   let stormSky: StormSkyPass | null = null
   let bolt: BoltPass | null = null
@@ -270,11 +274,12 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   function resetExposure() {
     Object.assign(cam, { exposure: 1, hit: 40, stops: 0, pending: true, wait: 0 })
     previousEye = null
-    bounce.ready = false; bounce.power = 0
+    bounce.power = 0
+    torchBefore = null
     renderer.resetSceneMeter()
     renderer.resetTemporalHistory()
   }
-  const bounce = { x: 0, y: 0, z: 0, power: 0, color: [1, 1, 1] as [number, number, number], ready: false }
+  const bounce = { x: 0, y: 0, z: 0, power: 0, color: [1, 1, 1] as [number, number, number] }
   let lastFrame: FrameInput | null = null
   let debug = pass.debug as Record<string, boolean>
   let lastInput: ForestFrameInput | null = null
@@ -336,24 +341,32 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const local = f.torches.find(t => t.kind !== "remote" && t.on) ?? null
     const halfAngle = (s.torchAngle * Math.PI) / 180
     const torchColor = kelvinColor(s.torchKelvin)
+    // A bulb on a fading battery warms as it dims: colour temperature goes as V^0.42 and light as V^3.4, so a torch at
+    // `level` of its light runs at level^0.124 of its temperature (30% light: 86%, a 3600 K bulb at 3100 K).
+    const colorOf = (t: ForestTorch) => (t.level ?? 1) >= 0.999 ? torchColor : kelvinColor(s.torchKelvin * Math.pow(Math.max(t.level ?? 1, 0.01), 0.124))
     const profile = torchProfile(s)
     const torchPower = s.torchPower
     motes.count = smoke ? 0 : Math.max(0, Math.round(s.dustCount))
 
     // ---- Where the beam lands: drives the bounce light and the exposure.
+    // The bounce is this frame's spot, never eased: light has no lag, and an eased one trailed the beam as a second
+    // spot. It sits 2 cm inside the lit surface, so the surface it comes from gets none of it (a lit patch can't light
+    // its own plane) and only what faces the patch (trunks, ferns, the ground round a lit trunk) does.
     if (local) {
       const hit = pass.raycast(local.pos, local.dir, s.torchReach)
       cam.hit = hit.d
-      const k = 1 - Math.exp(-f.dt * 10)
-      const target = hit.hit ? hit.point.map((v, i) => v + hit.normal[i]! * 0.3 - local.dir[i]! * 0.15) : local.pos.map((v, i) => v + local.dir[i]! * s.torchReach)
-      if (!bounce.ready) { [bounce.x, bounce.y, bounce.z] = target; bounce.ready = true }
-      bounce.x += (target[0]! - bounce.x) * k; bounce.y += (target[1]! - bounce.y) * k; bounce.z += (target[2]! - bounce.z) * k
+      const target = hit.hit ? hit.point.map((v, i) => v - hit.normal[i]! * 0.02) : local.pos.map((v, i) => v + local.dir[i]! * s.torchReach)
+      ;[bounce.x, bounce.y, bounce.z] = target
       // A Lambertian spot re-emits I·tan²θ·albedo whatever its distance; the light fades as the spot does past reach.
       const fade = hit.hit ? 1 - Math.max(0, (hit.d - s.torchReach * 0.6) / (s.torchReach * 0.4)) : 0
-      const p = torchPower * Math.tan(halfAngle) ** 2 * hit.albedoLum * s.bounce * 1.6 * Math.max(0, fade)
-      bounce.power += (p - bounce.power) * k
-      for (let i = 0; i < 3; i++) bounce.color[i] = bounce.color[i]! + (hit.albedo[i]! / Math.max(hit.albedoLum, 1e-3) * torchColor[i]! - bounce.color[i]!) * k
-    } else bounce.power *= Math.exp(-f.dt * 10)
+      bounce.power = torchPower * Math.tan(halfAngle) ** 2 * hit.albedoLum * s.bounce * 1.6 * Math.max(0, fade)
+      const lc = colorOf(local)
+      for (let i = 0; i < 3; i++) bounce.color[i] = hit.albedo[i]! / Math.max(hit.albedoLum, 1e-3) * lc[i]!
+      const was = torchBefore ?? local
+      torchReactive.set(was.pos, was.dir, Math.max(hit.d, 1), debug.torchMotion === false ? 0 : 3)
+      torchBefore = { pos: [...local.pos], dir: [...local.dir] }
+    } else { bounce.power = 0; torchBefore = null }
+    torchReactive.active = !!local && !smoke
 
     // ---- Auto exposure from the scene-referred meter, a few frames late.
     // After a cut briefly hold for a live meter; absent, stalled or failed meters use the fallback.
@@ -378,7 +391,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const frameLights: SceneLight[] = []
     for (const t of f.torches) {
       if (!t.on) continue
-      frameLights.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[2], h: t.pos[1], r: s.torchReach, color: torchColor, power: torchPower * (t.level ?? 1), size: 0.02, unshadowed: true, beam: { axis: t.dir, halfAngle } })
+      frameLights.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[2], h: t.pos[1], r: s.torchReach, color: colorOf(t), power: torchPower * (t.level ?? 1), size: 0.02, unshadowed: true, beam: { axis: t.dir, halfAngle } })
     }
     appendForestLights(frameLights, f.lights ?? [], local && bounce.power > 0.01
       ? { id: 2000, x: bounce.x, y: bounce.z, h: bounce.y, r: 9, color: bounce.color, power: bounce.power, size: 0.6, unshadowed: true }
@@ -431,7 +444,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     for (const t of f.torches) {
       if (!t.on) continue
       const id = lights.indexOf(1000 + t.id)
-      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, motion: t === local || debug.beamMotion === false ? 0 : beamSweep(t, s.torchReach), uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
+      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: colorOf(t), intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, motion: t === local || debug.beamMotion === false ? 0 : beamSweep(t, s.torchReach), uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
     }
     for (const [i, l] of build.campLights.entries()) {
       const k = l.kind === "bulb" ? s.stringLights : s.windows
@@ -461,8 +474,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       glare += (intensity / (d * d)) * 0.004
       // A lens-sized source (6 cm quad, same energy as the old 40 cm one): the glare round it is the bloom's, in screen
       // space, so a friend aiming at you flares without whiting out their body.
-      const k = intensity * 0.15 * (0.4 / 0.06) ** 2
-      packLampGlow(sprites, spriteCount * 12, { x: t.pos[0], y: t.pos[1], z: t.pos[2] }, 0.06, [torchColor[0] * k, torchColor[1] * k, torchColor[2] * k], f.eye, { density: s.fogDensity, falloff: s.fogFalloff, base: fogBase })
+      const k = intensity * 0.15 * (0.4 / 0.06) ** 2, c = colorOf(t)
+      packLampGlow(sprites, spriteCount * 12, { x: t.pos[0], y: t.pos[1], z: t.pos[2] }, 0.06, [c[0] * k, c[1] * k, c[2] * k], f.eye, { density: s.fogDensity, falloff: s.fogFalloff, base: fogBase })
       spriteCount++
     }
     // The game's additive sprites, then point sources (a beacon is a core and a tight glow, not a blob of fog).
@@ -497,7 +510,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set([-reach, -reach, 1 / (2 * reach), st ? st.cloudGlow : 0], 24)
     custom.set(local ? [local.pos[0], local.pos[1], local.pos[2], 1] : [0, -1000, 0, 0], 28)
     custom.set(local ? [local.dir[0], local.dir[1], local.dir[2], halfAngle] : [0, -1, 0, halfAngle], 32)
-    custom.set([torchColor[0] * torchPower * 5, torchColor[1] * torchPower * 5, torchColor[2] * torchPower * 5, s.torchReach], 36)
+    const localColor = local ? colorOf(local) : torchColor
+    custom.set([localColor[0] * torchPower * 5, localColor[1] * torchPower * 5, localColor[2] * torchPower * 5, s.torchReach], 36)
     custom.set([smoke ? 0 : s.motes, (2 * Math.tan(f.fovY / 2)) / f.height, local && spots.settings.count > 0 ? lights.indexOf(1000 + local.id) : -1, Number(s.highlightShoulder)], 40)
     custom.set([1, 1, 1, profile.spill], 44)
     packBeamProfile(profile, custom, 48)
@@ -1101,6 +1115,43 @@ class MotePass implements ScenePass {
     this.reactivePipe ??= this.ctx.device.createRenderPipeline(reactivePipelineDescriptor(this.descriptor))
     pass.setPipeline(this.reactivePipe)
     pass.draw(6, this.count)
+  }
+}
+
+/** Draws nothing in the scene; under TAA, writes where your torch's light moved since last frame into the reactive mask. */
+class TorchReactivePass implements ScenePass {
+  active = false
+  private pipe?: GPURenderPipeline
+  private group?: GPUBindGroup
+  private readonly buf: GPUBuffer
+  private readonly data = new Float32Array(8)
+  constructor(private readonly ctx: PassContext) {
+    this.buf = ctx.device.createBuffer({ label: "forest torch reactive", size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+  }
+  /** Last frame's lens and axis, the beam's hit distance this frame (m) and the mask's gain. */
+  set(pos: readonly number[], dir: readonly number[], hit: number, gain: number) {
+    this.data.set([pos[0]!, pos[1]!, pos[2]!, hit, dir[0]!, dir[1]!, dir[2]!, gain])
+    this.ctx.device.queue.writeBuffer(this.buf, 0, this.data)
+  }
+  draw() {}
+  drawReactive(pass: GPURenderPassEncoder) {
+    if (!this.active || this.data[7] === 0) return
+    if (!this.pipe) {
+      const d = this.ctx.device
+      const module = compileShaderModuleWithLog(d, torchReactiveShader, "forest torch reactive")
+      const own = d.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }] })
+      this.pipe = d.createRenderPipeline({
+        label: "forest torch reactive",
+        layout: d.createPipelineLayout({ bindGroupLayouts: [this.ctx.frameLayout, own] }),
+        vertex: { module, entryPoint: "vs" },
+        fragment: { module, entryPoint: "fs", targets: [REACTIVE_TARGET] },
+        primitive: { topology: "triangle-list" },
+      })
+      this.group = d.createBindGroup({ layout: own, entries: [{ binding: 0, resource: { buffer: this.buf } }] })
+    }
+    pass.setPipeline(this.pipe)
+    pass.setBindGroup(1, this.group!)
+    pass.draw(3)
   }
 }
 
