@@ -109,7 +109,7 @@ Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell"
 | Getaway | Yes (night-road backdrop in the title slot) | `games/getaway/src/main.ts`, `src/ui/lobby.ts` |
 | Carrier | Yes (rooms only, callsign required) | `games/carrier/src/main.ts` |
 | Outbreak | Escape menu and Settings; its own lobby stays the title | `games/outbreak/src/main.ts`, `src/lobby/run-tools.ts` |
-| Woods | Not yet (unshipped branch `woods`); see the adoption note below | |
+| Barbara | Yes (room by link; M mutes; the Lab panel hides the cards while it is open, so you can play with it up) | `games/barbara/src/main.ts`, `index.html` |
 | Lab | Exempt: it is the authoring tool, not a game. It keeps Key labels and its own Edit-mode mute | |
 | Landing, redirects | Out of scope: independent projects | |
 
@@ -129,17 +129,16 @@ Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell"
   Volume is now "Mix level".
 - Night Shift: the READY screen no longer prints "Begin"; the title card's Begin starts the opening.
 
-## Woods adoption note
+## Barbara (formerly Woods)
 
-Woods (`games/woods`, branch `woods`) built the shell's first draft: `src/menu.ts` (`SettingsMenu`), the `#start`
-and `#pause` cards in `index.html`, and quality that starts High and is remembered (`woods.quality`). To adopt the
-kit shell: replace `SettingsMenu` and both cards with `createGameShell({ game: "woods", title: "WOODS", subtitle,
-soloLabel: "Play alone", soloNote: "you and three campers", friendsNote: "a private room, up to 6", resumeLabel:
-"Back to the woods", pointerLock: canvas, blocked: () => panel.holdsInput, keysBlocked: () => panel.hasFocus(), quality,
-lobby: { friends: true, onJoin: (room) => (location.search = `?room=${room}`) } })`; build quality with
-`createShellQuality({ game: "woods", tiers: FOREST_QUALITY, ... })` (the saved key becomes `arcade.quality.woods.v1`);
-point the sound bank's volumes and mute at `shell.settings` (channels master, effects, ambience); drop the Lab's
-Quality row; and copy the card's look into `--shell-*` variables (Georgia title, warm `#f2c96b` accent).
+Woods built the shell's first draft (`SettingsMenu`, the `#start` and `#pause` cards, quality that starts High and is
+remembered). Barbara now uses the kit shell: `createGameShell({ game: "barbara", ... })` with Play alone, Play with
+friends and an invite room (a room is its own page, `?room=<code>`, so joining loads it and Leave room loads solo),
+`createShellQuality` over `FOREST_QUALITY` (`arcade.quality.barbara.v1`; frame time only, as before), channels master,
+effects, ambience and voice copied into the sound bank, Subtitles as a Story section, and the card look in
+`--shell-*` variables (Georgia title, warm `#f2c96b` accent). The Lab's Volume, Mute, Quality and Reduce camera motion
+rows are gone; `blocked` is the Lab panel being open, not only holding input, so the cards stay out of the way while
+you tune and a click on the woods plays on.
 
 ## Audit (Oct 22, before the shell)
 

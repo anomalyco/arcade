@@ -45,6 +45,8 @@ export class SoundBank {
   constructor(
     readonly game: string,
     sfx: readonly string[] = TOY_SFX,
+    /** `false` waits for an explicit `unlock()` (a game's Begin) instead of unlocking on any gesture. */
+    opts: { unlockOnGesture?: boolean } = {},
   ) {
     this.muteKey = `arcade.muted.${game}.v1`
     const entries = selectSfx(sfx)
@@ -61,14 +63,20 @@ export class SoundBank {
       const savedMute = localStorage.getItem(this.muteKey)
       this.runtime.muted = savedMute === null ? Boolean(globalThis.navigator?.webdriver) : savedMute === "1"
     }
-    if (typeof addEventListener === "function") {
+    if (typeof addEventListener === "function" && opts.unlockOnGesture !== false) {
       const unlock = () => {
-        if (this.unlocked) return
-        this.unlocked = true
-        void this.runtime.unlock().then(() => this.applyVolumes())
+        if (!this.unlocked) void this.unlock()
       }
       for (const type of ["pointerdown", "keydown"] as const) addEventListener(type, unlock, { capture: true })
     }
+  }
+
+  /** Creates or resumes the live context; call from a user gesture. Resolves true once it is running. */
+  async unlock(): Promise<boolean> {
+    this.unlocked = true
+    const ok = await this.runtime.unlock()
+    this.applyVolumes()
+    return ok
   }
 
   get muted(): boolean {

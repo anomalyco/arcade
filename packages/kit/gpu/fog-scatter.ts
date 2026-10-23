@@ -27,6 +27,8 @@ import { common } from "./shaders"
 import { sceneSurfaceWgsl } from "./reflections/surface"
 import { WET_ASPHALT, wetMaterialWgsl, wetSurfaceWgsl, type WetMaterial } from "./reflections/wet"
 import { STREET_LAMP_DEFAULTS, packStreetLamp, streetLampWgsl, type StreetLampSettings } from "./lights/street"
+import { DARKWOOD_BEAM, beamWgsl, packBeamProfile, type BeamProfile } from "./lights/beam"
+import { spotShadowVolumeWgsl } from "./shadows/spot-shadows"
 
 export type Vec3 = readonly [number, number, number]
 
@@ -88,6 +90,11 @@ export type FogSettings = {
   coneLength: number
   /** Henyey–Greenstein forward scattering. */
   phaseG: number
+  /**
+   * Isotropic share blended into the lamp phase (`fogScatterVolume({ torches: true })` only; classic lamps keep 0.15):
+   * it sets how bright a beam looks from behind its lamp (backscatter).
+   */
+  phaseFloor: number
   samples: number
   lamps: number
   /** Temporal response: the share of each new frame (1 = no history). */
@@ -113,6 +120,8 @@ export type FogSettings = {
   bankThreshold: number
   /** How far the bank's top rises and falls with the noise (share of its height). */
   bankUndulation: number
+  /** How far a game's `bankLocal` floor and height scale lift the bank's top above base (m): bounds the march. */
+  bankRelief: number
   /** Wind speed (m/s) and heading (degrees, 0 = +x). */
   bankWind: number
   bankWindHeading: number
@@ -169,6 +178,7 @@ export const FOG_DEFAULTS: FogSettings = {
   leak: 0.03,
   coneLength: 4.5,
   phaseG: 0.6,
+  phaseFloor: 0.15,
   samples: 4,
   lamps: 16,
   history: 0.1,
@@ -183,6 +193,7 @@ export const FOG_DEFAULTS: FogSettings = {
   bankScale: 9,
   bankThreshold: 0.3,
   bankUndulation: 0.6,
+  bankRelief: 0,
   bankWind: 0.7,
   bankWindHeading: 200,
   bankSteps: 6,
@@ -426,14 +437,14 @@ export type FogLamp = {
   /** Spot cone; omit both for an omni lamp. Use the same numbers as the surface pool (`fogCone`). */
   cosOuter?: number
   cosInner?: number
-  /** Fixture size (m): light emerges into the fog past half of it. */
+  /** Fixture size (m): the light in the fog levels off within half of it (its near field). */
   size?: number
   /** Nominal on-ness 0..1 (not flicker, so the budget doesn't reshuffle). */
   visibility?: number
   /** Stable identity for selection hysteresis (defaults to the index). */
   id?: number
   /**
-   * Street lamp lens (\`lights/street.ts\`): plan arm (pole → head) and semi-axes a (along it) and b (m). The street
+   * Street lamp lens (`lights/street.ts`): plan arm (pole → head) and semi-axes a (along it) and b (m). The street
    * profile replaces the cone (cosOuter/cosInner ignored) and the light leaves the whole lens.
    */
   lens?: { arm: readonly [number, number]; a: number; b: number }
@@ -441,6 +452,13 @@ export type FogLamp = {
   uplight?: number
   /** Plan distance (m) at which this lamp's glow-map light fades to nothing (smooth window); omitted reaches everywhere. */
   glowRange?: number
+  /**
+   * Frame index of the scene light that holds this lamp's spot shadow map (`SceneLights.indexOf`): with
+   * `fogScatterVolume({ spotShadows: true })` its light in the air stops behind what blocks it, so a torch throws shafts.
+   */
+  shadow?: number
+  /** Torch half-angle (rad): the shared beam profile (`FogUpdate.beam`) replaces the round cone, as on surfaces. */
+  beam?: number
 }
 
 const tmpScore: { i: number; s: number; x: number; z: number }[] = []
@@ -521,8 +539,10 @@ export type FogUpdate = {
   lamps: readonly FogLamp[]
   /** Seconds, for the bank and cloud drift (default 0: frozen). */
   time?: number
-  /** Profile shared by every lamp with a \`lens\` (default \`STREET_LAMP_DEFAULTS\`). */
+  /** Profile shared by every lamp with a `lens` (default `STREET_LAMP_DEFAULTS`). */
   street?: StreetLampSettings
+  /** Torch profile shared by every lamp with a `beam` (default Darkwood). */
+  beam?: BeamProfile
 }
 
 /** Fog-depth blur input for `FrameInput.fogBlur` (`@arcade/kit/gpu/fog-blur`). */
@@ -613,8 +633,9 @@ export class FogScatter {
     u.set([s.cloudDark, s.cloudGlow, Math.cos(heading), Math.sin(heading)], 48)
     const r = this.glowRect
     u.set(glow && r ? [r[0], r[1], 1 / (r[2] - r[0]), 1 / (r[3] - r[1])] : [0, 0, 0, 0], 52)
-    u.set([s.bankLamp, s.bankUndulation, 0, 0], 56)
+    u.set([s.bankLamp, s.bankUndulation, s.bankRelief, s.phaseFloor], 56)
     packStreetLamp(input.street ?? STREET_LAMP_DEFAULTS, u, 60)
+    packBeamProfile(input.beam ?? DARKWOOD_BEAM, u, 72)
     const L = this.frame.lamps
     for (let k = 0; k < lamps.length; k++) {
       const l = input.lamps[lamps[k]!]!
@@ -629,7 +650,7 @@ export class FogScatter {
       L.set([l.x, l.y, l.z, l.range], o)
       L.set([l.color[0] * k0, l.color[1] * k0, l.color[2] * k0, l.cosOuter ?? -2], o + 4)
       L.set([axis[0], axis[1], axis[2], l.cosInner ?? -1], o + 8)
-      L.set([(l.size ?? 0.2) * 0.5, 0, 0, 0], o + 12)
+      L.set([(l.size ?? 0.2) * 0.5, l.shadow === undefined || l.shadow < 0 ? 0 : l.shadow + 1, l.beam ?? 0, 0], o + 12)
       L.set([l.color[0] * raw, l.color[1] * raw, l.color[2] * raw, sigma], o + 16)
       if (l.lens) {
         const n = Math.hypot(l.lens.arm[0], l.lens.arm[1]) || 1
@@ -730,7 +751,15 @@ export const fogSceneWgsl = fogParamsWgsl + fogConeWgsl
  * analytic height fog the same way. The deck is a plane with footprint-filtered octaves and an analytic edge width
  * from the pixel's footprint (web-ocean, MIT), lit from below by the glow map (Neon Zenith, MIT).
  */
-export const fogAtmosphereWgsl = /* wgsl */ `
+export const fogAtmosphereWgsl = fogAtmosphere(false)
+
+/**
+ * The atmosphere WGSL. `stratified` (the forest's `bankLocal`/`bankExtinction`) lays the bank on the game's floor
+ * with a soft-shouldered height profile and its closed-form height integral; off, it is the classic bank at absolute
+ * height that the Lot and Outbreak compile.
+ */
+function fogAtmosphere(stratified: boolean): string {
+  return /* wgsl */ `
 fn fogHash3(p: vec3i) -> f32 {
   var h = (bitcast<u32>(p.x) * 0x8da6b343u) ^ (bitcast<u32>(p.y) * 0xd8163841u) ^ (bitcast<u32>(p.z) * 0xcb1ab31fu);
   h = (h ^ (h >> 16u)) * 0x7feb352du;
@@ -773,7 +802,60 @@ fn fogGlow(xz: vec2f) -> vec3f {
   return g * (1.0 - smoothstep(0.85, 1.0, max(r.x, r.y)));
 }
 
-/** Noise-free bank extinction at height y (the CPU's fogBankMeanSigma). */
+${stratified ? `/** The bank's vertical profile at height share h above its floor: full below, a soft shoulder up to 1 + spread. */
+fn fogBankProfile(h: f32, spread: f32) -> f32 { return 1.0 - smoothstep(0.0, 1.0 + spread, h); }
+/** Height integral of fogBankProfile(h, 0.3) from 0: closed form of 1 − smoothstep (full below the floor). */
+fn fogBankProfileInt(h: f32) -> f32 {
+  let w = 1.3;
+  if (h <= 0.0) { return h; }
+  if (h >= w) { return w * 0.5; }
+  let u = h / w;
+  return h - w * (u * u * u - 0.5 * u * u * u * u);
+}
+/**
+ * Noise-free bank optical depth from a to b, taking the floor, height and density the game gives (\`local\`) for the
+ * whole leg (the bank is stratified in height round its local floor): a ray that climbs out of it loses only what it
+ * crossed.
+ */
+fn fogBankDepth(a: vec3f, b: vec3f, local: vec3f) -> f32 {
+  let hs = FOG.bank.y * local.y;
+  let h0 = (a.y - local.x) / hs;
+  let h1 = (b.y - local.x) / hs;
+  let k = FOG.bank.x * 0.5 * (1.0 - FOG.bank2.x) * local.z * length(b - a);
+  if (abs(h1 - h0) < 1e-3) { return k * fogBankProfile(0.5 * (h0 + h1), 0.3); }
+  return k * (fogBankProfileInt(h1) - fogBankProfileInt(h0)) / (h1 - h0);
+}
+/** Noise-free bank extinction at p (the CPU's fogBankMeanSigma at the floor the game's \`bankLocal\` gives). */
+fn fogBankMeanSigma(p: vec3f) -> f32 { return fogBankMeanSigmaAt(p, fogBankLocal(p)); }
+fn fogBankMeanSigmaAt(p: vec3f, local: vec3f) -> f32 {
+  let h = (p.y - local.x) / (FOG.bank.y * local.y);
+  return FOG.bank.x * 0.5 * (1.0 - FOG.bank2.x) * local.z * fogBankProfile(h, 0.3);
+}
+/** Bank extinction at p: billows drifting with the wind, wisps counter-drifting through them, a rolling top. */
+fn fogBankSigma(p: vec3f) -> f32 {
+  // Where the game's mask keeps the bank out, skip the noise.
+  let mask = fogBankMask(p);
+  if (mask <= 0.0) { return 0.0; }
+  // The floor follows the game's ground (\`bankLocal\`) with its own height and density there: pools and pockets.
+  let local = fogBankLocal(p);
+  let h = (p.y - local.x) / (FOG.bank.y * local.y);
+  if (h > 1.0 + FOG.bank3.y || local.z <= 0.0) { return 0.0; }
+  let t = FOG.wind.z;
+  let q = p * FOG.bank.z;
+  let w = vec3f(FOG.wind.x, 0.0, FOG.wind.y) * (t * FOG.bank.z);
+  let n1 = fogNoise3(q - w + vec3f(0.0, t * 0.015, 0.0));
+  let n2 = fogNoise3(q * 2.3 + vec3f(1.7, 0.9, 2.5) + w * 0.5 + n1 * 0.6);
+  let n = clamp(((n1 * 0.68 + n2 * 0.32) - 0.5) * 1.9 + 0.5, 0.0, 1.0);
+  let top = fogBankProfile(h - (n - 0.5) * FOG.bank3.y, 0.3);
+  let gaps = FOG.bank2.x;
+  return FOG.bank.x * max(n - gaps, 0.0) / (1.0 - gaps) * top * mask * local.z;
+}
+/** The bank along eye + rd · [0, dist]: rgb in-scatter, a transmittance. */
+fn fogBank(eye: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec4f {
+  let base = FOG.medium.z;
+  // Relief (bank3.z): how far the game's floor and height scale lift the bank's top above base.
+  let top = base + FOG.bank.y * (1.3 + 0.5 * FOG.bank3.y) + FOG.bank3.z;
+` : `/** Noise-free bank extinction at height y (the CPU's fogBankMeanSigma). */
 fn fogBankMeanSigma(y: f32) -> f32 {
   let h = (y - FOG.medium.z) / FOG.bank.y;
   let k = FOG.bank.x * 0.5 * (1.0 - FOG.bank2.x);
@@ -800,7 +882,7 @@ fn fogBankSigma(p: vec3f) -> f32 {
 fn fogBank(eye: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec4f {
   let base = FOG.medium.z;
   let top = base + FOG.bank.y * (1.0 + 0.5 * FOG.bank3.y);
-  let dy = select(min(rd.y, -1e-5), max(rd.y, 1e-5), rd.y >= 0.0);
+`}  let dy = select(min(rd.y, -1e-5), max(rd.y, 1e-5), rd.y >= 0.0);
   let ta = (base - 1.0 - eye.y) / dy;
   let tb = (top - eye.y) / dy;
   let reach = FOG.bank2.y;
@@ -862,6 +944,7 @@ fn fogCloud(eye: vec3f, rd: vec3f, dist: f32, pixelAngle: f32) -> vec4f {
   return vec4f(a * (body * tc + fogColor() * (1.0 - tc)), 1.0 - a);
 }
 `
+}
 
 export type FogScatterHooks = {
   /** Extra WGSL declarations (e.g. the game's custom uniform struct at binding 13). */
@@ -897,11 +980,39 @@ export type FogScatterHooks = {
   atmosphere?: boolean
   /** Compile the street lamp lens airlight and glint aim (`FogLamp.lens`). Off by default, like `atmosphere`. */
   street?: boolean
+  /** Shadow `FogLamp.shadow` lamps by the spot shadow maps (`VolumeLightShader.spotShadows`, bindings 23–25). */
+  spotShadows?: boolean
   /**
    * WGSL `f32` of `p: vec3f` (needs `atmosphere`): how much of the bank stands at p, multiplying its density and the
    * thickening of lamp beams inside it, so a game can pool it in yards and gutters and keep it out of houses. Default 1.
    */
   bankMask?: string
+  /**
+   * WGSL `vec3f` of `p` (needs `atmosphere`): the bank's floor height at p.xz, its height scale and density scale
+   * there, so it follows the ground and pools in hollows instead of filling the level to one absolute height. Raise
+   * `FogSettings.bankRelief` to cover the floor's rise above `base` and the largest height scale. Default: the base,
+   * 1, 1.
+   */
+  bankLocal?: string
+  /**
+   * Beams lose light to the bank as well as scatter more in it (needs `atmosphere`): each sample is dimmed by the
+   * bank's mean extinction on the way from the lamp and on the way to the eye, so thick mist glows near a beam and goes
+   * dark away from it instead of turning the whole frame milky. Off by default (the bank only thickens beams).
+   */
+  bankExtinction?: boolean
+  /**
+   * The forest's torch model, off by default (the classic lamp fog the Lot, Outbreak and Night Shift compile):
+   * `FogLamp.beam` lamps take the shared beam profile (`FogUpdate.beam`) with no leak, every lamp's light levels
+   * off within its fixture size (near field d²/(d² + size²) instead of fading in), and the phase's isotropic share is
+   * `FogSettings.phaseFloor` instead of a fixed 0.15.
+   */
+  torches?: boolean
+  /** Torch-only in-scatter multiplier expression; does not change extinction or classic lamps. Requires torches. */
+  torchScatter?: string
+  /** Extra medium supplied by declarations: fogDistanceDepth(a,b), fogDistanceSigma(p,eye), fogDistanceColor(). */
+  distanceFog?: boolean
+  /** Whether the extra surface-distance medium also covers sky rays. Defaults to true. */
+  distanceFogSky?: string
 }
 
 /**
@@ -912,10 +1023,17 @@ export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader
   const reflectionSamples = Math.max(1, Math.min(8, Math.round(hooks.reflectionSamples ?? 1)))
   const atmo = !!hooks.atmosphere
   const street = !!hooks.street
+  // The stratified bank (floor from \`bankLocal\`, soft-shouldered profile, closed-form depth) comes with either hook.
+  const stratified = atmo && (!!hooks.bankLocal || !!hooks.bankExtinction)
+  const ext = stratified && !!hooks.bankExtinction
+  const torches = !!hooks.torches
+  const sigmaAt = (p: string) => (stratified ? `fogBankMeanSigma(${p})` : `fogBankMeanSigma(${p}.y)`)
+  const mask = (p: string) => (hooks.bankMask ? `fogBankMask(${p})` : "1.0")
   return {
     depth: true,
     history: true,
     ...(hooks.surface ? { color: true } : {}),
+    ...(hooks.spotShadows ? { spotShadows: true } : {}),
     transmittance: true,
     code: /* wgsl */ `
 ${common}
@@ -932,7 +1050,7 @@ fn fogLamp(i: u32) -> FogLamp {
   return FogLamp(fogLampData[o], fogLampData[o + 1u], fogLampData[o + 2u], fogLampData[o + 3u], fogLampData[o + 4u], fogLampData[o + 5u]);
 }
 ${street ? streetLampWgsl : ""}
-${atmo ? `${fogAtmosphereWgsl}\nfn fogBankMask(p: vec3f) -> f32 { return ${hooks.bankMask ?? "1.0"}; }` : ""}
+${torches ? `${beamWgsl}\n` : ""}${hooks.spotShadows ? `${spotShadowVolumeWgsl}\n` : ""}${atmo ? `${fogAtmosphere(stratified)}\nfn fogBankMask(p: vec3f) -> f32 { return ${hooks.bankMask ?? "1.0"}; }${stratified ? `\nfn fogBankLocal(p: vec3f) -> vec3f { return ${hooks.bankLocal ?? "vec3f(FOG.medium.z, 1.0, 1.0)"}; }` : ""}` : ""}
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
 fn fogRoughness(p: vec3f, n: vec3f) -> f32 { return ${hooks.roughness ?? "0.5"}; }
@@ -995,7 +1113,7 @@ ${street ? `    if (L.f.z > 0.0) {
         let H = sqrt(max(dot(xc, xc) - u0 * u0, 0.0) + L.f.w * L.f.w);
         let kseg = (atan((L.f.z - u0) / H) + atan((L.f.z + u0) / H)) / (2.0 * L.f.z * H);
         var thick = 1.0;
-${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); thick += bankLamp * fogBankMeanSigma(bp.y) * ${hooks.bankMask ? "fogBankMask(bp)" : "1.0"} / max(L.e.w, 1e-5); }` : ""}
+${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); thick += bankLamp * ${sigmaAt("bp")} * ${hooks.bankMask ? "fogBankMask(bp)" : "1.0"} / max(L.e.w, 1e-5); }` : ""}
         lsum += prof * win * mix(1.0, hg, 0.85) * kseg * (ld * ld + L.f.w * L.f.w) * thick;
       }
       acc += L.b.rgb * lsum * (qb - qa) * FOG.streetC.y / (hp * f32(n) * 12.566371);
@@ -1016,14 +1134,35 @@ ${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); t
       let ld = max(length(lx), 1e-3);
       let ln = lx / ld;
       // The refractor leaks a little light sideways: that leak draws the small round halo round each head.
-      let cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0 - leak) + leak;
-      let r4 = ld / L.a.w;
-      let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * smoothstep(0.0, L.d.x, ld) * exp(-ld / FOG.scatter.y);
+${torches ? `      var cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0 - leak) + leak;
+      // A torch takes the shared beam profile: its hot spot and reflector rings show in the air as on the ground. The
+      // profile carries its own spill, and the body behind the reflector sends nothing back, so it takes no leak. The
+      // profile is packed in FOG.pad0/pad1 (bank3.z is the bank's relief, bank3.w the phase's isotropic share).
+      if (L.d.z > 0.0) { cone = kitBeamProfile(kitBeamAngle(dot(ln, L.c.xyz)) / L.d.z, FOG.pad0, FOG.pad1); }` : `      ${hooks.spotShadows ? "var" : "let"} cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0 - leak) + leak;`}
+${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShadowAir(u32(L.d.y - 0.5), ro + rd * (s0 + h * tan(t))); }\n` : ""}${torches ? `      // Outside the torch profile (or fully shadowed), the sample contributes exactly zero.
+      // Avoid the terrain-relative bank lookup and both extinction integrals for these samples.
+      if (cone == 0.0) { continue; }
+` : ""}      let r4 = ld / L.a.w;
+${torches ? `      // Near field: within about its size a lamp's light hasn't spread to I/d² yet (a torch's beam leaves a 5 cm lens
+      // as a column), so irradiance levels off at I/d0² instead of climbing to the lens.
+      let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * (ld * ld / (ld * ld + L.d.x * L.d.x)) * exp(-ld / FOG.scatter.y);` : `      let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * smoothstep(0.0, L.d.x, ld) * exp(-ld / FOG.scatter.y);`}
       let cosT = -dot(ln, rd);
       let hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosT, 1e-4), 1.5);
       var thick = 1.0;
-${atmo ? `      if (bankLamp > 0.0) { let bp = ro + rd * (s0 + h * tan(t)); thick += bankLamp * fogBankMeanSigma(bp.y) * ${hooks.bankMask ? "fogBankMask(bp)" : "1.0"} / max(L.e.w, 1e-5); }` : ""}
-      sum += cone * win * mix(1.0, hg, 0.85) * thick;
+${!atmo ? "" : !stratified ? `      if (bankLamp > 0.0) { let bp = ro + rd * (s0 + h * tan(t)); thick += bankLamp * fogBankMeanSigma(bp.y) * ${mask("bp")} / max(L.e.w, 1e-5); }` : `      if (bankLamp > 0.0) {
+        let st = s0 + h * tan(t);
+        let bp = ro + rd * st;
+        let local = fogBankLocal(bp);
+        let sig = fogBankMeanSigmaAt(bp, local) * ${mask("bp")};
+        thick += bankLamp * sig / max(L.e.w, 1e-5);
+${ext ? `        // Out of the lamp to the sample, then on to the eye, through the bank (each leg's height integral).
+        thick *= exp(-bankLamp * (fogBankDepth(L.a.xyz, bp, local) + fogBankDepth(ro, bp, local)) * ${mask("bp")});` : ""}
+      }`}
+${hooks.distanceFog ? `      let mediumPoint = ro + rd * (s0 + h * tan(t));
+      thick = (thick + fogDistanceSigma(mediumPoint, ro) / max(L.e.w, 1e-5)) * exp(-fogDistanceDepth(ro, mediumPoint) - fogDistanceDepth(L.a.xyz, mediumPoint));
+` : ""}${torches ? `      // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
+      // sets (HG alone at g 0.75 sends 0.08 of the isotropic amount back; a 0.15 share nearly triples it).
+      sum += cone * win * mix(hg, 1.0, FOG.bank3.w) * thick${hooks.torchScatter ? ` * select(1.0, ${hooks.torchScatter}, L.d.z > 0.0)` : ""};` : `      sum += cone * win * mix(1.0, hg, 0.85) * thick;`}
     }
     acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);
   }
@@ -1047,7 +1186,10 @@ ${atmo ? `      if (bankLamp > 0.0) { let bp = ro + rd * (s0 + h * tan(t)); thic
   let samples = u32(max(FOG.reflect.x, 1.0));
   var acc = airlight(eye, rd, dist, samples, jitter);
   // Clouds behind the bank, then the bank in front of everything: rgb in-scatter, a the transmittance.
-  var trans = 1.0;
+  var trans = 1.0;${hooks.distanceFog ? `
+  let distanceT = select(exp(-fogDistanceDepth(eye, eye + rd * dist)), 1.0, sky && !(${hooks.distanceFogSky ?? "true"}));
+  trans *= distanceT;
+  acc += fogDistanceColor() * (1.0 - distanceT);` : ""}
 ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
     let texel = 1.0 / V.size.xy;
     let pixelAngle = length(normalize(volumeUnproject(o.uv + vec2f(texel.x, 0.0), d) - eye) - rd);
@@ -1057,8 +1199,9 @@ ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
   }
   if (FOG.bank.w > 0.5) {
     let bank = fogBank(eye, rd, dist, fogIgn(px + vec2f(13.0, 71.0) + V.eye.w * 5.588238));
-    // Beams start both in front of and behind the bank: they keep the square root of its transmittance.
-    acc = acc * sqrt(bank.a) + bank.rgb;
+${ext ? `    // The march already dimmed the beams by the bank per sample.
+    acc = acc + bank.rgb;` : `    // Beams start both in front of and behind the bank: they keep the square root of its transmittance.
+    acc = acc * sqrt(bank.a) + bank.rgb;`}
     trans *= bank.a;
   }
 ` : ""}

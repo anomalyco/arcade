@@ -146,6 +146,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "onboarding", label: "Onboarding", subject: "Outbreak's training room and the clearer E prompts: one wordless beat at a time from the bed to the street", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
+  { id: "woods-camera", label: "Barbara camera", subject: "The night woods through different cameras and the realism effects a real camera adds", host: { kind: "page", url: "/arcade/barbara/" }, panels: page, play: "Play" },
   { id: "archer", label: "Archer", subject: "Archers' arenas, movement tuning and power-ups", host: { kind: "page", url: "/arcade/archers/playground.html" }, panels: page, play: "Play" },
 ]
 
@@ -182,6 +183,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-onboarding": "onboarding",
   brawl: "brawler",
   archers: "archer",
+  "woods-camera": "woods-camera",
 }
 
 /** What a station nobody gave a kind yet opens as, so a new station file never stops the Lab from starting. */

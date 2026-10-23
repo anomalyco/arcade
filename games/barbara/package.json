@@ -1,0 +1,24 @@
+{
+  "name": "@arcade/barbara",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun scripts/build-id.ts && vite",
+    "build": "bun scripts/build-id.ts && vite build",
+    "test": "bun scripts/build-id.ts && bun test",
+    "check": "bun scripts/build-id.ts && tsc --noEmit && tsc --noEmit -p tsconfig.server.json && bun test && vite build",
+    "dev:server": "bun scripts/build-id.ts && vite build && wrangler dev --ip 127.0.0.1 --port 5298"
+  },
+  "dependencies": {
+    "@arcade/kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.74",
+    "@types/bun": "^1.4.2",
+    "playwright-core": "^1.64.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0",
+    "@cloudflare/workers-types": "^5.20261011.1"
+  }
+}

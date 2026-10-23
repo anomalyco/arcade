@@ -51,6 +51,7 @@ import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
 import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
+import { LuminanceMeter, type SceneMeter, type SceneMeterStatus } from "./meter"
 import { boxIntersectsRect2D, drawContiguousChunks, drawContiguousChunksByMode } from "./cull"
 import {
   PassList,
@@ -259,6 +260,17 @@ export interface FinalPass {
 }
 
 /**
+ * A pass drawn onto the resolved HDR image after temporal AA, volumes and fog, before metering, bloom and the composite:
+ * first-person viewmodels the temporal history must never see. It brings its own depth and multisampling; `frame` is
+ * the scene's group 0 (layout `passContext.frameLayout`). Without TAA it draws into the scene image before motion blur.
+ * Inactive passes cost nothing.
+ */
+export interface OverlayPass {
+  readonly active: boolean
+  encode(encoder: GPUCommandEncoder, target: GPUTextureView, width: number, height: number, frame: GPUBindGroup): void
+}
+
+/**
  * WebGPU renderer. Per frame: (1) a compute pass casts POLAR_RAYS rays from each culled light against the occluders
  * within its reach (walls, furniture with heights, people), (2) an MSAA HDR pass draws the level chunks in view,
  * instanced characters, glass and light haze, and sprites, all lit through that polar shadow map, (3) bloom, then a
@@ -332,6 +344,7 @@ export class Renderer {
   private polarPipe: GPUComputePipeline
   private pipes: Record<string, GPURenderPipeline> = {}
   private finalPass: FinalPass | null = null
+  private overlayPass: OverlayPass | null = null
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
   private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
@@ -395,6 +408,8 @@ export class Renderer {
   private infiniteSky = false
   private temporal: TemporalResolve | null = null
   private bloomSource: GPUTexture | null = null
+  private bloomSourceView: GPUTextureView | null = null
+  private meterPass: LuminanceMeter | null = null
   private spriteModule!: GPUShaderModule
   private reactivePipe: GPURenderPipeline | null = null
   private reactiveInstPipe: GPURenderPipeline | null = null
@@ -580,6 +595,7 @@ export class Renderer {
       frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, custom: this.customBuf,
       fog: this.fogBuf, fogLamps: this.fogLampBuf, sampler: this.sampler, format: HDR,
       compile: (code, label) => this.module(code, label),
+      spotShadow: () => this.spotShadow,
     }, i))
     if (shaders?.visField) {
       const vf = shaders.visField
@@ -1101,6 +1117,22 @@ export class Renderer {
    * Opt-in temporal anti-aliasing (`"taa"`) or upscaling (`"taau"`); `null` or `"msaa"` is today's MSAA-only path.
    * Cheap to call every frame: only a change of mode or render scale reallocates.
    */
+  /** Meter the scene-referred image (after the fog, before exposure) each frame, for a host's auto exposure. */
+  setMeter(on: boolean): void {
+    if (on) this.meterPass ??= new LuminanceMeter(this.device)
+    else { this.meterPass?.destroy(); this.meterPass = null }
+  }
+
+  /** The meter's latest reading (a few frames old), or null while it is off or warming up. */
+  get sceneMeter(): SceneMeter | null {
+    return this.meterPass?.last ?? null
+  }
+
+  get sceneMeterStatus(): SceneMeterStatus { return this.meterPass?.status ?? "off" }
+
+  /** A camera cut invalidates cached and in-flight readings of the old scene. */
+  resetSceneMeter(): void { this.meterPass?.reset() }
+
   setTemporal(settings: TemporalSettings | null): void {
     const next = temporalEnabled(settings) ? { ...settings } : null
     const prev = this.temporalSettings
@@ -1114,6 +1146,11 @@ export class Renderer {
   /** A pass after the composite (camera filters); null removes it. */
   setFinalPass(pass: FinalPass | null): void {
     this.finalPass = pass
+  }
+
+  /** A pass onto the resolved image after temporal AA (viewmodels); null removes it. */
+  setOverlayPass(pass: OverlayPass | null): void {
+    this.overlayPass = pass
   }
 
   getTemporal(): TemporalSettings | null {
@@ -1140,6 +1177,7 @@ export class Renderer {
 
   /** Points bloom and the composite at the image they should read: the temporal output or the resolved scene. */
   private syncBloomSource(src: GPUTexture, view: GPUTextureView): void {
+    this.bloomSourceView = view
     if (this.bloomSource === src) return
     this.bloomSource = src
     this.bloomPyramid.resize({ hdr: src, hdrView: view, layout: this.postLayout, sampler: this.sampler, gradeBuffer: this.gradeBuf })
@@ -1840,6 +1878,7 @@ export class Renderer {
 
     if (this.volumes.length && !taa) this.drawVolumes(enc, f, f.frame, [f.frame[16]!, f.frame[17]!, f.frame[18]!], this.targets.hdrView, this.targets.width, this.targets.height)
     if (!taa) this.drawFogBlur(enc, f, f.frame, this.targets.hdrView, this.targets.width, this.targets.height)
+    if (!taa && this.overlayPass?.active) this.overlayPass.encode(enc, this.targets.hdrView, this.targets.width, this.targets.height, this.sceneGroup)
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
@@ -1902,7 +1941,9 @@ export class Renderer {
       taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
+      if (this.overlayPass?.active) this.overlayPass.encode(enc, taa.outputView, this.width, this.height, this.sceneGroup)
     }
+    if (this.meterPass && this.bloomSourceView) this.meterPass.encode(enc, this.bloomSourceView)
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const finalPass = this.finalPass?.active ? this.finalPass : null
     const dest = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
@@ -1927,6 +1968,7 @@ export class Renderer {
     if (finalPass) finalPass.encode(enc, dest, taa ? this.unjittered : f.frame)
     if(this.timing) this.timer!.finish(enc,dest)
     d.queue.submit([enc.finish()])
+    this.meterPass?.afterSubmit()
     this.submittedFrames++
   }
 

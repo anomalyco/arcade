@@ -7,7 +7,7 @@ await using budget = browserBudget()
 const { chromium } = budget
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -33,7 +33,8 @@ let bootTimeline = async () => "not loaded"
 // first use, which took 3–7 s off), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
 const READY_MS = game === "lot" ? 60_000 : 40_000
-const DEADLINE_MS = game === "lot" ? 75_000 : 55_000
+// Barbara waits for its forest frames to finish on the GPU: 9 s under SwiftShader on a Mac, past 45 s on CI (Oct 22).
+const DEADLINE_MS = game === "lot" ? 75_000 : game === "barbara" ? 140_000 : 55_000
 const CLOSE_MS = 3_000
 let passed = false
 const deadline = setTimeout(async () => {
@@ -73,12 +74,18 @@ try {
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
   // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" || game === "outbreak" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" || game === "outbreak" || game === "barbara" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
   // requestAnimationFrame: rAF polls stall while a software GPU is busy compiling or drawing.
   const ready = await page.waitForFunction(game => {
+    if (game === "barbara") {
+      const status = document.querySelector("#hud")?.textContent
+      if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
+      // Under ?smoke the woods draw two frames at low trunk density, then pause.
+      return window.woods?.ready && window.woods.frames >= 2 ? "barbara ready" : false
+    }
     if (game === "nightshift") {
       const status = document.querySelector("#hud")?.textContent
       if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
@@ -137,6 +144,37 @@ try {
       requestAnimationFrame(frame)
     }))
     console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
+  }
+  if (game === "barbara") {
+    const exposure = await page.evaluate(() => {
+      const w = window.woods, forest = w.view.forest, s = forest.settings
+      if (w.renderer.sceneMeterStatus !== "off") throw new Error("smoke unexpectedly enabled the meter")
+      let input
+      const update = forest.update
+      forest.update = f => { input = f; update(f) }
+      try { w.step(1000 / 60) } finally { forest.update = update }
+      const saved = { sky: s.sky, exposureModel: s.exposureModel }
+      const samples = []
+      try {
+        // Reference law from before 0c2cdc70: no reading meant taking the fallback target every frame.
+        for (const model of ["robust", "metered"]) for (const on of [true, false]) for (const sky of [0, 1]) {
+          s.exposureModel = model; s.sky = sky
+          const f = { ...input, torches: input.torches.map(t => ({ ...t, on })), dt: 1 / 60 }
+          update(f)
+          const local = f.torches.find(t => t.kind !== "remote" && t.on)
+          const coverage = Math.min(1, (Math.tan(s.torchAngle * Math.PI / 180 * 1.3) / Math.tan(f.fovY / 2)) ** 2)
+          const spot = local ? s.torchPower * 5 * 0.2 / (Math.PI * Math.max(forest.camera.hit, 0.4) ** 2) * coverage : 0
+          const key = Math.max(spot + 0.004 * s.sky + 0.0005, 1e-6)
+          const stops = model === "metered" ? -Math.log2(key / 0.09) * 0.55 : s.nightStops - Math.log2(key / Math.max(s.nightKey, 1e-6)) * s.nightStrength
+          const expected = Math.pow(2, s.autoExposure ? Math.max(-s.adaptRange, Math.min(s.adaptLift, stops)) : 0)
+          if (forest.camera.exposure !== expected) throw new Error(`smoke exposure ${forest.camera.exposure} != pre-hold ${expected}`)
+          samples.push({ model, on, sky, exposure: expected })
+        }
+      } finally { Object.assign(s, saved); update(input) }
+      return samples
+    })
+    console.log(`barbara: pre-0c2cdc70 smoke exposure parity (${exposure.length} exact matches)`)
+    await page.evaluate(() => window.woods?.renderer.passContext.device.queue.onSubmittedWorkDone())
   }
   if (game === "nightshift") {
     await page.evaluate(() => window.nightshift?.renderer.passContext.device.queue.onSubmittedWorkDone())

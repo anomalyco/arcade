@@ -27,7 +27,7 @@ const browser = await chromium.launch({ executablePath, headless: true, args: ["
 const report: Record<string, unknown> = {}
 /** Per-game URL extras and what to click to reach play. */
 const SETUP: Record<string, { query?: string; timeout?: number; built?: boolean; lobby?: boolean }> = {
-  nightshift: { timeout: 180_000 }, lot: { timeout: 180_000, built: true },
+  nightshift: { timeout: 180_000 }, lot: { timeout: 180_000, built: true }, barbara: { timeout: 180_000, built: true, lobby: true },
   brawl: { lobby: true }, outbreak: { lobby: true }, getaway: { lobby: true }, blackout: { lobby: true }, carrier: { lobby: true }, archers: { lobby: true },
 }
 
