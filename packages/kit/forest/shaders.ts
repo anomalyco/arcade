@@ -833,9 +833,27 @@ fn torchAt(p: vec3f, lens: vec3f, axis: vec3f) -> f32 {
 `
 
 /** The renderer's own scene shader, for what a game draws through `FrameInput.batches` (players, props): same night. */
+/** The most MAT.retro sheeting returns over plain paint on a light's own line (its aux is clamped to this). */
+export const RETRO_MAX = 6
+/** `retroLobe`'s width: 2σ² in rad² for an exp(−θ²/2σ²) lobe, σ ≈ 3° (half by about 3.5°). */
+export const RETRO_LOBE = 2 * (3 * Math.PI / 180) ** 2
+/** CPU mirror of the batch shader's retroreflective gain for a light at observation angle `theta` (rad). */
+export const retroGain = (aux: number, theta: number) => 1 + Math.min(Math.max(aux, 0), RETRO_MAX) * Math.exp(-(2 * (1 - Math.cos(theta))) / RETRO_LOBE)
+
 export const batchHooks: SceneHooks = withPhysicalLights({
   lampGrid: false,
   declarations: woodsUniformWgsl + fogSceneWgsl + /* wgsl */ `var<private> batchThin: f32 = 0.0;
+var<private> batchRetro: f32 = 0.0;
+/**
+ * Retroreflective sheeting (the kit's MAT.retro) sends light back the way it came: a light's return reaches the eye
+ * only when the light sits close to the eye's line to the surface. c is the cosine of that observation angle;
+ * the lobe falls to half by about 3.5° (a torch in your hand a metre or two from a sign gives little, ten metres
+ * off most of it). A flare on the ground beside the sign gets none, so it lights the sheeting as paint.
+ */
+fn retroLobe(c: f32) -> f32 {
+  let a2 = max(2.0 * (1.0 - c), 0.0);
+  return exp(-a2 / ${RETRO_LOBE.toFixed(4)});
+}
 /**
  * Fluorescent dye turns the light landing on it into its own colour, so bright tape stays saturated instead of
  * bleaching: past a level the result takes the dye's hue, and it rolls off below the post pass's white mix (which
@@ -857,14 +875,20 @@ ${forestMoonWgsl}`,
       pbrRough = 0.3;
       batchThin = 0.4;
       albedo *= max(o.aux, 1.0);
+    } else if (mat == ${GPU_MAT.retro}) {
+      pbrRough = 0.55;
+      batchRetro = clamp(o.aux, 0.0, ${RETRO_MAX.toFixed(1)});
     }`,
-  diffuseTerm: "let diffuse = (max(ndl, 0.0) + max(-ndl, 0.0) * batchThin) / PI;",
+  // Retroreflection adds to the paint only along the light's own line (`retroLobe`), so it follows your torch.
+  diffuseTerm: "let diffuse = (max(ndl, 0.0) * (1.0 + batchRetro * retroLobe(dot(ldir, V))) + max(-ndl, 0.0) * batchThin) / PI;",
   bounce: "vec3f(0.0)",
   ambient: "(fogAmbient(n) * N.sky.z + forestCloudLight(n)) * 0.5 + forestMoonAmbient(n, 0.5)",
   directional: "forestFlash(o.world, n, 1.0) + forestMoonDirect(o.world, n, 0.5)",
   lightLeak: "0.0",
   wallDirectScale: "1.0",
-  surface: "if (mat == 5) { col = tapeFluoresce(col, o.color); } col = fogApply(col, F.cam.xyz, o.world);",
+  // Sheeting rolls off the same way, so a sign in your torch stays a coloured sign with its lettering, never a white
+  // panel blooming over it.
+  surface: `if (mat == 5 || mat == ${GPU_MAT.retro}) { col = tapeFluoresce(col, o.color); } col = fogApply(col, F.cam.xyz, o.world);`,
   // As the forest's own surfaces (its fragmentReturn): a nearby, rough, opaque body marks itself in alpha as no bloom
   // source (forestPost's bloomSource caps it), so a friend lit by your torch at 2 m reads lit instead of wrapped in a
   // body-sized glow. Lamps, glow and the torch lens (accent) still bloom; with the highlight shoulder off nothing changes.

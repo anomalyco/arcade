@@ -4,7 +4,7 @@ import { forestTree } from "../shared/forest-world"
 import { boundaryLine, standHeight, terrainHeight, treesNear, type WoodsWorld } from "../shared/world"
 
 const POST: Rgb = [0.2, 0.16, 0.12]
-/** Boundary paint: the blaze a state forest puts on its line posts and trees, bright in any torch. */
+/** Boundary paint: the blaze a state forest puts on its line posts and trees; the brightest paint in the woods. */
 const PAINT: Rgb = [0.95, 0.38, 0.06]
 const RUST: Rgb = [0.24, 0.13, 0.08]
 const POSTED: Rgb = [0.95, 0.76, 0.08]
@@ -17,11 +17,13 @@ const STRANDS = [0.42, 0.78, 1.12]
 /** A sign every this many posts, alternating POSTED and the state forest's own. */
 const SIGN_EVERY = 6
 /**
- * Readability gain on the paint and the signs (kit `MAT.tape`, lit like fluorescent tape): boundary paint and posted
- * signs are made to be seen, so they carry 30 m in a torch where the bare posts don't.
+ * The signs' retroreflective sheeting (kit `MAT.retro`, the yellow POSTED face and the forest sign's letters): dark
+ * paint until your own torch is on it, then up to 1 + this brighter (about twice at 4 m, three times at 15 m, where
+ * the main build's flat ×2 sat); a flare beside a sign lights it as paint. More than this blooms over the lettering.
+ * The paint on posts and trunks is fluorescent (`MAT.tape` with no gain: the dye's roll-off keeps it orange, never a
+ * glow), as bright as the light on it and no brighter.
  */
-const PAINT_GAIN = 3
-const SIGN_GAIN = 2
+const SHEETING = 2.5
 
 /** 3×5 capitals, rows top to bottom. */
 const GLYPHS: Record<string, string[]> = {
@@ -79,15 +81,20 @@ function blaze(m: Mesh, trunk: DrawnTrunk, y0: number, y1: number): void {
     return pts.map(([x, z]) => { const d = Math.hypot(x - cx, z - cz) || 1; return [x + ((x - cx) / d) * 0.012, z + ((z - cz) / d) * 0.012] as const })
   }
   const a = ring(lo), b = ring(hi)
+  const cx = a.reduce((t, p) => t + p[0], 0) / a.length, cz = a.reduce((t, p) => t + p[1], 0) / a.length
   for (let i = 0; i < a.length; i++) {
     const j = (i + 1) % a.length
-    m.quadAuto([a[i]![0], y0, a[i]![1]], [a[j]![0], y0, a[j]![1]], [b[j]![0], y1, b[j]![1]], [b[i]![0], y1, b[i]![1]], PAINT, MAT.tape, PAINT_GAIN)
+    // Facing out from the trunk, wound counter-clockwise seen from outside whichever way the section runs.
+    const ox = (a[i]![0] + a[j]![0]) / 2 - cx, oz = (a[i]![1] + a[j]![1]) / 2 - cz, ol = Math.hypot(ox, oz) || 1
+    const ex = a[j]![0] - a[i]![0], ez = a[j]![1] - a[i]![1]
+    const [p, q] = ex * oz - ez * ox > 0 ? [i, j] : [j, i]
+    m.quad([a[p]![0], y0, a[p]![1]], [a[q]![0], y0, a[q]![1]], [b[q]![0], y1, b[q]![1]], [b[p]![0], y1, b[p]![1]], [ox / ol, 0, oz / ol], PAINT, MAT.tape)
   }
 }
 
 function post(m: Mesh, x: number, g: number, z: number, r: number, h: number): void {
   m.box(x - r, g - 0.1, z - r, x + r, g + h - 0.14, z + r, POST)
-  m.box(x - r - 0.003, g + h - 0.14, z - r - 0.003, x + r + 0.003, g + h, z + r + 0.003, PAINT, MAT.tape, PAINT_GAIN, PAINT)
+  m.box(x - r - 0.003, g + h - 0.14, z - r - 0.003, x + r + 0.003, g + h, z + r + 0.003, PAINT, MAT.tape)
 }
 
 /** A strand as a thin ribbon both ways round, so it reads from either side. */
@@ -101,13 +108,13 @@ function wire(m: Mesh, x0: number, y0: number, z0: number, x1: number, y1: numbe
 }
 
 function sign(m: Mesh, x: number, g: number, z: number, n: [number, number], kind: "posted" | "forest"): void {
-  // Nailed to the post's inner face: u runs to the reader's right, v up.
-  const u: [number, number] = [-n[1], n[0]]
+  // Nailed to the post's inner face: u runs to the reader's right (facing −n), v up.
+  const u: [number, number] = [n[1], -n[0]]
   const w = 0.38, h = 0.28, cy = g + 1.02, face = 0.052
   const cx = x + n[0] * face, cz = z + n[1] * face
   const at = (pu: number, pv: number, out = 0): number[] => [cx + u[0] * pu + n[0] * out, cy + pv, cz + u[1] * pu + n[1] * out]
   const plate = kind === "posted" ? POSTED : FOREST_BROWN
-  m.quad(at(-w / 2, -h / 2), at(w / 2, -h / 2), at(w / 2, h / 2), at(-w / 2, h / 2), [n[0], 0, n[1]], plate, kind === "posted" ? MAT.tape : MAT.lit, kind === "posted" ? SIGN_GAIN : 0)
+  m.quad(at(-w / 2, -h / 2), at(w / 2, -h / 2), at(w / 2, h / 2), at(-w / 2, h / 2), [n[0], 0, n[1]], plate, kind === "posted" ? MAT.retro : MAT.lit, kind === "posted" ? SHEETING : 0)
   m.quad(at(w / 2, -h / 2, -0.004), at(-w / 2, -h / 2, -0.004), at(-w / 2, h / 2, -0.004), at(w / 2, h / 2, -0.004), [-n[0], 0, -n[1]], [0.32, 0.3, 0.28])
   const lines = kind === "posted"
     ? [{ text: "POSTED", px: 0.0135, v: 0.055 }, { text: "NO TRESPASSING", px: 0.0058, v: -0.065 }]
@@ -121,7 +128,7 @@ function sign(m: Mesh, x: number, g: number, z: number, n: [number, number], kin
       for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
         if (glyph[r]![c] !== "1") continue
         const u0 = left + (k * 4 + c) * line.px, v0 = line.v + (2 - r) * line.px
-        m.quad(at(u0, v0 - line.px / 2, 0.002), at(u0 + line.px, v0 - line.px / 2, 0.002), at(u0 + line.px, v0 + line.px / 2, 0.002), at(u0, v0 + line.px / 2, 0.002), [n[0], 0, n[1]], ink, kind === "posted" ? MAT.lit : MAT.tape, kind === "posted" ? 0 : SIGN_GAIN)
+        m.quad(at(u0, v0 - line.px / 2, 0.002), at(u0 + line.px, v0 - line.px / 2, 0.002), at(u0 + line.px, v0 + line.px / 2, 0.002), at(u0, v0 + line.px / 2, 0.002), [n[0], 0, n[1]], ink, kind === "posted" ? MAT.lit : MAT.retro, kind === "posted" ? 0 : SHEETING)
       }
     }
   }

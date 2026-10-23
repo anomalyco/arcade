@@ -43,7 +43,9 @@ const OTHER_TAPE: Rgb = [0.95, 0.38, 0.05]
 /** A 1990s saloon, nose towards −z, the driver's door (left, −x) swung open. */
 function car(m: Mesh) {
   m.bevelBox(-0.88, 0.32, -2.45, 0.88, 0.86, 2.45, 0.08, PAINT, PAINT, MAT.shiny)
-  m.bevelBox(-0.78, 0.86, -0.85, 0.78, 1.38, 1.05, 0.1, GLASS, PAINT, MAT.glass, MAT.shiny)
+  // Windows as dark gloss: the forest batch has no glass of its own (kit MAT.glass there sums every light in reach
+  // at full power, unshadowed, and burned the cab white-peach under the lot lamp and a flare).
+  m.bevelBox(-0.78, 0.86, -0.85, 0.78, 1.38, 1.05, 0.1, GLASS, PAINT, MAT.shiny, MAT.shiny)
   m.box(-0.8, 0.42, -2.47, 0.8, 0.58, -2.44, [0.5, 0.5, 0.48], MAT.shiny)
   m.box(-0.75, 0.62, 2.44, -0.4, 0.74, 2.47, [0.35, 0.03, 0.02])
   m.box(0.4, 0.62, 2.44, 0.75, 0.74, 2.47, [0.35, 0.03, 0.02])
@@ -56,7 +58,7 @@ function car(m: Mesh) {
   // The open door: hinged at its front edge, swung out about 55°.
   const from = m.length
   m.box(0, 0.36, 0, 0.07, 1.32, 1.05, PAINT, MAT.shiny)
-  m.box(0.01, 0.9, 0.05, 0.06, 1.3, 1, GLASS, MAT.glass)
+  m.box(0.01, 0.9, 0.05, 0.06, 1.3, 1, GLASS, MAT.shiny)
   turn(m, from, "y", 0.95)
   move(m, from, -0.9, 0, -0.75)
   // The seat and the dark of the cab through the gap, and the pink donut box on the passenger seat.
@@ -92,7 +94,7 @@ function badge(m: Mesh) {
 function recorder(m: Mesh) {
   const from = m.length
   m.bevelBox(-0.06, 0, -0.095, 0.06, 0.035, 0.095, 0.006, [0.04, 0.04, 0.045], [0.06, 0.06, 0.065], MAT.shiny)
-  m.box(-0.04, 0.035, -0.02, 0.04, 0.037, 0.04, [0.1, 0.1, 0.11], MAT.glass)
+  m.box(-0.04, 0.035, -0.02, 0.04, 0.037, 0.04, [0.1, 0.1, 0.11], MAT.shiny)
   m.box(-0.03, 0.036, 0, 0.03, 0.038, 0.03, [0.65, 0.6, 0.5])
   for (let i = 0; i < 4; i++) m.box(-0.05 + i * 0.026, 0.035, -0.09, -0.03 + i * 0.026, 0.042, -0.07, [0.5, 0.5, 0.52], MAT.shiny)
   turn(m, from, "z", 0.12)
