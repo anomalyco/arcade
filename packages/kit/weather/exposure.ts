@@ -38,7 +38,9 @@ export type ExposureInput = {
 }
 
 export type ExposureFrame = {
-  /** Multiply the authored scene exposure by this exactly once, after sky/cloud composition. */
+  /** Apply exactly once to the renderer's final exposure, after sky/cloud composition.
+   * Keep the authored exposure fixed. Never also multiply forest.camera.exposure: applying this at both
+   * the forest camera and the final composite doubles the adaptation. */
   multiplier: number
   /** Positive = less sensitivity. */
   adaptationEV: number
