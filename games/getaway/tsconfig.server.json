@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsc/getaway-server.tsbuildinfo",
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",

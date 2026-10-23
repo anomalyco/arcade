@@ -132,3 +132,32 @@ test("a burning flare 70 m off in sight is a backdrop the creature can cross", (
   }
   expect(withFlare).toBeGreaterThan(without)
 })
+
+test("jump and the flare key are different bits on the wire", () => {
+  const both = unpackIntent(packIntent(input({ jump: true, flare: true })))
+  expect([both.jump, both.flare]).toEqual([true, true])
+  const jump = unpackIntent(packIntent(input({ jump: true })))
+  expect([jump.jump, jump.flare]).toEqual([true, false])
+  const flare = unpackIntent(packIntent(input({ flare: true })))
+  expect([flare.jump, flare.flare]).toEqual([false, true])
+})
+
+test("someone taken while holding a lit flare lets it fall, and it burns on the ground where they were", () => {
+  const state = createWoods(world, 0)
+  const me = state.players[0]!
+  run(state, 2, () => true)
+  const f = state.flares.list[0]!
+  expect(f.thrown).toBe(-1)
+  me.capture = { by: 900, left: 30 }
+  const events = run(state, 3, () => true)
+  expect(events.some((e) => e.kind === "flare-dropped" && e.flare === f.id)).toBe(true)
+  expect(me.flareLatch).toBe(false)
+  expect(f.body?.rest).toBe(true)
+  expect(Math.hypot(f.body!.x - me.x, f.body!.z - me.z)).toBeLessThan(1)
+  const src = flareSources(state.flares, world, state.players, state.t, FEEL)
+  expect(src.map((s) => [s.id, s.held])).toEqual([[f.id, false]])
+  // Taken, they strike nothing, even with another in the pocket and the key down.
+  me.flares = 1
+  expect(run(state, 1, () => true).some((e) => e.kind === "flare-struck")).toBe(false)
+  expect(state.flares.list.length).toBe(1)
+})

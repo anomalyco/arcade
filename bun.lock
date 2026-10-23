@@ -5,6 +5,8 @@
     "": {
       "name": "arcade",
       "devDependencies": {
+        "@types/bun": "^1.4.2",
+        "@webgpu/types": "^0.1.74",
         "playwright-core": "^1.64.0",
         "typescript": "^5.9.3",
         "vite": "^8.3.4",

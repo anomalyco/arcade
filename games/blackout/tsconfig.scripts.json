@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsc/blackout-scripts.tsbuildinfo",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
@@ -12,5 +14,6 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/**/*.ts", "tests", "../../scripts/bench-multiplayer.ts", "../../packages/kit/server/workers-shim.d.ts"]
+  "include": ["scripts/**/*.ts", "tests", "../../packages/kit/server/workers-shim.d.ts"],
+  "exclude": ["scripts/animation", "tests/motion-*.test.ts"]
 }

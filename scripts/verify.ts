@@ -1,12 +1,14 @@
 // One-command verification.
 //
-//   bun run verify              affected checks only, in parallel, with incremental typecheck caches
-//   bun run verify --all        every workspace target, same fast path
-//   bun run verify:remote      snapshot changed paths here, then run verify through HiveMind
+//   bun run verify              affected typechecks and unit tests, with incremental typecheck caches
+//   bun run verify --all        every workspace target, same headless path
+//   bun run verify:remote       snapshot changed paths here, then run verify through HiveMind (cargo)
+//   bun run verify:smoke --game lot   build and smoke one game at PR pitch time (browser admission)
 //   bun run verify:release      clean `git archive` export of HEAD, frozen install, then every workspace target's
 //                               check commands with cold caches, smoke and `wrangler deploy --dry-run`
 //
-// Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --test-workers <n>, --list (plan only),
+// Options: --base <ref> (default origin/main), --no-smoke (release), --jobs <n>, --test-workers <n>, --list (plan only),
+//          --smoke --game <name> (build and smoke only; the verify:smoke alias),
 //          --changed <file> (newline-separated changed paths instead of asking git),
 //          --export <dir|tar> (release: verify this pre-made `git archive` export instead of making one).
 //
@@ -40,7 +42,11 @@ const option = (name: string, fallback: string) => {
 }
 const release = flag("--release")
 const all = flag("--all") || release
-const smoke = !flag("--no-smoke")
+const smokeOnly = flag("--smoke")
+const smoke = (release || smokeOnly) && !flag("--no-smoke")
+const game = argv.includes("--game") ? option("--game", "") : undefined
+if (smokeOnly && (all || flag("--no-smoke") || !game)) throw new Error("verify:smoke requires --game <name> and cannot use --all, --release or --no-smoke")
+if (game && !smokeOnly) throw new Error("--game is only supported by verify:smoke")
 const base = option("--base", "origin/main")
 const changedList = argv.includes("--changed") ? option("--changed", "") : process.env.ARCADE_VERIFY_CHANGED_FILE
 const exportArg = argv.includes("--export") ? resolve(option("--export", "")) : undefined
@@ -65,21 +71,23 @@ const testWorkers = budget("--test-workers", "ARCADE_VERIFY_TEST_WORKERS", "HIVE
 const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
 
-type Target = { name: string; dirs: string[]; game?: string; independent?: boolean }
+type Target = { name: string; dirs: string[]; game?: string; independent?: boolean; check?: string }
 
 async function workflowTargets(): Promise<{ target: Target; paths: string[] }[]> {
   const out: { target: Target; paths: string[] }[] = []
-  for (const name of [...WORKSPACE_GAMES, "packages", ...Object.keys(INDEPENDENT)]) {
+  for (const name of [...WORKSPACE_GAMES, "packages", "scripts", ...Object.keys(INDEPENDENT)]) {
     const file = join(repo, ".github/workflows", `${name}.yml`)
     if (!existsSync(file)) continue
     const yaml = Bun.YAML.parse(await Bun.file(file).text()) as any
     const paths: string[] = yaml?.on?.pull_request?.paths ?? []
     const target: Target =
-      name === "packages"
-        ? { name, dirs: ["packages/kit", "packages/knobs"] }
-        : WORKSPACE_GAMES.includes(name)
-          ? { name, dirs: [`games/${name}`], game: name }
-          : { name, dirs: [INDEPENDENT[name]!], independent: true }
+      name === "scripts"
+        ? { name, dirs: ["."], check: "check:scripts" }
+        : name === "packages"
+          ? { name, dirs: ["packages/kit", "packages/knobs"] }
+          : WORKSPACE_GAMES.includes(name)
+            ? { name, dirs: [`games/${name}`], game: name }
+            : { name, dirs: [INDEPENDENT[name]!], independent: true }
     out.push({ target, paths })
   }
   return out
@@ -117,20 +125,22 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
   for (const dir of target.dirs) {
     const cwd = join(root, dir)
     const scripts = require(join(cwd, "package.json")).scripts as Record<string, string>
-    const cmds = [...new Set(expand(scripts, "check"))]
+    const cmds = [...new Set(expand(scripts, target.check ?? "check"))]
     const prep: string[] = []
     const tag = (s: string) => `${target.name}${target.dirs.length > 1 ? `/${basename(dir)}` : ""}:${s}`
     if (target.independent && !existsSync(join(cwd, "node_modules"))) {
       steps.push({ id: tag("install"), cwd, cmd: "bun install --frozen-lockfile", deps: [], kind: "install" })
       prep.push(tag("install"))
     }
-    for (const cmd of cmds.filter((c) => c.startsWith("bun scripts/build-id.ts"))) {
-      steps.push({ id: tag("build-id"), cwd, cmd, deps: [...prep], kind: "prep" })
-      prep.push(tag("build-id"))
+    const isBuildId = (cmd: string) => /^bun (?:games\/[^/]+\/)?scripts\/build-id\.ts$/.test(cmd)
+    for (const cmd of cmds.filter(isBuildId)) {
+      const id = tag(`build-id${prep.length ? `-${prep.length}` : ""}`)
+      steps.push({ id, cwd, cmd, deps: [...prep], kind: "prep" })
+      prep.push(id)
     }
     let build: string | undefined
     for (const raw of cmds) {
-      if (raw.startsWith("bun scripts/build-id.ts")) continue
+      if (isBuildId(raw)) continue
       let cmd = raw.replace(/^bun scripts\/build-id\.ts && /, "")
       let kind = "other"
       if (/^tsc\b/.test(cmd)) {
@@ -161,6 +171,21 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
 function addGameTail(steps: Step[], game: string, cwd: string, after: string) {
   if (smoke) steps.push({ id: `${game}:smoke`, cwd, cmd: "bun ../../scripts/smoke.mjs", deps: [after], kind: "smoke" })
   steps.push({ id: `${game}:dry-run`, cwd, cmd: "bunx --no-install wrangler deploy --dry-run", deps: [after], kind: "dry-run" })
+}
+
+/** Keep the chosen tier and only the preparation steps it actually needs. */
+function tierSteps(steps: Step[]): Step[] {
+  if (release) return steps
+  const kinds = smokeOnly ? ["build", "smoke"] : ["typecheck", "test"]
+  const byId = new Map(steps.map((step) => [step.id, step]))
+  const keep = new Set<string>()
+  const include = (step: Step) => {
+    if (keep.has(step.id)) return
+    keep.add(step.id)
+    for (const id of step.deps) include(byId.get(id)!)
+  }
+  for (const step of steps) if (kinds.includes(step.kind)) include(step)
+  return steps.filter((step) => keep.has(step.id))
 }
 
 // ---- Scheduler -----------------------------------------------------------------------------------------------
@@ -223,7 +248,12 @@ const indent = (s: string) => s.replace(/^/gm, "      ")
 const t0 = performance.now()
 const targets = await workflowTargets()
 let selected: Target[]
-if (all) {
+if (smokeOnly) {
+  const target = targets.find(({ target }) => target.game === game)?.target
+  if (!target) throw new Error(`Unknown smoke game ${JSON.stringify(game)}; choose ${WORKSPACE_GAMES.join(", ")}`)
+  selected = [target]
+  console.log(`verify:smoke: --game ${game} -> ${game} (build + smoke)`)
+} else if (all) {
   selected = targets.map((t) => t.target).filter((t) => !t.independent)
   if (release) {
     // Independent projects (own lockfiles) join a release run only when they changed.
@@ -251,7 +281,7 @@ const COPY_EXCLUDES = [".git", "node_modules", "dist", ".wrangler", "*.tsbuildin
 
 let root = repo
 let exportDir: string | undefined
-if (release) {
+if (release && !flag("--list")) {
   let t = performance.now()
   if (exportArg && statSync(exportArg).isDirectory()) {
     root = exportArg
@@ -278,7 +308,7 @@ if (release) {
 }
 
 const withPackages = selected.some((t) => t.name === "packages")
-const steps = selected.flatMap((t) => targetSteps(t, root, { incremental: !release, dedupeKit: !release && withPackages }))
+const steps = tierSteps(selected.flatMap((t) => targetSteps(t, root, { incremental: !release, dedupeKit: !release && withPackages })))
 if (flag("--list")) {
   for (const s of steps) console.log(`${s.id.padEnd(28)} ${relative(root, s.cwd).padEnd(16)} ${s.cmd}${s.deps.length ? `   (after ${s.deps.join(", ")})` : ""}`)
   process.exit(0)
@@ -295,7 +325,7 @@ const failed = results.filter((r) => !r.ok)
 const wall = performance.now() - t0
 const busy = results.reduce((s, r) => s + r.ms, 0)
 console.log(
-  `verify${release ? ":release" : ""}: ${failed.length ? `FAILED (${failed.map((r) => r.step.id).join(", ")})` : "ok"} ` +
+  `verify${release ? ":release" : smokeOnly ? ":smoke" : ""}: ${failed.length ? `FAILED (${failed.map((r) => r.step.id).join(", ")})` : "ok"} ` +
     `- ${results.length} steps, ${(wall / 1000).toFixed(1)}s wall, ${(busy / 1000).toFixed(1)}s of work, jobs=${jobs}`,
 )
 console.log(`METRIC verify_wall_ms=${wall.toFixed(0)}`)

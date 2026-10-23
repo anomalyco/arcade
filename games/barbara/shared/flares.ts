@@ -1,5 +1,6 @@
 import { flareEnvelope } from "@arcade/kit/sim/flare-burn"
 import { stepThrown, throwBody, type ThrownBody, type ThrownEnv } from "@arcade/kit/sim/thrown"
+import { cosApprox, sinApprox } from "./creature"
 import { lakeDistance, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -61,6 +62,8 @@ export type FlareEvent =
   | { kind: "flare-struck"; by: number; flare: number; at: number }
   | { kind: "flare-thrown"; by: number; flare: number; at: number }
   | { kind: "flare-picked"; by: number; spares: number }
+  /** Whoever held it was taken: it fell from their hand and burns where it lands. */
+  | { kind: "flare-dropped"; by: number; flare: number; at: number }
 
 /** What a player needs for flares (a structural slice of `Player`). */
 export type FlareHand = { id: number; x: number; z: number; vx: number; vz: number; yaw: number; pitch: number; flares: number; flareLatch: boolean }
@@ -80,7 +83,7 @@ export function flareTable(world: WoodsWorld): { x: number; y: number; z: number
 
 /** The burning end of a flare in a player's right hand, held out and up a little (m). */
 export function handFlare(world: WoodsWorld, p: { x: number; z: number; yaw: number }): [number, number, number] {
-  const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw)
+  const fx = -sinApprox(p.yaw), fz = -cosApprox(p.yaw)
   const x = p.x + fx * 0.32 - fz * 0.26, z = p.z + fz * 0.32 + fx * 0.26
   return [x, standHeight(world, p.x, p.z) + 1.22, z]
 }
@@ -120,13 +123,29 @@ export function stepFlareHand(s: FlareState, world: WoodsWorld, p: FlareHand, ke
   if (key || t < held.lit + FLARE_BEAT) return
   // Overhand, a little above where you look, carrying your walking speed.
   const pitch = Math.max(-0.25, Math.min(1.1, p.pitch + FLARE_LIFT))
-  const c = Math.cos(pitch), fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw)
+  const c = cosApprox(pitch), fx = -sinApprox(p.yaw), fz = -cosApprox(p.yaw)
   const x = p.x + fx * 0.35 - fz * 0.2, z = p.z + fz * 0.35 + fx * 0.2
-  held.launch = [mm(x), mm(standHeight(world, p.x, p.z) + 1.55), mm(z), mm(fx * c * FLARE_SPEED + p.vx), mm(Math.sin(pitch) * FLARE_SPEED), mm(fz * c * FLARE_SPEED + p.vz)]
+  held.launch = [mm(x), mm(standHeight(world, p.x, p.z) + 1.55), mm(z), mm(fx * c * FLARE_SPEED + p.vx), mm(sinApprox(pitch) * FLARE_SPEED), mm(fz * c * FLARE_SPEED + p.vz)]
   held.thrown = mm(t)
   held.body = launchBody(held)
   s.rev++
   events.push({ kind: "flare-thrown", by: p.id, flare: held.id, at: held.thrown })
+}
+
+/**
+ * Someone taken (`Player.capture`) lets go: a flare in their hand falls from it and burns on the ground, and the key
+ * they were holding no longer counts. Safe to call every tick.
+ */
+export function dropFlare(s: FlareState, world: WoodsWorld, p: FlareHand, t: number, events: { push(e: FlareEvent): unknown }): void {
+  p.flareLatch = false
+  const held = heldFlare(s, p.id)
+  if (!held) return
+  const [x, y, z] = handFlare(world, p)
+  held.launch = [mm(x), mm(y), mm(z), 0, 0, 0]
+  held.thrown = mm(t)
+  held.body = launchBody(held)
+  s.rev++
+  events.push({ kind: "flare-dropped", by: p.id, flare: held.id, at: held.thrown })
 }
 
 /** A flare's flight from its launch. */
@@ -212,9 +231,9 @@ export function flareEnv(world: WoodsWorld): ThrownEnv {
 export function layFlare(state: { t: number; flares: FlareState }, world: WoodsWorld, x: number, z: number, age = 20, yaw = 0.6): Flare {
   const s = state.flares, id = s.next++
   const y = flareEnv(world).ground(x, z) + 0.0125
-  const f: Flare = { id, by: -1, seed: (Math.imul(id, 2654435761) >>> 0) % 1000003, lit: mm(state.t - age), thrown: mm(state.t), launch: [mm(x), mm(y), mm(z), mm(Math.cos(yaw) * 1e-3), 0, mm(Math.sin(yaw) * 1e-3)], body: null }
+  const f: Flare = { id, by: -1, seed: (Math.imul(id, 2654435761) >>> 0) % 1000003, lit: mm(state.t - age), thrown: mm(state.t), launch: [mm(x), mm(y), mm(z), mm(cosApprox(yaw) * 1e-3), 0, mm(sinApprox(yaw) * 1e-3)], body: null }
   f.body = launchBody(f)!
-  Object.assign(f.body, { ax: Math.cos(yaw), az: Math.sin(yaw), vx: 0, vz: 0, rest: true })
+  Object.assign(f.body, { ax: cosApprox(yaw), az: sinApprox(yaw), vx: 0, vz: 0, rest: true })
   s.list.push(f)
   s.rev++
   trim(s)

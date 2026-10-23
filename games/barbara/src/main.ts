@@ -15,7 +15,7 @@ import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from 
 import { answerCall, DISTANT_SOUNDS, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
 import { VOICE_LINES } from "../shared/lines.gen"
 import { CLUE_NAMES, dawnShare, leadText, nextStep } from "../shared/night"
-import { flareSources, heldFlare, layFlare } from "../shared/flares"
+import { FLARE_SCRAPE, flareSources, heldFlare, layFlare } from "../shared/flares"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
 import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
@@ -54,7 +54,7 @@ const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", 
 const OWN = 0
 /** Road flares in your pocket: the controls line offers Q only while you have one. */
 let pocketFlares = 1
-const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare")] : []), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare", { hold: true })] : []), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG", "KeyQ"])
 /** Solo nights played in this browser: the next night's layout (`?night=` replays one). */
 const NIGHT_KEY = "barbara.night"
@@ -640,7 +640,9 @@ async function main() {
     } else {
       // A flare in your hand: Q held keeps it, letting go throws it.
       const own = playing ? heldFlare(state.flares, meId) : undefined
-      prompt.innerHTML = own ? keyPromptHtml("KeyQ", state.t < own.lit ? "Striking" : "Let go to throw", { hold: true }) : ""
+      // The ring fills over the scrape, then stays full while it burns in your hand.
+      const progress = own ? Math.min(1, Math.max(0, 1 - (own.lit - state.t) / FLARE_SCRAPE)) : 0
+      prompt.innerHTML = own ? keyPromptHtml("KeyQ", state.t < own.lit ? "Striking" : "Let go to throw", { hold: true, progress }) : ""
     }
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
     map.frame(state, meId, held.held ? 0 : p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)

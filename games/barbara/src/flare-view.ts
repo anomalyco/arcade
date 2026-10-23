@@ -51,6 +51,7 @@ const STICK = 0.24
 const RED: Rgb = [0.32, 0.035, 0.03]
 const CAP: Rgb = [0.12, 0.11, 0.1]
 const SLAG: Rgb = [0.09, 0.075, 0.07]
+const NO_COLLIDERS: never[] = []
 /** Lights the flares may add (nearest first). */
 const MAX_LIGHTS = 6
 
@@ -83,6 +84,10 @@ export class FlareView {
   private fog: FogLamp[] = []
   private glows: ForestGlow[] = []
   private particleLights: SceneLight[] = []
+  /** What `update` returns, the same object every frame. */
+  private out = { scene: this.scene, fog: this.fog, glows: this.glows, particles: { pool: this.pool, lights: this.particleLights } }
+  private ground: ((x: number, z: number) => number) | null = null
+  private groundOf: WoodsWorld | null = null
   private order: { s: Shown; d: number }[] = []
 
   constructor(renderer: Renderer) {
@@ -143,7 +148,10 @@ export class FlareView {
       this.pool.windX = WIND_DIR[0] * g
       this.pool.windZ = WIND_DIR[1] * g
     }
-    this.pool.update(dt, [], (x, z) => groundHeight(world, x, z))
+    if (this.pool.count > 0) {
+      if (this.groundOf !== world) { this.groundOf = world; this.ground = (x, z) => groundHeight(world, x, z) }
+      this.pool.update(dt, NO_COLLIDERS, this.ground!)
+    }
     for (const s of this.shown.values()) {
       // The page's clock runs the burn; the room's corrects it if they drift apart (a hitch, a hidden tab).
       Object.assign(s.fx.settings, this.settings)
@@ -211,7 +219,7 @@ export class FlareView {
         this.glows.push({ x: l.x, y: l.y + 3.5, z: l.z, radius: 11, color: [l.r * k, l.g * k, l.b * k], soft: true })
       }
     }
-    return { scene: this.scene, fog: this.fog, glows: this.glows, particles: { pool: this.pool, lights: this.particleLights } }
+    return this.out
   }
 
   /** The sticks: burning ones where their fire is, and the spares lying on the camp table. */

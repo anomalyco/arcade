@@ -16,6 +16,7 @@ import { BRUSH_IDS, VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSetti
 export { Soundscape, type Listener, type SoundLayer } from "./soundscape"
 export { VOICE, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
+const NO_FLARES: readonly FlareSound[] = []
 const LAYERS: SoundLayer[] = ["wind", "creaks", "room", "leaves", "insects", "lake", "dock", "lights", "walls", "distant", "flares", "storm"]
 
 /** Footsteps (the shared quiet bank, #398 levels), the soundscape and the searchers' voices, each on its player level, through one limiter. */
@@ -72,7 +73,7 @@ export type TapeFrame = {
   signal?: boolean
   /** Flares struck this frame (where, and how long ago) and every one burning. */
   struck?: { seed: number; x: number; y: number; z: number; elapsed: number }[]
-  burning?: FlareSound[]
+  burning?: readonly FlareSound[]
   /** The storm this frame (rain, wind, gust, its clock) and thunder emitted this frame. */
   storm?: { rain: number; wind: number; gust: number; clock: number }
   thunder?: ThunderEvent[]
@@ -228,7 +229,7 @@ export class WoodsAudio {
       if (mix?.scape.loaded) mix.scape.flareStrike(struck.seed, x, y, z, this.listener, FLARE_SCRAPE, struck.elapsed)
     }
     this.queuedFlares.length = 0
-    const burning: FlareSound[] = flareSources(state.flares, world, state.players, state.t, { flareBurn: this.flareBurn }).map((f) => ({ id: f.id, x: f.x, y: f.y, z: f.z, level: f.level }))
+    const burning: readonly FlareSound[] = state.flares.list.length ? flareSources(state.flares, world, state.players, state.t, { flareBurn: this.flareBurn }) : NO_FLARES
     this.clock += dt
     for (const e of this.queuedVoices) {
       this.pending.voices!.push(e)

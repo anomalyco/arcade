@@ -13,16 +13,21 @@ game's own `AGENTS.md`.
 - `landing/` and `redirects/` are independent projects with their own lockfiles and install/check
   commands; do not add them to the workspace implicitly.
 - While iterating, run `bun run verify:remote`: it snapshots changed paths on the submitter and runs
-  `hivemind run --kind browser -- …` automatically. It checks only the targets whose CI workflow
-  paths match your changes (vs `origin/main`, including uncommitted files), in parallel, with incremental typecheck,
-  then smoke and `wrangler deploy --dry-run`; docs-only checks nothing. Use
-  `bun run verify:remote --worker mini -- --all` to pass HiveMind options before `--` and verify options after it.
-- Before opening or merging a PR, run `hivemind run --kind browser -- bun run verify:release`: a clean
+  `hivemind run --kind cargo -- bun run verify` with that snapshot. It runs incremental typechecks and Bun tests
+  only, plus their required build-ID preparation, for targets whose CI workflow paths match your changes
+  (vs `origin/main`, including uncommitted files). No Vite build or Playwright runs in this tier; docs-only checks
+  nothing. Don't rerun when nothing changed. Use `bun run verify:remote --worker mini -- --all` to pass HiveMind
+  options before `--` and verify options after it; `--all` stays headless.
+- At PR pitch time, use `hivemind run --kind browser -- bun run verify:smoke --game <name>` to build and smoke
+  one game, with one still of the changed behavior when visual proof is warranted. The wrapper equivalent is
+  `bun run verify:remote -- --smoke --game <name>`; it selects browser admission automatically.
+- At merge or nightly, run the full suite with `hivemind run --kind browser -- bun run verify:release`: a clean
   `git archive` export of HEAD, root frozen install, then every workspace target's check commands, smoke and dry-run
   with cold caches. Commit first; it ignores uncommitted changes. Dry-runs do not deploy. The per-game
   `bun run check` and `bun run check:packages` still work and are what CI runs.
-  Budget for minutes: the Oct 22 remote-mini `verify --all` run took 1,204 s at 2 jobs (including existing test
-  and smoke failures); release also adds export and frozen install. The old ~30 s estimate no longer applies.
+  Run any required full browser proofs at this tier, following `browser_proofs_default` below. Budget for minutes:
+  the Oct 22 remote-mini full plan, before the headless default, took 1,204 s at 2 jobs (including existing test and
+  smoke failures); release also adds export and frozen install. The old ~30 s estimate no longer applies.
 - HiveMind workers sync files without a usable `.git`. A bare remote `verify` fails unless given
   `--changed <file>` or `ARCADE_VERIFY_CHANGED_FILE` (newline-separated paths); an empty file checks nothing.
   `verify:remote` ships that snapshot automatically, including committed, staged, unstaged and untracked paths
@@ -33,7 +38,11 @@ game's own `AGENTS.md`.
   `ARCADE_VERIFY_TEST_WORKERS`, then `HIVEMIND_JOBS` / `HIVEMIND_TEST_WORKERS`, then 2 each.
   `HIVEMIND_CPUS`, when supplied by the worker, caps both to its allocation (rounded down, minimum 1).
   `verify:remote` forwards the two Arcade budget variables; it never forwards the submitter's CPU allocation.
-- Every `tests/` and `scripts/` file is typechecked (Getaway's `tsconfig.scripts.json` also covers root `scripts/`).
+- Every `tests/` and `scripts/` file is typechecked. Game configs cover their own scripts/tests; root `scripts/`
+  has `scripts/tsconfig.json`, checked by `bun run check:scripts`, the `scripts` CI workflow, and the workflow-scoped
+  `scripts` target in `verify` / `verify:release`. This
+  config also owns Blackout's cross-game `scripts/animation/` harnesses and `tests/motion-*.test.ts`, excluded from
+  its game script check (the game still runs those tests).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
 - Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
 - Browser scripts use `scripts/browser-budget.ts` with `await using`: 180 s per script, `ARCADE_BROWSER_BUDGET_S` override ≤300 s; CPU-only sweeps run directly in Bun (`--kind cargo`).
@@ -43,8 +52,9 @@ game's own `AGENTS.md`.
 - Everything is served under https://anoma.ly/arcade/. A game owns `/arcade/<name>` and `/arcade/<name>/*`. The
   landing owns only `/arcade`, `/arcade/` and `/arcade/assets/*`. Never add a wildcard `/arcade/*` route.
 - Pushing to `main` deploys affected projects (`.github/workflows/`). All workspace games also check and deploy on
-  `packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml` changes. Blackout additionally
-  watches `games/getaway/shared/**` because its script typecheck includes the cross-game benchmark. Blackout and
+  `packages/**`, root `scripts/**`, `package.json`, `bun.lock` and `bunfig.toml` changes. The `scripts` CI workflow
+  watches all games and packages to cover cross-game benchmarks. Blackout watches Getaway's `src/**` and
+  `shared/**` because its fire/water Lab imports Getaway's environment and props. Blackout and
   Outbreak also watch `games/getaway/public/sfx/**`: the shared audio asset plugin copies the manifest's samples into
   each game's own `audio-assets/` route for prefix-safe Lab loading.
 - The Lab (`games/lab`, Worker `arcade-lab`, `/arcade/lab`) bundles Getaway, Blackout and Outbreak's Lab adapters,
@@ -149,7 +159,8 @@ game's own `AGENTS.md`.
 
 - **Live state ([docs/agent-state.md](docs/agent-state.md))**: Read `docs/agent-state.md` (or run `bun scripts/agent-ops.ts state`) before opening a PR, merging, or deploying. It defines `deploys: on|off`, `allowed_base` (`main`), `retired_branches`, `browser_proofs_default`, and hot-file contention rules. `.github/workflows/pr-guard.yml` enforces it in CI.
 - **Worktrees & branches**: Work in a dedicated worktree under `/Users/kit/worktrees/arcade/<branch>` (`git worktree add`). Never share a worktree with another active agent and never use `/Users/kit/worktrees/arcade/release-4` (the live `:5187` Dev Hub preview worktree) for feature work. Never push to or recreate a retired branch (`release-4`, `release-5`, `release-6`, `release-7`).
-- **Verification & proofs**: Run verification through `bun run verify:remote` (HiveMind browser admission while smoke is enabled). When `browser_proofs_default: off` in `docs/agent-state.md`, skip multi-minute Playwright video/capture proofs unless your brief asks for visual proof or you changed shaders, lighting, camera framing, or HUD layout. Never open visible windows (`headless: true` only) and never play audio (`--mute-audio` only).
+- **Verification & proofs**: Iterate through `bun run verify:remote` (HiveMind cargo admission). Smoke is explicit at PR pitch time; the full suite and any required browser proofs run at merge or nightly. When `browser_proofs_default: off` in `docs/agent-state.md`, skip multi-minute Playwright video/capture proofs unless your brief asks for visual proof or you changed shaders, lighting, camera framing, or HUD layout. Never open visible windows (`headless: true` only) and never play audio (`--mute-audio` only).
+- **Proof diet**: Record each revision once and coalesce duplicate capture requests. Prefer stills and preview links over clips; clips are for motion. Respect `browser_proofs_default: off`: mechanical changes need no captures. Don't repeat checks or captures when nothing changed.
 - **PRs & deploys**: Rebase onto `origin/main` before opening a PR (`gh pr create --base main`). When `deploys: on` and CI is green, merge (`gh pr merge --squash --delete-branch`) and fast-forward `/Users/kit/worktrees/arcade/release-4` (`git -C /Users/kit/worktrees/arcade/release-4 fetch origin main && git -C /Users/kit/worktrees/arcade/release-4 merge --ff-only origin/main`). Do not run `bun run deploy` manually unless Kit explicitly asks.
 - **Durable reports & safe messaging**: Before finishing a subagent task, save your full report to `~/code/home/artifacts/agent-reports/<session>.md` (`bun scripts/agent-ops.ts report write --session <ses_...> --file <path>`) and post a summary on the `AR-n` board card (`board.ts comment`). Coordinators must use `bun scripts/agent-ops.ts msg <ses_...> "<text>"` to message child sessions (refuses if mid-turn so queued messages do not overwrite `<subagent>` completion summaries) and `bun scripts/agent-ops.ts watchdog` / `bun scripts/agent-ops.ts board-hygiene` to catch stalled sessions, overwritten reports, and board drift.
 - **Gallery links**: Register capture directories with `bun scripts/agent-ops.ts gallery-link <capture-dir> <slug>` (symlinks into `/Users/kit/worktrees/arcade/release-4/captures/<slug>` and verifies HTTP 200 on `:5187`) before sharing any `arcade.lwoyjcaeyxv6.opentunnel.xyz/captures/<slug>/...` URL.

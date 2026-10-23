@@ -5,12 +5,12 @@ import { humanProfiles } from "@arcade/kit/human-profile"
 import { poseUnarmedArms, unarmedHands } from "@arcade/kit/human-pose"
 import { parseBvh } from "@arcade/kit/pose-diff"
 import { at, RIG } from "@arcade/kit/rig"
-import { animate, newAvatar } from "../../src/game/anim"
-import { Survivor as OutbreakSurvivor } from "../../../outbreak/src/survivor"
-import { fixturesDir, loadMocap, parseArgs, type MOCAP } from "./common"
+import { animate, newAvatar } from "../../games/blackout/src/game/anim"
+import { Survivor as OutbreakSurvivor } from "../../games/outbreak/src/survivor"
+import { fixturesDir, loadMocap, parseArgs, type MOCAP } from "../../games/blackout/scripts/animation/common"
 
 // Gait metrics for Blackout survivor/soldier and Outbreak survivor at fixed speeds, plus mocap reference curves.
-// Usage: bun games/blackout/scripts/animation/gait-metrics.ts --tag before|after [--out dir] [--bvh-dir dir] [--no-plot]
+// Usage: bun scripts/animation/gait-metrics.ts --tag before|after [--out dir] [--bvh-dir dir] [--no-plot]
 const { tag, out: OUT_DIR, values, flags } = parseArgs(process.argv.slice(2), { tag: "before", out: "gait" })
 const bvhDir = values["bvh-dir"] ? resolve(values["bvh-dir"]) : fixturesDir
 
@@ -477,6 +477,6 @@ for (const [k, r] of Object.entries(results.runs)) {
 
 console.log(`Saved ${outPath}`)
 if (!flags.has("no-plot")) {
-  const py = spawnSync("python3", [join(import.meta.dir, "gait-plots.py"), OUT_DIR, tag], { stdio: "inherit" })
+  const py = spawnSync("python3", [join(import.meta.dir, "../../games/blackout/scripts/animation/gait-plots.py"), OUT_DIR, tag], { stdio: "inherit" })
   if (py.status !== 0) process.exit(py.status ?? 1)
 }

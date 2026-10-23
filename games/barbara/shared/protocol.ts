@@ -40,7 +40,7 @@ export function packIntent(i: PlayerInput): number[] {
 }
 export function unpackIntent(a: readonly number[]): PlayerInput {
   const n = (k: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number.isFinite(a[k]) ? a[k]! : 0))
-  const bits = n(4, 0, 31) | 0
+  const bits = n(4, 0, 63) | 0
   let mx = n(0, -100, 100) / 100, mz = n(1, -100, 100) / 100
   const len = Math.hypot(mx, mz)
   if (len > 1) { mx /= len; mz /= len }
@@ -102,7 +102,7 @@ export type Snapshot = {
   ack: number
   /** Your player id. */
   me: number
-  /** Your authoritative motion: x, z, vx, vz, map raise, hop y, hop v, yaw, pitch, light (0/1), and the flares in your pocket. */
+  /** Your authoritative motion: x, z, vx, vz, map raise, hop y, hop v, yaw, pitch, light (0/1); then the flares in your pocket (`you[10]`). */
   you?: number[]
   p: PlayerRow[]
   /** Everyone's names by player id, when the set of walkers changes. */

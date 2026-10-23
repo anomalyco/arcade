@@ -96,7 +96,7 @@ Output goes to `captures/animation/<tool>/` (git-ignored) unless you pass `--out
 argument or `--tag` names the pass.
 
 ```sh
-bun games/blackout/scripts/animation/gait-metrics.ts --tag before [--out dir] [--no-plot]
+bun scripts/animation/gait-metrics.ts --tag before [--out dir] [--no-plot]
 bun games/blackout/scripts/animation/pose-diff.ts --tag before [--out dir] [--baseline <checkout>] [--no-render]
 bun games/blackout/scripts/animation/render-sheets.ts --tag before [--out dir]
 bun games/blackout/scripts/animation/render-video.ts [--out dir]

@@ -1,7 +1,7 @@
 import { stepBody } from "@arcade/kit/sim/move"
 import { startHop, stepHop, type Hop } from "@arcade/kit/sim/hop"
 import { stepCreature, type CreatureEvent } from "./creature"
-import { createFlares, flareSources, stepFlareBodies, stepFlareHand, type FlareEvent, type FlareState } from "./flares"
+import { createFlares, dropFlare, flareSources, stepFlareBodies, stepFlareHand, type FlareEvent, type FlareState } from "./flares"
 import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
 import { NIGHT_LINES } from "./night-lines.gen"
@@ -614,7 +614,8 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     p.light = light
     stepFlicker(state, p, feel, dt)
     stepTie(state, world, p, input.tie && p.mapRaise < 0.3, feel, dt)
-    if (!p.bot && !p.capture) stepFlareHand(state.flares, world, p, !!input.flare, state.t, state.events)
+    if (p.capture) dropFlare(state.flares, world, p, state.t, state.events)
+    else if (!p.bot) stepFlareHand(state.flares, world, p, !!input.flare, state.t, state.events)
     const wasSignal = p.signal > SIGNAL_HOLD
     p.signal = p.light && p.pitch > SIGNAL_PITCH ? p.signal + dt : 0
     if (!wasSignal && p.signal > SIGNAL_HOLD) state.events.push({ kind: "signal", by: p.id, x: p.x, z: p.z })
@@ -626,7 +627,7 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     const brain = e.kind === "clue-found" ? state.brains.find((b) => b.id === e.by) : undefined
     if (brain) { brain.mode = "found"; brain.timer = 14 }
   }
-  stepFlareBodies(state.flares, world, state.t, dt, feel, new Set(state.players.map((p) => p.id)))
+  stepFlareBodies(state.flares, world, state.t, dt, feel, new Set(state.players.filter((p) => !p.capture).map((p) => p.id)))
   for (let i = 0; i < state.players.length; i++) for (let j = i + 1; j < state.players.length; j++) {
     const a = state.players[i]!, b = state.players[j]!
     if ((a.mapRaise > 0.9 || b.mapRaise > 0.9) && Math.hypot(a.x - b.x, a.z - b.z) < COMPARE_RANGE) compareMaps(state, a, b)

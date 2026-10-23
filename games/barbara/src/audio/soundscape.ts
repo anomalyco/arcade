@@ -286,6 +286,7 @@ export class Soundscape {
 
   /** Once a frame: the hiss and sputter of the nearest burning flares, each a loop where it lies (or in a hand). */
   flares(list: readonly FlareSound[], l: Listener): void {
+    if (!list.length && !this.flareLoops.size) return
     const ctx = this.ctx, now = ctx.currentTime
     const buffer = this.buffers.get("flare.burn")?.[0]
     const near = buffer && this.on("flares") ? [...list].sort((a, b) => Math.hypot(a.x - l.x, a.z - l.z) - Math.hypot(b.x - l.x, b.z - l.z)).slice(0, FLARE_LOOPS) : []

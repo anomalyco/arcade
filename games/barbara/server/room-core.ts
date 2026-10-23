@@ -103,7 +103,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   static restore(night: NightCheckpoint, clock: () => number = Date.now, build = BUILD, ice?: () => Promise<VoiceIce>): WoodsRoomCore {
     // BUILD hashes shared state definitions and makeWorld, so neither can silently change beneath a saved night.
     if (night.version !== 1 || night.build !== BUILD) throw new Error("Incompatible night checkpoint")
-    if (!night.state || !Array.isArray(night.state.players) || night.state.players.some((p) => !p.air || !p.map)) throw new Error("Incomplete night checkpoint")
+    if (!night.state || !Array.isArray(night.state.players) || night.state.players.some((p) => !p.air || !p.map) || !Array.isArray(night.state.flares?.list)) throw new Error("Incomplete night checkpoint")
     const core = new WoodsRoomCore(night.code, clock, makeWorld(night.world), build, ice)
     if (!Number.isSafeInteger(night.nights) || night.nights < 0) throw new Error("Invalid night count")
     core.nights = night.nights
@@ -111,7 +111,8 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     for (const [id, pid] of night.pids) { core.pids.set(id, pid); core.away.add(pid) }
     for (const [pid, name] of night.names) core.names.set(pid, name)
     // A disconnected walker stops immediately, rather than coasting on their last input.
-    for (const p of core.state.players) if (!p.bot) { p.vx = p.vz = 0; p.tie = null }
+    // The flare key they held is up now: a held flare is thrown or kept only on their next input.
+    for (const p of core.state.players) if (!p.bot) { p.vx = p.vz = 0; p.tie = null; p.flareLatch = false }
     core.restoreSeats(night.seats)
     return core
   }
