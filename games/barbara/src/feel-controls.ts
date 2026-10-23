@@ -22,6 +22,7 @@ export const FEEL_CONTROLS: LabControl[] = [
   { key: "trunkShadows", label: "Trunk shadows", group: "Forest", type: "toggle" },
   { key: "campGlow", label: "Camp lights", group: "Forest", min: 0, max: 4, step: 0.05, unit: "×" },
   { key: "ridgeGlow", label: "Ridge light", group: "Forest", min: 0, max: 4, step: 0.05, unit: "×" },
+  { key: "carLight", label: "Car courtesy light (0 = off)", group: "Forest", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "tapeTieTime", label: "Tape tie time", group: "Tape & map", min: 0.2, max: 3, step: 0.05, unit: "s" },
   { key: "tapeReach", label: "Tape reach", group: "Tape & map", min: 0.8, max: 3, step: 0.05, unit: "m" },
   { key: "tapeShine", label: "Tape shine with distance", group: "Tape & map", min: 0, max: 1.5, step: 0.05, unit: "/m" },

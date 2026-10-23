@@ -88,6 +88,11 @@ export type ForestFrameInput = {
   /** Moving torch-shadow casters the game draws itself (skinned people); their slots re-render while there are any. */
   casters?: readonly SpotShadowCaster[]
   /**
+   * Torch- and moon-shadow casters the game draws itself that stay put (an imported prop). Pass the same array while
+   * nothing changes: the slots re-render only when it is a different one.
+   */
+  staticCasters?: readonly SpotShadowCaster[]
+  /**
    * Kit particles (a road flare's flame, sparks and smoke), lit only by `lights` (the forest's torches are beams, not
    * points) over a night-dark `ambient`, by inverse square with a `falloff` soft core (m) when it is above 0. The game
    * steps the pool. A light with a plan `cone` lights them only inside it.
@@ -307,6 +312,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const fog = new FogScatter(createFogSettings())
   const spots = new SpotShadows(device, { count: smoke ? 0 : 1, size: quality.shadowSize, bias: 1.2 }, forestShadowInstanceWgsl)
   renderer.setSpotShadows(spots.bindings())
+  let staticCasters: readonly SpotShadowCaster[] | undefined
   const lights = new SceneLights()
   const fxLights = new SceneLights()
   const frameData = newSceneFrame()
@@ -476,6 +482,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     lakeSky.prepare(enc)
     const casters = spots.settings.count > 0 && (local || wide) ? pass.casters(wide ? f.eye : local!.pos, wide ? 140 : s.torchReach, wide ? 100 : quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
     if (casters.length && f.casters?.length) { casters.push(...f.casters); spots.invalidate() }
+    if (casters.length && f.staticCasters?.length) casters.push(...f.staticCasters)
+    if (f.staticCasters !== staticCasters) { staticCasters = f.staticCasters; spots.invalidate() }
     if (spots.update(enc, candidates, f.eye, f.dt, id => id === moonShadowId || id === FLASH_SHADOW_ID ? id : lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
     // Moving torches re-render every frame: the picker only knows a light moved, the world is static.
     device.queue.submit([enc.finish()])

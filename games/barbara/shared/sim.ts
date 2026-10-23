@@ -41,6 +41,8 @@ export const FEEL = {
   findRadius: 2.6,
   campGlow: 1,
   ridgeGlow: 1,
+  /** Barbara's car's courtesy light, left on with the door open, its battery nearly flat (×; 0 is off). */
+  carLight: 0,
   ambient: 1,
   exposure: 2.5,
   trunkShadows: true,

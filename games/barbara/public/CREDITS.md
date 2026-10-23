@@ -6,6 +6,10 @@
 - NASA SVS CGI Moon Kit (2019), Ernie Wright / NASA LRO–LROC: https://svs.gsfc.nasa.gov/4720/
 - Source hashes and conversion notes: `packages/kit/sky/assets/CREDITS.md` and `sources.json`.
 
+## Barbara's car
+
+- "Kiri '86 - Low poly model" (a generic mid-80s Japanese saloon) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky), https://sketchfab.com/3d-models/5c17c582ef9549798f694b660feea42a, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Repainted, weathered, re-merged and reduced for the game; details in `car/CREDITS.md`.
+
 ## People
 
 - The realistic searchers are the shared kit cast, `packages/kit/people/assets/CREDITS.md`: MakeHuman/MPFB 2 bodies and clothes (CC0), the CMU Graphics Lab Motion Capture Database walk and run (http://mocap.cs.cmu.edu), and the five Microsoft Rocketbox avatars the searchers wear by default (MakeHuman with Lab › Friends › People model or `?cast=makehuman`), `Male_Adult_05`, `Female_Adult_04`, `Male_Adult_04`, `Female_Adult_07` and `Male_Adult_07` (https://github.com/microsoft/Microsoft-Rocketbox), under this licence:

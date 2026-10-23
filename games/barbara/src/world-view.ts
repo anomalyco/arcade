@@ -81,6 +81,8 @@ export type WorldFrame = {
   place: PlaceLights
   /** Moving torch-shadow casters (realistic friends). */
   casters?: readonly SpotShadowCaster[]
+  /** Static torch-shadow casters (Barbara's car); keep the array's identity while they are unchanged. */
+  staticCasters?: readonly SpotShadowCaster[]
   /** Batches drawn beside `fp`'s (the creature's, which go into the TAA reactive mask). */
   batches?: readonly Batch[]
   /** Road flares' far glows and fire (`FlareView`); their lights come in `place`. */
@@ -207,7 +209,7 @@ export class WorldView {
     this.forest[sync || target ? "update" : "frame"]({
       eye: f.eye, viewProj: f.viewProj, width: f.width, height: f.height, time: f.time, dt: f.dt, fovY: f.fovY, torches: f.torches,
       batches: f.batches?.length ? [...f.fp.batches(), ...f.batches] : f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
-      lights: f.place.scene, fogLamps: f.place.fog, glows: f.flares?.glows.length ? [...this.glows, ...f.flares.glows] : this.glows, casters: f.casters, storm: f.storm ?? null,
+      lights: f.place.scene, fogLamps: f.place.fog, glows: f.flares?.glows.length ? [...this.glows, ...f.flares.glows] : this.glows, casters: f.casters, staticCasters: f.staticCasters, storm: f.storm ?? null,
       ...(f.flares ? { particles: f.flares.particles } : {}),
     })
     if (sync || target) this.forest.drawTo(target)

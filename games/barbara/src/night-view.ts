@@ -1,17 +1,21 @@
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
+import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
+import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
 import type { ForestLookSettings } from "@arcade/kit/forest/settings"
 import { CLUE, type Clue, type NightLayout, type NightState } from "../shared/night"
 import { TAPE_HEIGHT, type Tape } from "../shared/sim"
 import { EVIDENCE } from "../shared/verdict"
 import { terrainHeight, type WoodsWorld } from "../shared/world"
+import { carPose, CarView, type CarPose } from "./car-view"
 
 /**
  * The night's things in the world (NIGHT.md): Barbara's car in the lot with the driver's door open and a donut box on the
- * seat, the appointment-book page tied to a trunk with orange tape, her ID badge in the creek mud, the tape recorder,
- * and the spare torch batteries (three on the mess-hall table, one or two in the woods) until someone takes them. Small
- * greybox models in world coordinates, rebuilt when the night or the spares change. The extra searcher's strip on the
+ * seat (`CarView`'s model, a greybox until it loads), the appointment-book page tied to a trunk with orange tape, her ID
+ * badge in the creek mud, the tape recorder, and the spare torch batteries (three on the mess-hall table, one or two in
+ * the woods) until someone takes them. Small greybox models in world coordinates, rebuilt when the night or the spares
+ * change. The extra searcher's strip on the
  * ridge is a real tape (`tapes`, drawn by `TapeView` like the team's own). The verdict's evidence lies with its clue
  * (`evidence`), the county radio stands at the foot of the tower, and a taken searcher's torch lies lit where they
  * stood. `DawnSky` greys the sky towards the end.
@@ -32,24 +36,33 @@ function turn(m: Mesh, from: number, axis: "x" | "y" | "z", a: number) {
 function move(m: Mesh, from: number, x: number, y: number, z: number) {
   for (let k = from; k < m.v.length; k += FLOATS) { m.v[k]! += x; m.v[k + 1]! += y; m.v[k + 2]! += z }
 }
+/** Stands the vertices added since `from` (in the car's own space) where the car stands. */
+function onCar(m: Mesh, from: number, pose: CarPose) {
+  for (let k = from; k < m.v.length; k += FLOATS) {
+    const p = pose.at(m.v[k]!, m.v[k + 1]!, m.v[k + 2]!), n = pose.turn(m.v[k + 3]!, m.v[k + 4]!, m.v[k + 5]!)
+    for (let i = 0; i < 3; i++) { m.v[k + i] = p[i]!; m.v[k + 3 + i] = n[i]! }
+  }
+}
+/** The model's roof skin behind the sunroof (car space, m, z 0.15–1): flat on top, rounding off at the sides and back. */
+const roofAt = (x: number, z: number) => 1.409 - 0.3 * x ** 4 - 0.3 * Math.max(0, z - 0.8) ** 2
 
-const PAINT: Rgb = [0.09, 0.13, 0.11]
+const PAINT: Rgb = [0.03, 0.05, 0.14]
 const GLASS: Rgb = [0.03, 0.035, 0.04]
 const TYRE: Rgb = [0.025, 0.025, 0.025]
 const PAPER: Rgb = [0.78, 0.76, 0.68]
 /** Blaze-orange tape: not the camp's pink. */
 const OTHER_TAPE: Rgb = [0.95, 0.38, 0.05]
 
-/** A 1990s saloon, nose towards −z, the driver's door (left, −x) swung open. */
+/** A 1990s saloon, nose towards −z, the driver's door (left, −x) swung open: the stand-in while `CarView` loads. */
 function car(m: Mesh) {
-  m.bevelBox(-0.88, 0.32, -2.45, 0.88, 0.86, 2.45, 0.08, PAINT, PAINT, MAT.shiny)
+  m.bevelBox(-0.88, 0.32, -2.3, 0.88, 0.86, 2.3, 0.08, PAINT, PAINT, MAT.shiny)
   // Windows as dark gloss: the forest batch has no glass of its own (kit MAT.glass there sums every light in reach
   // at full power, unshadowed, and burned the cab white-peach under the lot lamp and a flare).
-  m.bevelBox(-0.78, 0.86, -0.85, 0.78, 1.38, 1.05, 0.1, GLASS, PAINT, MAT.shiny, MAT.shiny)
-  m.box(-0.8, 0.42, -2.47, 0.8, 0.58, -2.44, [0.5, 0.5, 0.48], MAT.shiny)
-  m.box(-0.75, 0.62, 2.44, -0.4, 0.74, 2.47, [0.35, 0.03, 0.02])
-  m.box(0.4, 0.62, 2.44, 0.75, 0.74, 2.47, [0.35, 0.03, 0.02])
-  for (const [x, z] of [[-0.8, -1.5], [0.8, -1.5], [-0.8, 1.45], [0.8, 1.45]] as const) {
+  m.bevelBox(-0.78, 0.86, -0.85, 0.78, 1.41, 1.05, 0.1, GLASS, PAINT, MAT.shiny, MAT.shiny)
+  m.box(-0.8, 0.42, -2.32, 0.8, 0.58, -2.29, [0.5, 0.5, 0.48], MAT.shiny)
+  m.box(-0.75, 0.62, 2.29, -0.4, 0.74, 2.32, [0.35, 0.03, 0.02])
+  m.box(0.4, 0.62, 2.29, 0.75, 0.74, 2.32, [0.35, 0.03, 0.02])
+  for (const [x, z] of [[-0.79, -1.42], [0.79, -1.42], [-0.79, 1.22], [0.79, 1.22]] as const) {
     const from = m.length
     m.prism(0, 0, 0.32, 0.32, -0.11, 0.11, 12, TYRE)
     turn(m, from, "z", Math.PI / 2)
@@ -60,7 +73,7 @@ function car(m: Mesh) {
   m.box(0, 0.36, 0, 0.07, 1.32, 1.05, PAINT, MAT.shiny)
   m.box(0.01, 0.9, 0.05, 0.06, 1.3, 1, GLASS, MAT.shiny)
   turn(m, from, "y", 0.95)
-  move(m, from, -0.9, 0, -0.75)
+  move(m, from, -0.88, 0, -0.85)
   // The seat and the dark of the cab through the gap, and the pink donut box on the passenger seat.
   m.box(-0.7, 0.5, -0.4, -0.15, 0.95, 0.3, [0.12, 0.1, 0.08])
   m.box(0.15, 0.5, -0.4, 0.7, 0.95, 0.3, [0.12, 0.1, 0.08])
@@ -148,32 +161,35 @@ function droppedTorch(m: Mesh, x: number, y: number, z: number, yaw: number) {
 }
 
 /**
- * The evidence by each clue (`verdict.ts`), in world coordinates: scrapes on the car roof or its aerial snapped, a
+ * The evidence by each clue (`verdict.ts`), in world coordinates: scrapes on the car roof or its aerial snapped (on the
+ * model, where `carPose` stands it), a
  * second band of orange tape far up the page's trunk, grey thread round it, bark scored overhead, scratches across
  * the badge, big prints or a ring of holes in the mud. The cassette's is a sound, so it has none.
  */
 function evidence(m: Mesh, layout: NightLayout, world: WoodsWorld) {
   const ground = (x: number, z: number) => terrainHeight(world.terrain, x, z)
+  const car = carPose(layout.clues[CLUE.car]!, world)
   for (const i of layout.verdict.evidence) {
     const e = EVIDENCE[i]!, c = layout.clues[e.clue]!
     const tree = c.tree >= 0 ? world.trees[c.tree] : undefined
     const face = Math.atan2(c.fx, -c.fz)
     switch (e.id) {
       case "roof": {
-        for (let k = 0; k < 4; k++) {
-          const from = m.length
-          m.box(-0.5 + k * 0.28, 1.384, -0.7, -0.48 + k * 0.28, 1.388, 0.9, SCORE)
-          turn(m, from, "y", 0.25)
-          turn(m, from, "y", -face)
-          move(m, from, c.x, c.y, c.z)
+        // Four claw lines raked across the roof behind the sunroof, each in short runs that follow its crown.
+        const from = m.length, a = 0.25, ca = Math.cos(a), sa = Math.sin(a), runs = 6, len = 0.7
+        for (let k = 0; k < 4; k++) for (let r = 0; r < runs; r++) {
+          const u = -0.24 + k * 0.16, v = ((r + 0.5) / runs - 0.5) * len
+          const x = u * ca - v * sa, z = u * sa + v * ca + 0.58, y = roofAt(x, z)
+          m.yawBox(x, z, 0.014, len / runs + 0.01, y + 0.0015, y + 0.0045, a, SCORE)
         }
+        onCar(m, from, car)
         break
       }
       case "aerial": {
+        // The stub of the aerial on the rear wing.
         const from = m.length
-        m.prism(0.6, 2.2, 0.006, 0.006, 0.86, 0.98, 5, [0.6, 0.6, 0.62], MAT.shiny)
-        turn(m, from, "y", -face)
-        move(m, from, c.x, c.y, c.z)
+        m.prism(0.6, 1.91, 0.006, 0.006, 0.95, 1.09, 5, [0.6, 0.6, 0.62], MAT.shiny)
+        onCar(m, from, car)
         break
       }
       case "high":
@@ -218,8 +234,11 @@ export class NightView {
   private spareModel = -1
   private seed = NaN
   private spareKey = ""
+  private readonly car: CarView
 
-  constructor(private readonly renderer: Renderer) {}
+  constructor(private readonly renderer: Renderer) {
+    this.car = new CarView(renderer)
+  }
 
   private slot(id: number, mesh: Mesh): number {
     if (id < 0) return this.renderer.addModel(mesh)
@@ -233,6 +252,7 @@ export class NightView {
       if (c.kind === "strip") continue
       const tree = c.tree >= 0 ? world.trees[c.tree] : undefined
       if (c.kind === "page" && tree) { pageOnTrunk(m, c, tree); continue }
+      if (c.kind === "car" && this.car.ready(this.seed)) continue
       const from = m.length
       BUILD[c.kind](m)
       turn(m, from, "y", -Math.atan2(c.fx, -c.fz))
@@ -246,7 +266,14 @@ export class NightView {
 
   /** Every clue where it lies (found or not), and the spares nobody has taken. */
   draw(fp: FrameParts, n: NightState, world: WoodsWorld): void {
-    if (n.seed !== this.seed) { this.seed = n.seed; this.build(n.layout, world); this.spareKey = "" }
+    if (n.seed !== this.seed) {
+      const seed = n.seed, layout = n.layout
+      this.seed = seed
+      this.build(layout, world)
+      this.spareKey = ""
+      // Once the model draws, the greybox car goes.
+      this.car.place(seed, layout.clues[CLUE.car]!, world, () => { if (this.seed === seed) this.build(layout, world) })
+    }
     const key = `${n.seed}:${n.taken.join(",")}:${n.verdict.gone.length}`
     if (key !== this.spareKey) {
       this.spareKey = key
@@ -263,6 +290,15 @@ export class NightView {
     if (this.clueModel >= 0) fp.push(this.clueModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
     if (this.spareModel >= 0) fp.push(this.spareModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
   }
+
+  /** Whether tonight's car is the model (automation; false while it loads and the greybox stands in). */
+  get carDrawn(): boolean { return this.car.ready(this.seed) }
+
+  /** The car model's level for `eye`'s distance; returns its static shadow casters once it has loaded. */
+  carFrame(eye: readonly number[]): readonly SpotShadowCaster[] | undefined { return this.car.frame(eye) }
+
+  /** The car's courtesy light at Lab `level` (0, the default, is off). */
+  carLight(t: number, level: number, eye: readonly number[]): SceneLight | null { return this.car.light(t, level, eye) }
 }
 
 /** The extra searcher's strip on the ridge as a tape on its trunk, tied the way the team ties theirs (none if no trunk). */
