@@ -83,6 +83,8 @@ export class PeoplePass implements ScenePass {
   private readonly white: GPUTexture
   private readonly flat: GPUTexture
   private instances: PersonInstance[] = []
+  /** A spot shadow map already skinned this frame's poses (`shadowCasters`' `prepare`), so `prepare` needn't. */
+  private skinnedEarly = false
 
   constructor(ctx: PassContext, hooks: SceneHooks, readonly material: number = MAT.lit) {
     const d = (this.device = ctx.device)
@@ -182,6 +184,17 @@ export class PeoplePass implements ScenePass {
   }
 
   prepare(enc: GPUCommandEncoder): void {
+    if (this.skinnedEarly) this.skinnedEarly = false
+    else this.skin(enc)
+  }
+
+  /** Skins every visible person into `enc` with their current joints; the shadow casters' `prepare`. */
+  private readonly skinEarly = (enc: GPUCommandEncoder): void => {
+    this.skin(enc)
+    this.skinnedEarly = true
+  }
+
+  private skin(enc: GPUCommandEncoder): void {
     const live = this.instances.filter((i) => i.visible)
     if (!live.length) return
     for (const inst of live) {
@@ -219,7 +232,10 @@ export class PeoplePass implements ScenePass {
     }
   }
 
-  /** Opaque skinned triangles of every visible person (or of `only`), for spot/beam shadow maps. */
+  /**
+   * Opaque skinned triangles of every visible person (or of `only`), for spot/beam shadow maps. Their `prepare` skins
+   * this frame's poses first, so a map rendered before the scene's passes doesn't shadow last frame's.
+   */
   shadowCasters(only?: readonly PersonInstance[]): SpotShadowCaster[] {
     const out: SpotShadowCaster[] = []
     for (const inst of only ?? this.instances) {
@@ -229,7 +245,7 @@ export class PeoplePass implements ScenePass {
       const ranges = inst.model.lods[li]!.lod.ranges
       const opaque = ranges.filter((r) => inst.model.asset.materials[r.material]!.alphaCutoff <= 0)
       const count = opaque.length ? opaque[opaque.length - 1]!.start + opaque[opaque.length - 1]!.count : 0
-      if (count) out.push({ buffer: l.out, count, stride: 32 })
+      if (count) out.push({ buffer: l.out, count, stride: 32, prepare: this.skinEarly })
     }
     return out
   }
