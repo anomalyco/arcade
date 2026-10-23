@@ -118,6 +118,8 @@ export type ForestView = {
   /** Automation: whether any moonlit-lake GPU resource exists yet, and whether its water pipeline is drawing. */
   readonly lake: { readonly allocated: boolean; readonly ready: boolean }
   readonly build: ForestBuild
+  /** The world last built: `setWorld(view.world)` rebuilds it with the current build settings (e.g. `campFinish`). */
+  readonly world: ForestWorld
   /** Rebuilds the static forest for a new world (same textures and models). */
   setWorld(world: ForestWorld): void
   /**
@@ -663,6 +665,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     renderer, settings, sky, waterProbe, lakeSky,
     lake: { get allocated() { return lakeSky.allocated || pass.lakeState !== "none" }, get ready() { return pass.lakeState === "ready" } },
     get build() { return build },
+    get world() { return world },
     setWorld(next: ForestWorld) {
       const t = performance.now()
       build = buildForest(next, models, buildOpts())

@@ -1,5 +1,6 @@
 // Headless, muted stills of the production build at scripted poses (run after `bun run build`, through HiveMind):
 //   bun scripts/capture.ts [--out <dir>] [--shots name,name] [--size 1600x900]
+//   [--look key=value,...] [--rebuild] [--measure] [--quality high]
 // Each shot sets the pose, holds keys or edits the state through `window.woods`, steps the sim on a synthetic clock and
 // screenshots the canvas. Writes PNGs and a JSON of timings and errors to the out dir ($LEASE_OUT by default).
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -21,6 +22,8 @@ const debugs = Object.fromEntries(arg("--debug", "").split(",").filter(Boolean).
 const tier = arg("--quality", "high")
 /** `--steps n`: frames to settle each shot (90 by default; auto exposure needs ~600 to finish opening up). */
 const steps = arg("--steps", "")
+/** `--rebuild`: rebuild the forest after `--look`, for build settings such as `campFinish`. */
+const rebuild = process.argv.includes("--rebuild")
 
 type Woods = {
   frames: number; paused: boolean
@@ -143,6 +146,18 @@ export const shots: Record<string, (page: Page) => Promise<void>> = {
   camp: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z, s.yaw, 0.02); woods.camera.flashlight = false }) },
   // Round 4: across the clearing toward the planned ring (-4,+2), with cabins behind it.
   fireRing: async (page) => { await page.evaluate(() => { const c = woods.world.camp; woods.setPose(c.x - 10, c.z + 11, Math.atan2(-6, 9), -0.12); woods.camera.flashlight = false }) },
+  // Finished props (Camp › Camp finish): 6 m from the cabin nearest camp, on the camp side, torch on its wall.
+  cabin: async (page) => { await page.evaluate(() => {
+    const c = woods.world.camp
+    const camp = (woods as unknown as { view: { forest: { world: { camp?: { buildings: { kind: string; x: number; z: number }[] } } } } }).view.forest.world.camp!
+    const b = camp.buildings.filter((b) => b.kind === "cabin").sort((p, q) => Math.hypot(p.x - c.x, p.z - c.z) - Math.hypot(q.x - c.x, q.z - c.z))[0]!
+    const dx = c.x - b.x, dz = c.z - b.z, l = Math.hypot(dx, dz) || 1
+    const x = b.x + (dx / l) * 7.5, z = b.z + (dz / l) * 7.5
+    woods.setPose(x, z, Math.atan2(-(b.x - x), -(b.z - z)), -0.12)
+    woods.camera.flashlight = true
+    for (const br of woods.state.brains) { br.mode = "wait"; br.timer = 99 }
+    for (const p of woods.state.players.slice(1)) { p.x = c.x + 30; p.z = c.z + 30 }
+  }) },
   // Looking back at camp from the woods: the lit mess hall through the trunks.
   hall: async (page) => { await page.evaluate(() => { const c = woods.world.camp; woods.setPose(c.x - 30, c.z - 75, Math.PI + 0.25, 0.02) }) },
   // A friend's beam through mist far off: you dark, a friend 35 m away sweeping their light, another signalling.
@@ -317,7 +332,8 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
 await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=${tier}`, { waitUntil: "load" })
 await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 180000 }).catch((e) => { console.log(errors.join("\n")); throw e })
-await page.evaluate(({ sets, looks, debugs }) => { for (const el of document.querySelectorAll<HTMLElement>("#start, .arcade-shell, #hud, #prompt, #objective, #subs, #goal")) el.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets); Object.assign((woods as unknown as { look: object }).look, looks); Object.assign((woods as unknown as { view: { forest: { debug: object } } }).view.forest.debug, debugs) }, { sets, looks, debugs })
+await page.evaluate(({ sets, looks, debugs, rebuild }) => { for (const el of document.querySelectorAll<HTMLElement>("#start, .arcade-shell, #hud, #prompt, #objective, #subs, #goal")) el.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets); Object.assign((woods as unknown as { look: object }).look, looks); Object.assign((woods as unknown as { view: { forest: { debug: object } } }).view.forest.debug, debugs)
+  if (rebuild) { const f = (woods as unknown as { view: { forest: { world: unknown; setWorld(w: unknown): void } } }).view.forest; f.setWorld(f.world) } }, { sets, looks, debugs, rebuild })
 const timing: Record<string, number> = {}
 for (const [name, setup] of Object.entries(shots)) {
   if (only && !only.split(",").includes(name)) continue

@@ -3,7 +3,9 @@
  * Run through HiveMind browser admission:
  *
  *   hivemind run --kind browser --fetch captures/woods -- bun scripts/woods/capture.ts [--views trail,hollow,camp]
- *     [--set key=value,...] [--size 1920x1080] [--frames 90] [--measure] [--tag name]
+ *     [--set key=value,...] [--rebuild] [--size 1920x1080] [--frames 90] [--measure] [--tag name]
+ *
+ * `--rebuild` rebuilds the world after `--set`, for build settings such as `campFinish`.
  *
  * It starts the Lab's Vite dev server on a free port, so nothing is built first.
  */
@@ -44,7 +46,7 @@ const context = await browser.newContext({ viewport: { width, height }, deviceSc
 const report: Record<string, unknown> = { size: [width, height], frames, sets, captured: new Date().toISOString(), host: (await Bun.$`hostname`.text()).trim() }
 const errors: string[] = []
 report.errors = errors
-type Woods = { ready: boolean; frames: number; paused: boolean; step(ms: number): void; setView(v: string): void; settings: Record<string, unknown>; stats(): unknown; measure(n?: number): Promise<{ median: number } | null>; view: { debug: Record<string, unknown>; renderer: { passContext: { device: GPUDevice } } } }
+type Woods = { ready: boolean; world: unknown; frames: number; paused: boolean; step(ms: number): void; setView(v: string): void; settings: Record<string, unknown>; stats(): unknown; measure(n?: number): Promise<{ median: number } | null>; view: { setWorld(w: unknown): void; debug: Record<string, unknown>; renderer: { passContext: { device: GPUDevice } } } }
 try {
   const page = await context.newPage()
   page.on("pageerror", e => errors.push(e.stack ?? e.message))
@@ -60,14 +62,15 @@ try {
     })
     const loadMs = Date.now() - t0
     await page.addStyleTag({ content: "#hud,[data-lab-panel]{display:none!important}" })
-    const info = await page.evaluate(async ({ sets, frames }) => {
+    const info = await page.evaluate(async ({ sets, frames, rebuild }) => {
       const w = (window as unknown as { woods: Woods }).woods
       w.paused = true
       for (const [k, v] of sets) w.settings[k] = v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v
+      if (rebuild) w.view.setWorld(w.world)
       for (let i = 0; i < frames; i++) w.step(1000 / 60)
       await w.view.renderer.passContext.device.queue.onSubmittedWorkDone()
       return w.stats()
-    }, { sets, frames })
+    }, { sets, frames, rebuild: process.argv.includes("--rebuild") })
     await page.screenshot({ path: resolve(out, `${view}.png`), timeout: 60_000 })
     const gpu = process.argv.includes("--measure") ? await page.evaluate(() => (window as unknown as { woods: Woods }).woods.measure(16)) : null
     // --costs "a=1;b=off,c=2": GPU time with each group of settings applied in turn (then restored).
