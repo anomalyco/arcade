@@ -85,16 +85,19 @@ for clip in data["clips"]:
     v = clip["finding"]
     cards.append(f'<section><h2>{clip["pass"]}: {v["actor"]}, {v["scenario"]}</h2><p>{v["joint"]}: {v["metric"]}, {v["value"]:.4g} &gt; {v["threshold"]:.4g} {v["unit"]} at {v["time"]:.3f}s</p><video controls muted playsinline preload="metadata" src="{clip["id"]}.mp4"></video><a href="{clip["id"]}-strip.png"><img src="{clip["id"]}-strip.png"></a></section>')
 
-report = json.loads((out / "report.json").read_text())
+# A proof folder of hand-picked clips may have no checker report; the index then lists only the clips.
+report_path = out / "report.json"
+report = json.loads(report_path.read_text()) if report_path.exists() else {}
+coverage = report.get("coverage", {})
 import html
 rows = []
-for name, findings in report["reports"].items():
+for name, findings in report.get("reports", {}).items():
     for v in findings[:15]:
         cells = [name, v["actor"], v["scenario"], v["joint"], v["metric"], f'{v["fps"]}'+(" +hitch" if v["hitch"] else ""), f'{v["time"]:.3f}s', f'{v["value"]:.4g}', f'{v["threshold"]:.4g}', v["unit"]]
         rows.append('<tr>' + ''.join('<td>'+html.escape(str(c))+'</td>' for c in cells) + '</tr>')
-gaps = ''.join('<li>'+html.escape(x)+'</li>' for x in report["coverage"]["missing"])
-sources = '; '.join(html.escape(p['name'] + ': ' + p['revision']) for p in report['coverage'].get('passes', []))
-note = html.escape(report['coverage'].get('note', ''))
+gaps = ''.join('<li>'+html.escape(x)+'</li>' for x in coverage.get("missing", []))
+sources = '; '.join(html.escape(p['name'] + ': ' + p['revision']) for p in coverage.get('passes', []))
+note = html.escape(coverage.get('note', ''))
 (out / "media-proof.json").write_text(json.dumps(proof, indent=2))
 (out / "index.html").write_text(f'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Arcade body motion invariants</title>
 <style>body{{background:#111820;color:#e3eaf3;font:16px system-ui;margin:24px auto;max-width:1050px;padding:0 16px}}h1{{font-size:30px}}h2{{font-size:21px}}p,li{{line-height:1.5}}section{{margin:40px 0}}video,img{{width:100%;border-radius:8px;margin:8px 0}}table{{font:12px monospace;border-collapse:collapse;width:100%}}td,th{{text-align:left;padding:8px;border-bottom:1px solid #344152}}a{{color:#88caff}}.scroll{{overflow:auto}}</style>

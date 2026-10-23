@@ -1,5 +1,5 @@
 import { add, at, clamp, cross, dirIn, dot, ik, len, lerp3, limb, moved, pitch, RIG, scale, smooth, smoother, sub, yawFrame, type Frame, type V3 } from "./rig"
-import { plantedFoot, plantedToe, type Locomotion } from "./human-locomotion"
+import { athleticSwing, plantedFoot, plantedToe, type Locomotion } from "./human-locomotion"
 
 export type HumanBody = {
   pelvis: Frame; torso: Frame; head: Frame
@@ -130,10 +130,6 @@ export function kneePole(pelvis: Frame, footYaw: number, side: number, up = 0.28
 /** Contact owns the rendered boot and ball-of-foot toe joint; relaxed swing ankles and toes clear the floor and recover before touchdown. */
 export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody, "th" | "sh" | "ft" | "toe">> {
   const th: Frame[] = [], sh: Frame[] = [], ft: Frame[] = [], toe: Frame[] = [], m = a.motion
-  const run = clamp(m.run * a.gait, 0, 1)
-  const sp = Math.hypot(a.svx, a.svy)
-  const fwdFlow = sp > 0.2 ? clamp((a.svx * Math.cos(a.legYaw) + a.svy * Math.sin(a.legYaw)) / sp, 0, 1) : 0
-  const athletic = smooth((fwdFlow - 0.25) / 0.55) * smooth((Math.hypot(a.vx, a.vy) - 0.3) / 0.8)
   for (let i = 0; i < 2; i++) {
     const side = i === 0 ? -1 : 1, f = a.feet[i]!
     const hip = at(pelvis, 0, 0, side * RIG.hipW)
@@ -154,6 +150,11 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       const isDrag = i === (m.dragFoot ?? 1) && (m.footDrag ?? 0) > 0
       const drag = isDrag ? clamp(m.footDrag ?? 0, 0, 0.95) : 0
       const dragKeep = 1 - drag
+      // The swing's own run share and heel kick, fixed at liftoff: a swing in the air never changes shape (a reversal
+      // once dropped a kicked-up heel to a walking swing in a frame). Live where locomotion has not stepped it.
+      const swingRun = (m.swingRun?.[i] ?? -1) >= 0 ? m.swingRun[i]! : m.run
+      const run = clamp(swingRun * a.gait, 0, 1)
+      const athletic = (m.swingAthletic?.[i] ?? -1) >= 0 ? m.swingAthletic[i]! : athleticSwing(a)
       // When crouch-running (m.crouch.x > 0.025), the pelvis is already lowered 8..14 cm toward the floor;
       // scale swing heel-kick so the thigh drives to ~46° instead of jackknifing into the crouched chest.
       const crouchT = clamp(((m.crouch?.x ?? 0) - 0.025) / 0.065, 0, 1)
@@ -161,7 +162,7 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       // Smoothly release from the terminal-stance ball-of-foot pivot over the first 36% of swing,
       // and blend into the heel-strike contact frame over the last 28% of swing so liftoff and touchdown are C1 continuous.
       const liftOffBlend = (1 - smooth(u / (0.36 - 0.10 * run))) * a.gait * dragKeep
-      const toeOffPitch = -(0.44 + 0.08 * m.run) * liftOffBlend * (1 - 0.55 * drag)
+      const toeOffPitch = -(0.44 + 0.08 * swingRun) * liftOffBlend * (1 - 0.55 * drag)
       const toeFrame = pitch(yawFrame([0, 0, 0], f.yaw), toeOffPitch)
       const ballOff = at(toeFrame, RIG.foot, -RIG.ankle, 0)
       const liftBallX = f.lift[0] + Math.cos(f.liftYaw) * RIG.foot
@@ -202,7 +203,7 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       // A step on the spot (gait 0) lifts the boot nearly flat rather than letting it hang from the shin.
       const relaxed = smooth(u / 0.12) * (1 - smooth((u - 0.74) / 0.20)) * (0.3 + 0.7 * a.gait)
       const tdBlend = smoother((u - 0.72) / 0.28)
-      const heelStrike0 = a.back ? 0 : (0.26 - 0.04 * m.run) * (1 - 0.55 * crouchT) * a.gait * dragKeep
+      const heelStrike0 = a.back ? 0 : (0.26 - 0.04 * swingRun) * (1 - 0.55 * crouchT) * a.gait * dragKeep
       const tdPitch = heelStrike0 * tdBlend
       const basePitch = toeOffPitch + tdPitch + f.pitch * (1 - liftOffBlend) * (1 - tdBlend)
       const swingAnkleRel = -(0.24 + 0.12 * run) * (1 - smooth((u - 0.46) / 0.30)) + (0.04 + (0.16 + 0.08 * uprightRun) * run) * smooth((u - (0.60 - 0.08 * uprightRun)) / 0.26)

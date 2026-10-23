@@ -264,6 +264,8 @@ export type PoseInput = {
   shift?: number
   /** Plan offset in world units, added after scaling (for placing the person at world x/z exactly). */
   origin?: V3
+  /** Seconds since the last pose of this `out`, to ease the reach sink back up; without it the sink is per frame. */
+  dt?: number
 }
 
 export type PersonPose = {
@@ -271,9 +273,13 @@ export type PersonPose = {
   pos: V3[]
   /** World frame of the held torch (x along the barrel), when `torch` was given. */
   torch: Frame | null
+  /** How far the body sank last pose so short mesh legs reach the rig's ankles (world units). */
+  sink?: number
 }
 
-export const newPose = (rest: PersonRest): PersonPose => ({ rot: rest.local.rot.map((q) => [...q] as Q), pos: rest.local.pos.map((p) => [...p] as V3), torch: null })
+export const newPose = (rest: PersonRest): PersonPose => ({ rot: rest.local.rot.map((q) => [...q] as Q), pos: rest.local.pos.map((p) => [...p] as V3), torch: null, sink: 0 })
+/** Rate (1/s) the reach sink lets go. */
+const SINK_RELEASE = 10
 
 const limbHinge = (dU: V3, dL: V3, fallback: V3): V3 => {
   const bent = cross(dU, dL), b = len(bent)
@@ -344,6 +350,10 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
     if (h2 > 0) sink = Math.max(sink, hip[1] - t.ankle[1] - Math.sqrt(h2))
   }
   sink = Math.min(sink, 0.12)
+  // Sink at once for a leg that needs it, but let go on an ease. Near full extension the reach height swings steeply
+  // with the ankle's plan distance: a swing ankle drifting 3 cm closer cut the sink 10 → 3 cm and the body jumped up.
+  if (input.dt !== undefined && sink < (out.sink ?? 0)) sink += ((out.sink ?? 0) - sink) * Math.exp(-input.dt * SINK_RELEASE)
+  out.sink = sink
   if (sink > 0) { pos[pelvis] = [pos[pelvis]![0], pos[pelvis]![1] - sink, pos[pelvis]![2]] }
   // FK pass for everything not yet posed, in parent order; chains overwrite their bones below.
   const fk = (i: number) => {

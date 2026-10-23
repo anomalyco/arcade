@@ -539,6 +539,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
           f.planted = false
           f.lift = [f.p[0], 0, f.p[2]]
           f.liftYaw = f.yaw
+          a.motion.swingRun[i] = a.motion.swingAthletic[i] = -1
         }
         const u = (p - duty) / (1 - duty)
         const left = (1 - p) / rate
