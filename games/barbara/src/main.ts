@@ -1,5 +1,5 @@
 import { isEditableEventTarget, isMetaKey, onKeyLayoutChange } from "@arcade/kit/client/controls"
-import { keyPromptHtml } from "@arcade/kit/client/key-cap"
+import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { FootSurface } from "@arcade/kit/audio/footsteps"
 import { attachLabPanelControl } from "@arcade/kit/dev-control"
 import { openGpu } from "@arcade/kit/gpu/boot"
@@ -220,7 +220,7 @@ async function main() {
   // after a flash. Still and dry until a Look or a knob asks for it.
   const storm = new ForestStorm({}, world.params.seed)
   // Sections with sub-headings, all folded but Looks & Triggers (`src/knobs.ts` places every subsystem's rows).
-  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: [lakeLab ? "Camp" : LOOKS_SECTION], arrange: arrangeControl, onToggle: () => syncOverlays() })
+  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: [lakeLab ? "Camp" : LOOKS_SECTION], arrange: arrangeControl, onToggle: () => { syncOverlays(); controlsHud() } })
   live.panel = panel
   panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
   if (lakeLab) {
@@ -301,7 +301,7 @@ async function main() {
     else if (what === "distant") void audio.auditionNow(DISTANT_SOUNDS[Math.floor(Math.random() * DISTANT_SOUNDS.length)]!)
   }
   panel.addControls(lookState as unknown as Bag as Record<string, string>, [
-    { key: "woods.look", field: "look", label: "Look", group: LOOKS_SECTION, type: "select", options: LOOK_IDS.map((id) => ({ value: id, label: LOOKS[id].label })), change: (v) => pickLook(String(v) as LookId) },
+    { key: "woods.look", field: "look", label: "Look", group: LOOKS_SECTION, type: "select", cycle: true, options: LOOK_IDS.map((id) => ({ value: id, label: LOOKS[id].label })), change: (v) => pickLook(String(v) as LookId) },
     { key: "woods.lookNote", label: "This look", group: LOOKS_SECTION, type: "readout", read: () => LOOKS[lookState.look].note + (lookState.look === "tonight" && tonight.now ? ` Now: ${tonight.now}.` : "") },
     { key: "woods.triggers.lightning", label: "Lightning strike", group: LOOKS_SECTION, type: "buttons", items: (["near", "mid", "far"] as const).map((d) => ({ key: `woods.trigger.${d}`, label: d === "near" ? "Near" : d === "mid" ? "Mid" : "Far", run: () => trigger(d) })) },
     { key: "woods.triggers.sound", label: "Sounds", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.thunder", label: "Thunder only", run: () => trigger("thunder") }, { key: "woods.trigger.distant", label: "A distant sound", run: () => trigger("distant") }] },
@@ -310,6 +310,10 @@ async function main() {
   const askedLook = params.get("look") ?? lookState.look
   if (askedLook !== "today" && askedLook in LOOKS) pickLook(askedLook as LookId)
   panel.setView({ order: SECTIONS })
+  // The quick switch (`[` `]` while playing, panel closed): Looks, camera looks, the creature and graphics quality.
+  const QUALITY_LABEL: Record<string, string> = { auto: "Auto", ultra: "Ultra", high: "High", balanced: "Balanced", low: "Low" }
+  panel.addCycle({ key: "quality", label: "Quality", options: () => quality.modes.map((m) => ({ value: m, label: QUALITY_LABEL[m] ?? m })), get: () => quality.mode, set: (m) => quality.setMode(String(m), false) })
+  panel.quick.order(["woods.look", "woods.cameraLook", "creature", "quality"])
   attachLabPanelControl(panel)
   shell.settings.subscribe(() => { syncSound(); settings.reduceMotion = shell.settings.reduceMotion; panel.sync() })
   let regenAt = 0, worldKey = `${settings.trunkDensity}`
@@ -348,7 +352,7 @@ async function main() {
   function syncOverlays() {
     const free = !forcePlay && !locked()
     tuning.hidden = !free || !panel.visible
-    tuning.innerHTML = `Click the woods to play with the knobs open · ${keyPromptHtml("Backquote", "Hide knobs")}`
+    tuning.innerHTML = `Click the woods to play with the knobs open · ${keyPromptHtml("Backquote", panel.resumesPlay ? "Back to the woods" : "Hide knobs")}`
     shell.flow.changed()
   }
   document.addEventListener("pointerlockchange", () => {
@@ -359,7 +363,7 @@ async function main() {
   syncOverlays()
   if (lakeLab && !panel.visible) panel.toggle()
 
-  const controlsHud = () => { hud.innerHTML = `${controlsHtml()} ${keyPromptHtml("Backquote", "Knobs")}` }
+  function controlsHud() { hud.innerHTML = `${controlsHtml()} ${keyPromptHtml("Backquote", "Knobs")}${panel.quickSwitchArmed ? ` <span class="akp">${keyCapHtml("BracketLeft")}${keyCapHtml("BracketRight")}<span class="akp-label">Presets</span></span>` : ""}` }
   controlsHud()
   onKeyLayoutChange(controlsHud)
 

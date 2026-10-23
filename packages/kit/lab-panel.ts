@@ -13,11 +13,14 @@ import {
 } from "./lab-navigation"
 import type { HostHistory } from "@arcade/knobs"
 import type { Command, CommandsFromOptions } from "@arcade/knobs/ui"
+import { requestCanvasPointerLock } from "./client/controls"
 import { attachLabPanelControl } from "./dev-control"
 import { ensureLabKnobsStyles, LabKnobsView, type LabKnobsHost, type LabKnobsViewOptions } from "./lab-knobs"
+import { isQuickSwitchCode, QUICK_SWITCH_KEYS, QuickSwitch, QuickSwitchToast, type QuickSwitchTarget } from "./lab-quickswitch"
 export { formatLabValue, holdsValue, inferControlUnit, isRampControl, resolveControlField } from "./lab-navigation"
 export type { LabButton, LabControl, LabReadoutScale, LabReadoutValue, LabRow, LabSettings, LabTab, LabValue } from "./lab-navigation"
 export type { LabKnobsView } from "./lab-knobs"
+export { QUICK_SWITCH_KEYS, type QuickSwitchTarget } from "./lab-quickswitch"
 export type LabOptions = {
   open?: boolean
   /** All on / All off buttons when the panel has switches. */
@@ -58,7 +61,20 @@ export type LabOptions = {
   /** Inspector layout: per-row pin button for an external watch list. */
   onPin?: (control: LabControl, group: string) => void
   isPinned?: (key: string) => boolean
+  /**
+   * Floating panels: the quick switch (`[` `]` step `cycle` rows while the panel is closed or not focused; see
+   * `lab-quickswitch.ts`). On by default; it arms once this browser has opened a Lab panel, so players who never do keep those keys.
+   */
+  quickSwitch?: boolean
+  /** How closing the panel takes the pointer lock back (the game's own way, as its camera does); `requestCanvasPointerLock` by default. */
+  requestLock?: (el: HTMLElement) => void
 }
+
+/** Set once this browser opens a Lab panel: from then on the quick switch keys work in every game. */
+const QUICK_SWITCH_ARMED = "arcade.lab.quickswitch"
+/** Holding `\` longer than this peeks (letting go comes back); a shorter tap stays on the other preset. */
+const PEEK_MS = 350
+const storedArm = () => { try { return localStorage.getItem(QUICK_SWITCH_ARMED) === "1" } catch { return false } }
 
 /** Details view state for the inspector layout: group priority and a row filter. */
 export type LabPanelView = {
@@ -123,6 +139,16 @@ export class LabPanel implements LabKnobsHost {
   private tabs: readonly LabTab[] = []
   private openGroups?: readonly string[]
   private arrange?: (control: LabControl) => LabControl
+  /** The quick switch's groups: `cycle` rows and `addCycle` targets. */
+  readonly quick = new QuickSwitch()
+  private quickToast: QuickSwitchToast | null = null
+  private quickRows = new Set<string>()
+  private quickOn = true
+  private quickArmed = false
+  private peekAt = -1
+  /** The pointer-lock element the game was playing in when the panel opened: closing the panel takes it again. */
+  private resumeLock: Element | null = null
+  private requestLock: (el: HTMLElement) => void
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
     const opts = typeof options === "object" ? options : {}
@@ -138,6 +164,9 @@ export class LabPanel implements LabKnobsHost {
     this.openGroups = opts.openGroups
     this.arrange = opts.arrange
     this.history = opts.history
+    this.quickOn = opts.quickSwitch !== false
+    this.requestLock = opts.requestLock ?? requestCanvasPointerLock
+    this.quickArmed = storedArm() || params.get("lab") === "1"
     if (opts.onPin) this.pin = { toggle: opts.onPin, has: key => Boolean(opts.isPinned?.(key)) }
     this.navigation = new LabNavigation({}, [], (key, value) => {
       change?.(key, value)
@@ -226,7 +255,10 @@ export class LabPanel implements LabKnobsHost {
         if (this.visible && !this.owns(event.target)) this.handBack()
       }, { capture: true, signal: this.events.signal })
       document.addEventListener("pointerlockchange", () => {
-        if (document.pointerLockElement) this.handBack()
+        if (!document.pointerLockElement) return
+        // Playing beside the open panel: closing it later goes on playing there.
+        if (this.visible) this.resumeLock = document.pointerLockElement
+        this.handBack()
       }, { signal: this.events.signal })
       // knobs' menus sit on <body>: keys typed in them stop before the game's window listeners.
       for (const type of ["keydown", "keyup", "keypress"] as const) document.addEventListener(type, event => {
@@ -362,6 +394,8 @@ export class LabPanel implements LabKnobsHost {
     for (const key of Object.keys(this.navigation.defaults)) delete this.navigation.defaults[key]
     this.main?.dispose()
     this.main = null
+    for (const key of this.quickRows) this.quick.remove(key)
+    this.quickRows.clear()
   }
 
   /** `defaults` supplies approved values for Reset and modified highlighting; otherwise the current values are captured. */
@@ -380,7 +414,38 @@ export class LabPanel implements LabKnobsHost {
       }
     }
     this.navigation.append(controls)
+    for (const c of controls) if (c.cycle && "options" in c && holdsValue(c)) {
+      const name = typeof c.cycle === "string" ? c.cycle : c.label
+      this.quickRows.add(c.key)
+      this.quick.add({
+        key: c.key,
+        label: name,
+        options: () => c.options,
+        get: () => this.navigation.settings[c.key] as string | number,
+        set: value => {
+          this.begin(`${name}: ${c.options.find(o => o.value === value)?.label ?? value}`)
+          this.navigation.set(c, value)
+          this.end()
+          this.sync()
+        },
+      })
+    }
     this.sync()
+  }
+
+  /** A quick switch group that isn't a row (the shell's graphics quality, say), after the `cycle` rows added so far. */
+  addCycle(target: QuickSwitchTarget) {
+    this.quick.add(target)
+  }
+
+  /** Whether the quick switch keys act now: a floating panel with groups, in a browser that has opened a Lab panel. */
+  get quickSwitchArmed(): boolean {
+    return this.quickOn && this.layoutMode === "floating" && this.quick.size > 0 && this.quickArmed
+  }
+
+  /** Closing the panel now goes back to playing (it opened, or was played beside, under pointer lock). */
+  get resumesPlay(): boolean {
+    return Boolean(this.resumeLock?.isConnected)
   }
 
   private keys() {
@@ -588,6 +653,7 @@ export class LabPanel implements LabKnobsHost {
       if (event.type === "keydown" && !event.repeat) this.toggle()
       return true
     }
+    if (!forwarded && this.quickKey(event, inside, typing)) return true
     if (forwarded) {
       // A comparison pane's key: hand it to the focused control, as if typed there.
       if (!this.visible) return false
@@ -607,8 +673,48 @@ export class LabPanel implements LabKnobsHost {
     return true
   }
 
+  /** The quick switch's keys, while the panel doesn't hold input (closed, or open beside the game). */
+  private quickKey(event: KeyboardEvent, inside: boolean, typing: boolean): boolean {
+    if (!isQuickSwitchCode(event.code) || inside || typing || event.metaKey || event.ctrlKey || event.altKey) return false
+    if (!this.quickSwitchArmed || this.holdsInput) return false
+    event.stopImmediatePropagation()
+    event.preventDefault()
+    if (event.type === "keydown" && !event.repeat) this.quickPress(event.code)
+    else if (event.type === "keyup") this.quickRelease(event.code)
+    return true
+  }
+
+  private quickPress(code: string) {
+    const K = QUICK_SWITCH_KEYS
+    if (code === K.next || code === K.previous) this.quick.step(code === K.next ? 1 : -1)
+    else if (code === K.nextGroup || code === K.previousGroup) this.quick.group(code === K.nextGroup ? 1 : -1)
+    else if (code === K.back) this.peekAt = this.quick.swap() ? performance.now() : -1
+    this.showQuick(code, code === K.back && this.peekAt >= 0)
+  }
+
+  private quickRelease(code: string) {
+    // A long hold of \ was a peek: letting go comes back.
+    if (code === QUICK_SWITCH_KEYS.back && this.peekAt >= 0 && performance.now() - this.peekAt > PEEK_MS) this.quick.swap()
+    if (code === QUICK_SWITCH_KEYS.back) this.peekAt = -1
+    if (this.quickToast?.shown) this.showQuick()
+  }
+
+  private showQuick(down?: string, hold = false) {
+    const view = this.quick.view()
+    if (!view) return
+    this.quickToast ??= new QuickSwitchToast()
+    this.quickToast.show(view, down, hold)
+  }
+
   toggle() {
     const opening = this.body.hidden
+    if (opening && this.layoutMode === "floating") {
+      this.resumeLock = document.pointerLockElement
+      if (!this.quickArmed) {
+        this.quickArmed = true
+        try { localStorage.setItem(QUICK_SWITCH_ARMED, "1") } catch {}
+      }
+    }
     // Closing a panel the player is playing beside leaves the game as it is.
     if (opening || !this.focusOnly || this.hasFocus()) this.release()
     // Opening frees the pointer for the panel; a click back on the game locks it again.
@@ -629,6 +735,12 @@ export class LabPanel implements LabKnobsHost {
         }
         if (this.hasFocus()) (document.activeElement as HTMLElement | null)?.blur()
       }
+      // One key (or the close button) back to the game: take the pointer lock the panel freed. Backquote and the click
+      // are user activation; an Escape close tries too (the lock was let go from script), and if the browser refuses,
+      // the game's pause menu takes the next click.
+      const resume = this.resumeLock
+      this.resumeLock = null
+      if (resume instanceof HTMLElement && resume.isConnected && !document.pointerLockElement) this.requestLock(resume)
     }
     this.onToggle?.(this.visible)
   }
@@ -638,6 +750,7 @@ export class LabPanel implements LabKnobsHost {
     this.release()
     this.events.abort()
     for (const view of [...this.views]) view.dispose()
+    this.quickToast?.dispose()
     this.host.remove()
   }
 

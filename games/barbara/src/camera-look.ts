@@ -238,7 +238,7 @@ export class CameraLook {
 
   private lookControls(sync: () => void): LabControl[] {
     return [
-      { key: "woods.cameraLook", field: "look", label: "Camera look", group: GROUP, type: "select", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })), change: (v) => { this.apply(String(v) as CameraLookId); sync(); this.onLook?.() } },
+      { key: "woods.cameraLook", field: "look", label: "Camera look", group: GROUP, type: "select", cycle: "Camera", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })), change: (v) => { this.apply(String(v) as CameraLookId); sync(); this.onLook?.() } },
       { key: "woods.cameraLookNote", label: "This look", group: GROUP, type: "readout", read: () => CAMERA_LOOKS[this.settings.look]?.note ?? "" },
       { key: "woods.lookBlur", field: "blur", label: "Motion blur on fast turns", group: GROUP, subsection: "Feel", min: 0, max: 2, step: 0.05, unit: "×" },
       { key: "woods.lookBob", field: "bob", label: "Extra head bob", group: GROUP, subsection: "Feel", min: 0, max: 2, step: 0.05, unit: "×" },

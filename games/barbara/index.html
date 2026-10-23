@@ -31,6 +31,8 @@
       #room { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 12px; text-align: right; line-height: 1.6; opacity: 0.7; text-shadow: 0 1px 3px #000; }
       #room .away { opacity: 0.45; }
       #tuning { position: fixed; left: 50%; top: 46px; transform: translateX(-50%); pointer-events: none; font-size: 13px; color: #efe6cc; text-shadow: 0 1px 4px #000; z-index: 4; }
+      /* The Lab quick switch toast (@arcade/kit/lab-quickswitch) sits under the key strip. */
+      :root { --lab-quickswitch-top: 44px; }
 
       /* The shell's title and Escape menu (@arcade/kit/shell) as a lit card over the dark woods. */
       .arcade-shell { --shell-title-font: Georgia, serif; --shell-ink: #efe6cc; --shell-dim: #b9b19c; --shell-card: rgba(10, 12, 11, 0.78); --shell-edge: rgba(239, 230, 204, 0.14); --shell-field: rgba(255, 255, 255, 0.06); --shell-accent: #f2c96b; --shell-accent-ink: #17130a; --shell-backdrop: radial-gradient(ellipse at center, rgba(0,0,0,0.05), rgba(0,0,0,0.6)); --shell-radius: 16px; }

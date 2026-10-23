@@ -282,6 +282,42 @@ Games gate keys, look and pointer lock on `panel.holdsInput`, not `panel.visible
 search, menus) never reach the game; Escape or the close button closes it. `capture: "open"` overlays keep every key
 from the game while open. Proof: `bun scripts/lab/prove-panel-play.ts`.
 
+Closing the panel goes back to where you were in one action. A floating panel opened during play (under pointer lock),
+or played beside, takes the lock back when it closes, through `requestLock` (the game's own lock call; the kit's
+`requestCanvasPointerLock` by default). Opened from a menu, it closes back to the menu. Kit, Oct 22: "It's hard to go back
+to the game". `scripts/lab/prove-panel-play.ts` checks each row below.
+
+| Back to the game from the open panel | Before (Oct 22) | Now |
+| --- | --- | --- |
+| Backquote | Backquote, then click Resume on the pause card | Backquote |
+| The close button | Click ×, then click Resume | Click × |
+| Escape | Escape, then click Resume | Escape (Chromium grants it; a browser that refuses leaves the pause card, one click) |
+| Click the game | One click (the panel stays up) | Unchanged |
+
+### Quick switch while playing
+
+Every floating `LabPanel` has a quick switch for a few chosen choices, used while the panel is closed or open beside the
+game (`packages/kit/lab-quickswitch.ts`). Kit, Oct 22: "When there are some presets for me to look through, I could just
+hit a special key to switch through them."
+
+- `]` / `[` step the current group's presets, `'` / `;` pick the group, and `\` goes back to the preset before (tap to
+  swap, which makes A/B by eye one key; hold to peek and let go to return). These are physical keys that no game binds
+  (`-` and `=` were taken: Outbreak's map zoom and Carrier's full ahead).
+- A select row joins with `cycle: true` (or `cycle: "Name"` for a shorter toast name); anything else joins with
+  `panel.addCycle({ key, label, options, get, set })`. `panel.quick.order([...keys])` sets the group order. Row steps go
+  through `LabNavigation.set` as one transaction each, so a row's `change` runs as if picked in the panel. A change made
+  in the panel counts as the preset before for `\`.
+- A key-cap toast at the top centre names the group, preset and place ("Look  Ground fog  5/7"), with what `\` goes back
+  to and the next group. It fades in and out (opacity, scale .96 and a 3 px blur on its text; opacity alone with
+  reduced motion) and keeps the longest preset's width, so it doesn't shift as you step. `--lab-quickswitch-top` moves it below a
+  game's top HUD (Barbara: 44 px).
+- It is a Lab feature, not a player one. The keys do nothing until this browser has opened a Lab panel (or the page has
+  `?lab=1`), then work in every game (`localStorage["arcade.lab.quickswitch"]`). While the panel has focus, `[` `]` and
+  `\` stay knobs' own, and typed text stays text. `quickSwitch: false` turns it off for a panel, and the inspector layout
+  (the Lab workbench) never has it.
+- Barbara: Look, Camera (camera looks), Creature and Quality (the shell's graphics mode, not saved). Clip:
+  `games/barbara/scripts/quickswitch-clip.ts`.
+
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
   Bind it with `LabPanel.addControls(settings, controls)` or a `LabSection`'s `settings`/`controls`. `LabSettings`
   is a primitive-valued record, not domain validation; keep stronger types and validation at the production boundary.
