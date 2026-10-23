@@ -14,21 +14,21 @@ jobs:
         with:
           bun-version: "1.4.2"
       - run: bun install --frozen-lockfile
-      - name: Capture first four ticks in isolation
+      - name: Capture full tape for cross-platform comparison
         run: |
           bun -e '
           import { scavenging } from "./games/outbreak/tests/replays/scenarios";
           import { replayHash } from "./packages/kit/sim/replay";
-          import { gunzipSync } from "node:zlib";
+          import { gzipSync, gunzipSync } from "node:zlib";
           const {recording, golden} = JSON.parse(gunzipSync(await Bun.file("games/outbreak/tests/replays/scavenging.json.gz").bytes()).toString());
           const state = scavenging.init(recording);
-          for (let tick = 0; tick <= 4; tick++) {
+          const snapshots = [];
+          for (let tick = 0; tick <= recording.inputs.length; tick++) {
             if (tick) scavenging.step(state, recording.inputs[tick - 1], recording.tickDt);
-            console.log(tick, replayHash(scavenging.fields(state).ai), golden.fields.ai[tick]);
+            snapshots.push(state.toSnapshot());
           }
-          await Bun.write("linux-tick4.json", JSON.stringify(state.toSnapshot(), null, 2));'
+          await Bun.write("linux-tape.json.gz", gzipSync(JSON.stringify(snapshots)));'
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-tick4
-          path: linux-tick4.json
-      - run: bun test games/outbreak/tests/replay.test.ts
+          name: linux-tape
+          path: linux-tape.json.gz
