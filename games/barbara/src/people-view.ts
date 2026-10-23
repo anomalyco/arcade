@@ -43,11 +43,10 @@ export class PeopleView {
 
   /**
    * Fetches the first `n` cast members (the first friends you meet wear them) and resolves when they can be drawn, so
-   * Play shows them at once instead of popping them in; the rest start loading behind. Never rejects.
+   * Play shows them at once instead of popping them in; later arrivals still load on first sight. Never rejects.
    */
   preload(n: number): Promise<void> {
-    const all = CAST.map((m) => this.people.load(m).catch((e) => console.error(`people: ${m.id} failed to load`, e)))
-    return Promise.all(all.slice(0, n)).then(() => {})
+    return Promise.all(CAST.slice(0, n).map((m) => this.people.load(m).catch((e) => console.error(`people: ${m.id} failed to load`, e)))).then(() => {})
   }
 
   /** Ground under (x, z): the terrain/dock height, raised over any log's round top. */
