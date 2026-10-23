@@ -14,6 +14,14 @@ Proven per-pass measurements and benchmark logs live in [`docs/game-notes.md`](g
   - **missing** — Not yet implemented in Arcade.
 - **Cost convention:** Measured or estimated GPU time on Apple Silicon (M4/M5 Max Metal) at `1000×680`–`3456×1894` unless noted otherwise.
 
+### Parked storm-cloud experiment (22 October 2026)
+
+D-59 keeps Today's storm. `weather-clouds-parked` preserves the experiment at `1f439633` and its
+`perf/weather-realism.md` ledger. The noise-volume density model produced soft, mottled ceilings rather than deep
+overlapping billows, torn edges and a compact illuminated core behind dark foreground cloud. Fourteen rendered
+candidates, including scud isolation and 128-step sampling, did not solve that structural limit. A later attempt
+should try a different cloud-structure technique rather than more density or sampling sweeps.
+
 ---
 
 ## 1. Lighting & Global Illumination (Including Baking)

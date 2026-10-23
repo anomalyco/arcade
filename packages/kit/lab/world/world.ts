@@ -3,6 +3,8 @@ import { applyFoliagePreset, cloneFoliageParams, type FoliageKind, type FoliageP
 import { lampFlicker } from "../../gpu/lights/flicker"
 import { createSkySettings, SKY_DEFAULTS, type SkySettings } from "../../sky/settings"
 import { attachSky } from "../../sky/controller"
+import { EyeAdaptation, EXPOSURE_DEFAULTS, type ExposureSettings } from "../../weather/exposure"
+import { RAIN_LIGHTING_DEFAULTS, type RainLightingSettings } from "../../weather/rain-lighting"
 import { BEAM_PROFILES, beamReach, packBeamProfile, type BeamProfileId } from "../../gpu/lights/beam"
 import { packPhysicalLightKnobs, physicalLightHooks, type LightModel } from "../../gpu/lights/physical"
 import { Renderer, type FrameInput } from "../../gpu/renderer"
@@ -12,7 +14,7 @@ import { SceneLights, newSceneFrame, packSceneFrame, type SceneLight } from "../
 import { makeSceneShader, spriteShader } from "../../gpu/shaders"
 import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeatherSettings, resolveWeatherPresetId, type WeatherLight, type WeatherSettings } from "../../weather"
 import type { LabContext } from "../types"
-import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, WALL_PAINTS, WORLD_CAMERA, WORLD_FOCUS, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldFlicker, type WorldGeometry } from "./scene"
+import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, WALL_PAINTS, WORLD_CAMERA, WORLD_FOCUS, WORLD_LIGHT_ID, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldFlicker, type WorldGeometry } from "./scene"
 
 /**
  * The Lab's base debug world, drawn by the kit `Renderer` (the one Brawl and Blackout ship) with the kit look,
@@ -86,6 +88,8 @@ export type DebugWorld = {
   readonly look: LookSettings
   readonly weather: WeatherSettings
   readonly sky: SkySettings
+  readonly exposure: ExposureSettings
+  readonly rainLighting: RainLightingSettings
   readonly vegetation: FoliageParams
   setLook(preset: string): void
   setWeather(preset: string): void
@@ -113,6 +117,9 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const look = createLookSettings("current")
   const weather = createWeatherSettings("clear")
   const sky = createSkySettings()
+  const exposure = { ...EXPOSURE_DEFAULTS }, rainLighting = { ...RAIN_LIGHTING_DEFAULTS }
+  const eyeAdaptation = new EyeAdaptation()
+  let exposureMultiplier = 1
   const vegetation = cloneFoliageParams()
   applyFoliagePreset("tree", "oak", vegetation)
   applyFoliagePreset("bush", "hedge", vegetation)
@@ -216,6 +223,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     look,
     weather,
     sky,
+    exposure,
+    rainLighting,
     vegetation,
     setLook(preset) {
       const id = resolveLookPresetId(preset)
@@ -239,6 +248,9 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       applyLookPreset(look, "current")
       applyWeatherPreset(weather, "clear")
       Object.assign(sky, SKY_DEFAULTS)
+      Object.assign(exposure, EXPOSURE_DEFAULTS)
+      Object.assign(rainLighting, RAIN_LIGHTING_DEFAULTS)
+      eyeAdaptation.reset(); exposureMultiplier = 1
       Object.assign(vegetation, cloneFoliageParams())
       applyFoliagePreset("tree", "oak", vegetation)
       applyFoliagePreset("bush", "hedge", vegetation)
@@ -259,6 +271,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       time += dt
       if (state.timeScale > 0) state.hour = (state.hour + (dt * state.timeScale) / 3600) % 24
       sim.step(dt, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
+      // Relative flash stimulus, not measured scene luminance. No shadow lift by default.
+      exposureMultiplier = eyeAdaptation.step({ dt, luminance: 1 + sim.state.flash * 48, referenceLuminance: 1 }, exposure).multiplier
     },
     render(width, height, outputView, measure) {
       const r = ensureRenderer()
@@ -299,8 +313,14 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       lampPower[LAMP.interior] = lampsOn * flick.interior.level
       lampPower[LAMP.headlights] = state.headlights ? 1 : 0
       sim.step(0, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
+      // Live switches to Today also reset sensitivity while the Lab's simulation is paused.
+      exposureMultiplier = eyeAdaptation.step({ dt: 0, luminance: 1 + sim.state.flash * 48, referenceLuminance: 1 }, exposure).multiplier
       const raining = weather.preset !== "clear" || sim.state.flash > 0.001
-      const weatherLights: WeatherLight[] = scene.slice(1, 7).map(l => ({ x: l.x, y: l.h, z: l.y, radius: l.r, r: l.color[0], g: l.color[1], b: l.color[2], power: l.power * 1.3, ...(l.cone ? { dx: l.cone[0], dz: l.cone[1], cosHalf: l.cone[2], isCone: true } : {}) }))
+      const weatherLights: WeatherLight[] = scene.slice(1, 7).map(l => ({ x: l.x, y: l.h, z: l.y, radius: l.r, r: l.color[0], g: l.color[1], b: l.color[2], power: l.power * 1.3, ...(l.cone ? { dx: l.cone[0], dz: l.cone[1], cosHalf: l.cone[2], isCone: true } : {}),
+        ...(rainLighting.mode === "volume" ? l.spot || l.beam
+          ? { axis: l.spot?.axis ?? l.beam?.axis, isCone: true, cosHalf: l.spot?.cosOuter ?? Math.cos(l.beam!.halfAngle) }
+          : l.id === WORLD_LIGHT_ID.street || l.id === WORLD_LIGHT_ID.porch
+            ? { axis: [0, -1, 0] as const, cosHalf: Math.cos(l.id === WORLD_LIGHT_ID.street ? 1.1 : 1.3) } : {} : {}) }))
       const input: FrameInput = {
         frame,
         lights: lights.lights as Float32Array<ArrayBuffer>,
@@ -322,6 +342,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         weather: raining
           ? {
               settings: weather,
+              rainLighting,
               state: sim.state,
               viewProj: stage.viewProj,
               eye: stage.eye,
@@ -335,7 +356,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
               cameraDist: stage.camDist,
             }
           : null,
-        grade: [time, 0, sim.state.flash * 0.4, clock.exposure],
+        grade: [time, 0, sim.state.flash * 0.4, clock.exposure * exposureMultiplier],
         look: look.preset === "current" ? null : look,
       }
       r.drawTo(input, outputView)

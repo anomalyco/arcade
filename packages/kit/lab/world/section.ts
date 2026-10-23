@@ -4,6 +4,8 @@ import { MAX_SPOT_SHADOWS } from "../../gpu/shadows/spot-shadows"
 import type { LabControl, LabSettings } from "../../lab-panel"
 import { WEATHER_PRESETS, WEATHER_PRESET_IDS, createWeatherControls } from "../../weather"
 import { skyControls } from "../../sky/settings"
+import { exposureControls } from "../../weather/exposure"
+import { rainLightingControls } from "../../weather/rain-lighting"
 import type { LabContext, LabSection } from "../types"
 import { PRESET_PICKS, WORLD_PRESETS, WORLD_PRESET_VERSION, worldPreset, type WorldPresetFile } from "./presets"
 import { FLOOR, WORLD_CAMERA, WORLD_FOCUS } from "./scene"
@@ -48,6 +50,10 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
   for (const key of Object.keys(world.sky) as (keyof typeof world.sky)[]) {
     def(key, () => world.sky[key], v => { (world.sky as Record<string, Value>)[key] = v })
   }
+  for (const [prefix, object] of [["exposure.", world.exposure], ["rainLight.", world.rainLighting]] as const) {
+    const values: Record<string, Value> = object
+    for (const key of Object.keys(values)) def(prefix + key, () => values[key]!, v => { values[key] = v })
+  }
   for (const key of Object.keys(world.weather)) {
     if (key === "preset") continue
     def(key, () => (world.weather as Record<string, Value>)[key]!, v => { ;(world.weather as Record<string, Value>)[key] = v })
@@ -69,6 +75,8 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
 
   const controls: LabControl[] = [
     ...skyControls(),
+    // The shared world binds flat proxy keys; glare is only consumed by Lot's bloom adapter.
+    ...[...exposureControls("Weather").filter(c => c.field !== "glareRecovery" && c.field !== "glareStrength"), ...rainLightingControls()].map(c => ({ ...c, field: c.key })),
     {
       key: "worldPreset",
       label: "Preset",
