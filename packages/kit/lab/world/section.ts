@@ -106,6 +106,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "playing", label: "Animate", group: "Clock & light" },
     { key: "skyLight", label: "Sun, moon and sky", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.01, unit: "×" },
     { key: "exposureEV", label: "Camera exposure", group: "Clock & light", type: "range", min: -3, max: 4, step: 0.1, unit: "EV" },
+    { key: "shadowLift", label: "Grade shadow lift", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 1, step: 0.05, unit: "×", visible: s => s.lightModel === "physical" },
 
     { key: "screen", label: "Screen bench", group: "Screen" },
     { key: "programme", label: "Showing", group: "Screen", type: "select", options: PROGRAMME_OPTIONS, visible: s => s.screen === true },

@@ -214,12 +214,13 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s.startsWith("@arcade/kit/props/"),
   },
   {
-    area: "`look` & `gpu/look-shaders`",
-    description: "`LookSettings` presets and WGSL scene/post grading hooks",
+    area: "`look`, `gpu/look-shaders` & `gpu/post-uniform`",
+    description: "`LookSettings` presets, WGSL scene/post grading hooks and the game post uniform after them",
     match: (s) =>
       s === "@arcade/kit/look" ||
       s === "@arcade/kit/gpu/look" ||
-      s === "@arcade/kit/gpu/look-shaders",
+      s === "@arcade/kit/gpu/look-shaders" ||
+      s === "@arcade/kit/gpu/post-uniform",
   },
   {
     area: "`sim/creature-motion`",

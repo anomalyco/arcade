@@ -85,7 +85,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | Yes | — |
 | `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — |
-| `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | Yes | Yes |
+| `look`, `gpu/look-shaders` & `gpu/post-uniform` | `LookSettings` presets, WGSL scene/post grading hooks and the game post uniform after them | — | Yes | Yes | — | Yes | Yes | Yes |
 | `sim/creature-motion` | Lamplight's creature root: deterministic planar momentum, brake/plant/pivot phases, `SecondOrder` springs, Froude scaling | — | — | — | — | Yes | — | — |
 | `creature/*` | Arachnid legs (world-space feet, footholds, swing clearance, IK, body springs, contacts), matte tube view and Lab settings | — | — | — | — | Yes | — | — |
 | `gpu/post/camcorder` | Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass` | — | — | Yes | — | — | — | — |

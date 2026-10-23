@@ -11,7 +11,8 @@ import { Renderer, type FrameInput } from "../../gpu/renderer"
 import { SpotShadows, type SpotCandidate } from "../../gpu/shadows/spot-shadows"
 import { VERT_BYTES } from "../../gpu/mesh"
 import { SceneLights, flatLighting, newSceneFrame, packSceneFrame, type SceneLight } from "../../gpu/scene-frame"
-import { makeSceneShader, spriteShader } from "../../gpu/shaders"
+import { makeSceneShader, postShader, spriteShader } from "../../gpu/shaders"
+import { customPostGradeWgsl } from "../../gpu/post-uniform"
 import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeatherSettings, resolveWeatherPresetId, type WeatherLight, type WeatherSettings } from "../../weather"
 import type { LabContext } from "../types"
 import { cagedBulb, fluorescentTube, ledIndicator } from "../../gpu/lights/practicals"
@@ -60,6 +61,11 @@ export type WorldState = {
   skyLight: number
   /** Camera exposure compensation, stops. */
   exposureEV: number
+  /**
+   * The grade's navy shadow lift (`postShader`), × (Physical only). 1 is the kit's grade; the screen bench's dark room
+   * sets 0 so unlit corners read black instead of a milky navy.
+   */
+  shadowLift: number
   /** The screen bench inside the house (`gpu/screen/`): a CRT on a workbench, its picture lighting the room. */
   screen: boolean
   /** What the screen bench's television shows. */
@@ -97,6 +103,7 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   flicker: 0,
   skyLight: 1,
   exposureEV: 0,
+  shadowLift: 1,
   screen: false,
   programme: "show",
   tube: false,
@@ -208,6 +215,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       ? new Renderer(device, ctx, format, {
           scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
           sprite: spriteShader(),
+          post: WORLD_POST,
         })
       : new Renderer(device, ctx, format)
     renderers[model] = r
@@ -472,6 +480,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
           : null,
         grade: [time, 0, sim.state.flash * 0.4, clock.exposure * exposureMultiplier * 2 ** state.exposureEV],
         look: look.preset === "current" ? null : look,
+        ...(state.shadowLift !== 1 ? { postCustom: [1, Math.max(0, state.shadowLift), 0, 0] as const } : {}),
       }
       r.drawTo(input, outputView)
       return measure ? r.measure(input) : null
@@ -484,6 +493,20 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   }
   return world
 }
+
+const LIFT = "vec3f(0.006, 0.011, 0.028) * (1.0 - smoothstep(0.0, 0.25, l))"
+/**
+ * The kit's default composite with its shadow lift scalable per frame (`FrameInput.postCustom`: x > 0.5 overrides, y the
+ * scale). Without the override it picks the same constant, so every other preset draws as before.
+ */
+export const WORLD_POST = (() => {
+  const base = postShader(false)
+  if (!base.includes(LIFT)) throw new Error("postShader's shadow lift moved; update WORLD_POST")
+  return base
+    .replace("@group(0) @binding(4) var<uniform> G: vec4f;", customPostGradeWgsl)
+    .replace(/\bG\./g, "grade.frame.")
+    .replace(LIFT, "select(vec3f(0.006, 0.011, 0.028), vec3f(0.006, 0.011, 0.028) * grade.custom.y, grade.custom.x > 0.5) * (1.0 - smoothstep(0.0, 0.25, l))")
+})()
 
 /** The world's three practical lamps under the shared flicker: a dying sodium streetlamp, a porch tube, a bulb inside. */
 export function worldFlicker(amount: number, time: number): WorldFlicker {

@@ -1,6 +1,6 @@
 import { buildFoliageBush, buildFoliageTree, emitGrassClump, scatterGrassClumps, type FoliageParams } from "../../gpu/foliage"
 import type { LevelData } from "../../gpu/level"
-import { MAT, Mesh, hex, type Rgb } from "../../gpu/mesh"
+import { FLOATS_PER_VERT, MAT, Mesh, hex, type Rgb } from "../../gpu/mesh"
 import { coldSodiumTint, type FlickerSample } from "../../gpu/lights/flicker"
 import { cagedBulbMesh, fluorescentTubeMesh, ledIndicatorMesh, type CagedBulb, type FluorescentTube, type LedIndicator } from "../../gpu/lights/practicals"
 import type { ScreenPlacement } from "../../gpu/screen/light"
@@ -273,11 +273,17 @@ const [OX, OZ] = WORLD_ORIGIN
 export const SCREEN_AT: ScreenPlacement = { center: [TV.x - OX, TV.screenY, TV.front - 0.022 - OZ], yaw: Math.PI / 2, width: TV.screenW, height: TV.screenH }
 /** The room the glass reflects (inside the house walls, world coordinates). */
 export const SCREEN_ROOM = { min: [11.18 - OX, 0.24, 8.18 - OZ] as const, max: [18.64 - OX, 2.9, 13.64 - OZ] as const, albedo: 0.5 }
-/** An armchair facing the set across a pale rug: what the screen's light falls on (plan coordinates). */
-const CHAIR = { x0: 15.78, x1: 16.58, z0: 10.55, z1: 11.35, seat: 0.66 } as const
-const RUG = { x0: 15.2, x1: 17.1, z0: 9.05, z1: 11.6 } as const
-/** Where the screen lab looks from: inside the room, off to one side, the set, the rug and the chair in view. */
-export const SCREEN_CAMERA = { target: [TV.x - OX - 0.3, 0.86, 9.85 - OZ] as const, yaw: 0.95, pitch: 0.24, dist: 2.6 } as const
+/**
+ * An armchair on a pale rug, 1.6 m from the set and 46° off its axis, turned 30° from the set toward the camera: what
+ * the screen's light falls on (plan coordinates, `turn` in radians). `half` is half its width and depth.
+ */
+export const SCREEN_CHAIR = { x: 15, z: 9.95, half: 0.4, turn: Math.PI / 6, seat: 0.66 } as const
+const RUG = { x0: 14.3, x1: 16.6, z0: 9.0, z1: 10.75 } as const
+/**
+ * Where the screen lab looks from: the room's front corner at standing eye height, the set on the right third with its
+ * glass 30° off axis, the chair three-quarter on (its lit front 54° from the camera) on the left, the rug between.
+ */
+export const SCREEN_CAMERA = { target: [15.69 - OX, 0.9, 9.277 - OZ] as const, yaw: 0.663, pitch: 0.24, dist: 4.5 } as const
 export const SCREEN_TUBE: FluorescentTube = { at: [16.45 - OX, 2.55, 8.62 - OZ], length: 1.2, seed: 29, failing: 1.2, power: 1.1 }
 export const SCREEN_BULB: CagedBulb = { at: [18.42 - OX, 1.95, 9.55 - OZ], seed: 31, wander: 0.7, power: 0.55 }
 export const SCREEN_LEDS: { tv: LedIndicator; deck: LedIndicator; deckActivity: LedIndicator } = {
@@ -319,15 +325,19 @@ function addScreenBench(m: Mesh, b: WorldBuild): void {
   ledIndicatorMesh(m, shift(SCREEN_LEDS.tv), LAMP.tvLed)
   ledIndicatorMesh(m, shift(SCREEN_LEDS.deck), LAMP.deckLed)
   ledIndicatorMesh(m, shift(SCREEN_LEDS.deckActivity), LAMP.deckLed)
-  // A pale rug and an armchair facing the set: the seat, a high back, two arms and short feet.
-  m.box(RUG.x0, 0.24, RUG.z0, RUG.x1, 0.252, RUG.z1, rgb(0xa79c86), MAT.lit)
-  const fabric = rgb(0x8d7f69), fabricDark = rgb(0x6f6352)
-  const c = CHAIR
-  for (const fx of [c.x0 + 0.05, c.x1 - 0.09]) for (const fz of [c.z0 + 0.05, c.z1 - 0.09]) m.box(fx, 0.252, fz, fx + 0.04, 0.33, fz + 0.04, dark, MAT.lit)
-  m.bevelBox(c.x0, 0.33, c.z0, c.x1, c.seat - 0.12, c.z1, 0.02, fabricDark, fabric, MAT.lit)
-  m.bevelBox(c.x0 + 0.12, c.seat - 0.12, c.z0 + 0.04, c.x1 - 0.12, c.seat, c.z1 - 0.18, 0.03, fabric, fabric, MAT.lit)
-  m.bevelBox(c.x0 + 0.04, 0.33, c.z1 - 0.2, c.x1 - 0.04, 1.32, c.z1, 0.04, fabric, fabric, MAT.lit)
-  for (const ax of [c.x0, c.x1 - 0.12]) m.bevelBox(ax, 0.33, c.z0 + 0.02, ax + 0.12, 0.86, c.z1 - 0.06, 0.03, fabric, fabric, MAT.lit)
+  // A pale rug and an armchair near the set, both near-neutral so they take the picture's colour: the seat, a high back,
+  // two arms and short feet.
+  m.box(RUG.x0, 0.24, RUG.z0, RUG.x1, 0.252, RUG.z1, rgb(0xb3b0a9), MAT.lit)
+  const fabric = rgb(0x9a968e), fabricDark = rgb(0x77736b)
+  // Built round the origin facing −z, then turned to face the glass (less `turn`) and moved into place.
+  const c = SCREEN_CHAIR, cx0 = -c.half, cx1 = c.half, cz0 = -c.half, cz1 = c.half, from = m.length
+  for (const fx of [cx0 + 0.05, cx1 - 0.09]) for (const fz of [cz0 + 0.05, cz1 - 0.09]) m.box(fx, 0.252, fz, fx + 0.04, 0.33, fz + 0.04, dark, MAT.lit)
+  m.bevelBox(cx0, 0.33, cz0, cx1, c.seat - 0.12, cz1, 0.02, fabricDark, fabric, MAT.lit)
+  m.bevelBox(cx0 + 0.12, c.seat - 0.12, cz0 + 0.04, cx1 - 0.12, c.seat, cz1 - 0.18, 0.03, fabric, fabric, MAT.lit)
+  m.bevelBox(cx0 + 0.04, 0.33, cz1 - 0.2, cx1 - 0.04, 1.32, cz1, 0.04, fabric, fabric, MAT.lit)
+  for (const ax of [cx0, cx1 - 0.12]) m.bevelBox(ax, 0.33, cz0 + 0.02, ax + 0.12, 0.86, cz1 - 0.06, 0.03, fabric, fabric, MAT.lit)
+  const face = Math.atan2(TV.front - 0.022 - c.z, TV.x - c.x) + c.turn
+  turnFrom(m, from, Math.atan2(Math.cos(face), -Math.sin(face)), c.x, c.z)
   // The practicals, shown only when they're on.
   if (b.tube) {
     const t = { ...SCREEN_TUBE, at: [SCREEN_TUBE.at[0] + OX, SCREEN_TUBE.at[1], SCREEN_TUBE.at[2] + OZ] as const }
@@ -338,6 +348,18 @@ function addScreenBench(m: Mesh, b: WorldBuild): void {
     const bl = { ...SCREEN_BULB, at: [SCREEN_BULB.at[0] + OX, SCREEN_BULB.at[1], SCREEN_BULB.at[2] + OZ] as const }
     cagedBulbMesh(m, bl, LAMP.bulb)
     m.box(bl.at[0], bl.at[1] + 0.1, bl.at[2] - 0.012, 18.64, bl.at[1] + 0.124, bl.at[2] + 0.012, steel, MAT.lit)
+  }
+}
+
+/** Turns every vertex added since `from` by `yaw` about the origin (as `Mesh.yawBox`), then moves it to (x, z). */
+function turnFrom(m: Mesh, from: number, yaw: number, x: number, z: number): void {
+  const c = Math.cos(yaw), s = Math.sin(yaw)
+  for (let i = from; i < m.v.length; i += FLOATS_PER_VERT) {
+    const px = m.v[i]!, pz = m.v[i + 2]!, nx = m.v[i + 3]!, nz = m.v[i + 5]!
+    m.v[i] = px * c - pz * s + x
+    m.v[i + 2] = px * s + pz * c + z
+    m.v[i + 3] = nx * c - nz * s
+    m.v[i + 5] = nx * s + nz * c
   }
 }
 

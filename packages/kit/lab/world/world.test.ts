@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { cloneFoliageParams } from "../../gpu/foliage"
 import type { LabContext } from "../types"
 import { WORLD_PRESETS } from "./presets"
-import { CHARACTER_AT, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from "./scene"
+import { writeOrbitCamera } from "../stage"
+import { CHARACTER_AT, SCREEN_AT, SCREEN_CAMERA, SCREEN_CHAIR, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from "./scene"
 import { WORLD_TABS, createWorldSection } from "./section"
-import { WORLD_DEFAULTS, createDebugWorld } from "./world"
+import { postShader } from "../../gpu/shaders"
+import { validateWgsl } from "../../gpu/test-naga"
+import { WORLD_DEFAULTS, WORLD_POST, createDebugWorld } from "./world"
 
 const context = { device: {}, stage: { eye: new Float32Array(3), viewProj: new Float32Array(16), frameTarget() {}, updateCamera() {} }, particles: { count: 0 }, sync() {} } as unknown as LabContext
 const make = () => {
@@ -79,6 +82,44 @@ describe("the Look and world lab", () => {
     expect(targets[1]![3]).toBeGreaterThan(5)
     section.applyPreset("dusk")
     expect(targets.length).toBe(2)
+  })
+
+  test("the screen bench frames the set on the right third and the chair's lit front three-quarter on", () => {
+    const vp = new Float32Array(16), eye = new Float32Array(3)
+    const c = SCREEN_CAMERA
+    writeOrbitCamera(708, 564, vp, new Float32Array(16), eye, c.target, c.yaw, c.pitch, c.dist)
+    const ndc = (x: number, y: number, z: number) => {
+      const w = vp[3]! * x + vp[7]! * y + vp[11]! * z + vp[15]!
+      return [(vp[0]! * x + vp[4]! * y + vp[8]! * z + vp[12]!) / w, (vp[1]! * x + vp[5]! * y + vp[9]! * z + vp[13]!) / w]
+    }
+    const [ox, oz] = WORLD_ORIGIN
+    const [tvX, tvY] = ndc(SCREEN_AT.center[0], SCREEN_AT.center[1], SCREEN_AT.center[2])
+    expect(tvX).toBeGreaterThan(0.25)
+    expect(tvX).toBeLessThan(0.45)
+    expect(Math.abs(tvY!)).toBeLessThan(0.5)
+    const [chairX] = ndc(SCREEN_CHAIR.x - ox, 0.7, SCREEN_CHAIR.z - oz)
+    expect(chairX).toBeLessThan(-0.3)
+    expect(chairX).toBeGreaterThan(-0.75)
+    // The chair faces the glass less its turn; the camera sits 30–60° off that front.
+    const face = Math.atan2(SCREEN_AT.center[2] + oz - SCREEN_CHAIR.z, SCREEN_AT.center[0] + ox - SCREEN_CHAIR.x) + SCREEN_CHAIR.turn
+    const toEye = Math.atan2(eye[2]! + oz - SCREEN_CHAIR.z, eye[0]! + ox - SCREEN_CHAIR.x)
+    const off = Math.abs(Math.atan2(Math.sin(toEye - face), Math.cos(toEye - face))) * 180 / Math.PI
+    expect(off).toBeGreaterThan(30)
+    expect(off).toBeLessThan(60)
+  })
+
+  test("the world's composite is the kit's, with a shadow lift the screen bench turns off", () => {
+    validateWgsl(WORLD_POST)
+    const base = postShader(false)
+    expect(WORLD_POST).not.toMatch(/\bG\./)
+    // Only the uniform's name, its declaration and the lift line differ from the kit's composite.
+    const strip = (code: string) => code.replace(/grade\.frame\./g, "G.").split("\n").filter(l => !/binding\(4\)|struct Grade|frame:vec4f|look:vec4f|reservedLook|custom:vec4f|^\}$/.test(l))
+    const a = strip(base), b = strip(WORLD_POST)
+    expect(b.length).toBe(a.length)
+    expect(b.filter((l, i) => l !== a[i])).toEqual([expect.stringContaining("select(vec3f(0.006, 0.011, 0.028), vec3f(0.006, 0.011, 0.028) * grade.custom.y, grade.custom.x > 0.5)")])
+    expect(WORLD_DEFAULTS.shadowLift).toBe(1)
+    expect(WORLD_PRESETS.find(p => p.id === "screen-bench")!.values.shadowLift).toBe(0)
+    expect(WORLD_PRESETS.filter(p => "shadowLift" in p.values).map(p => p.id)).toEqual(["screen-bench"])
   })
 
   test("export and import round-trip a versioned preset, and a bad file changes nothing", () => {
