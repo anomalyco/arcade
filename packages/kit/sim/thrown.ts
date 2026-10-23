@@ -35,6 +35,8 @@ export type ThrownEnv = {
    * many it wrote. `top` is the height it stands to (Infinity for a trunk); the body can land on a low top.
    */
   obstacles?(x: number, z: number, reach: number, out: number[]): number
+  /** Axis-aligned walls near (x, z) as `[x0, z0, x1, z1, top]` groups (buildings); same contract as `obstacles`. */
+  boxes?(x: number, z: number, reach: number, out: number[]): number
 }
 
 export type ThrownParams = {
@@ -145,6 +147,33 @@ function substep(b: ThrownBody, env: ThrownEnv, p: Readonly<ThrownParams>) {
         b.vz = tz * p.friction - vn * p.wallRestitution * nz
         b.spinRate *= -0.7
       }
+    }
+  }
+
+  if (env.boxes) {
+    scratch.length = 0
+    const count = env.boxes(b.x, b.z, 1.5, scratch)
+    for (let i = 0; i < count; i++) {
+      const x0 = scratch[i * 5]! - p.radius, z0 = scratch[i * 5 + 1]! - p.radius
+      const x1 = scratch[i * 5 + 2]! + p.radius, z1 = scratch[i * 5 + 3]! + p.radius, top = scratch[i * 5 + 4]!
+      if (b.x <= x0 || b.x >= x1 || b.z <= z0 || b.z >= z1) continue
+      if (b.y - p.radius >= top - 0.06) {
+        if (top > floor) { floor = top; floorIsTop = true }
+        continue
+      }
+      // Out through the nearest face, reflecting the speed into it.
+      const l = b.x - x0, r = x1 - b.x, n = b.z - z0, f = z1 - b.z
+      const m = Math.min(l, r, n, f)
+      if (m === l || m === r) {
+        b.x = m === l ? x0 : x1
+        if ((m === l) === (b.vx > 0)) b.vx = -b.vx * p.wallRestitution
+        b.vz *= p.friction
+      } else {
+        b.z = m === n ? z0 : z1
+        if ((m === n) === (b.vz > 0)) b.vz = -b.vz * p.wallRestitution
+        b.vx *= p.friction
+      }
+      b.spinRate *= -0.7
     }
   }
 

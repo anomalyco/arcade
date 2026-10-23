@@ -1,6 +1,7 @@
 import { stepBody } from "@arcade/kit/sim/move"
 import { startHop, stepHop, type Hop } from "@arcade/kit/sim/hop"
 import { stepCreature, type CreatureEvent } from "./creature"
+import { createFlares, dropFlare, flareSources, stepFlareBodies, stepFlareHand, type FlareEvent, type FlareState } from "./flares"
 import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
 import { NIGHT_LINES } from "./night-lines.gen"
@@ -72,6 +73,8 @@ export const FEEL = {
   batteryMinutes: 8,
   /** Seconds in the dark fumbling a spare battery in. */
   swapSeconds: 4,
+  /** Seconds a road flare burns (`shared/flares.ts`). The room's is authoritative. */
+  flareBurn: 150,
 }
 export type Feel = typeof FEEL
 
@@ -108,6 +111,8 @@ export type MapKnowledge = {
   markers: number[]
   /** Clues seen or copied (`shared/night.ts` ids). */
   clues: number[]
+  /** Where a burning flare was seen lying (flat x, z pairs in m, to the cm): a red crayon star on the sheet. */
+  flares: number[]
 }
 export type Player = {
   id: number
@@ -143,6 +148,9 @@ export type Player = {
   /** Something has hold of them (the spider's hook): no walking, torch out. Always null until that lands. */
   capture: { by: number; left: number } | null
   map: MapKnowledge
+  /** Road flares in the pocket (`shared/flares.ts`), and whether the flare key is still down from the last strike. */
+  flares: number
+  flareLatch: boolean
 }
 export type Tape = { id: number; tree: number; x: number; y: number; z: number; /** Plan angle of the knot side, atan2(dz, dx) from the trunk (rad). */ yaw: number; by: number; at: number }
 export type Brain = {
@@ -177,6 +185,8 @@ export type WoodsEvent =
   | CreatureEvent
   /** Clues found, spares picked up, torches dying and swapped, and the night starting and ending (`shared/night.ts`). */
   | NightEvent
+  /** A road flare struck, thrown, or a spare taken from the camp table (`shared/flares.ts`). */
+  | FlareEvent
 
 export type WoodsState = {
   t: number
@@ -200,6 +210,8 @@ export type WoodsState = {
   voices: VoiceState
   /** The night as a game: clues, the clock, batteries, the end (`shared/night.ts`). */
   night: NightState
+  /** Road flares in hands, in the air and burning on the ground, and the camp's spares (`shared/flares.ts`). */
+  flares: FlareState
 }
 
 /** One player's controls for a step: the same for a person (sent to the room, predicted locally) and a bot. */
@@ -215,6 +227,8 @@ export type PlayerInput = {
   sprint?: boolean
   /** One-shot press, carried by the room's input jitter buffer. */
   jump?: boolean
+  /** The flare key: strike, hold, let go to throw. */
+  flare?: boolean
 }
 
 const VOICE_CUES = new Set(["clue-found", "signal", "distant", "tape-tied", "creature"])
@@ -228,7 +242,7 @@ export function newPlayer(id: number, bot: boolean, name: string, x: number, z: 
     id, bot, name, x, z, vx: 0, vz: 0, air: { y: 0, v: 0, airborne: false }, yaw, pitch: -0.1, light: true,
     flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, serial: 0, tieHold: 0, signal: 0,
     charge: 1, spare: false, swap: 0, isolated: 0, capture: null,
-    map: { trail: [x, z], heard: [], tapes: [], markers: [], clues: [] },
+    map: { trail: [x, z], heard: [], tapes: [], markers: [], clues: [], flares: [] }, flares: 1, flareLatch: false,
   }
 }
 
@@ -236,7 +250,7 @@ export type Human = { id: number; name: string }
 
 /** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
 export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
-  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c), night: createNight(world, seed) }
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c), night: createNight(world, seed), flares: createFlares() }
   for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
@@ -375,12 +389,26 @@ function stepTie(state: WoodsState, world: WoodsWorld, p: Player, held: boolean,
   p.tieHold = TIE_RELEASE
 }
 
+/** A flare burning on the ground is marked on any map within this (m): its glow carries through the trees and mist. */
+export const FLARE_SEEN = 150
+
+function markFlare(m: MapKnowledge, x: number, z: number) {
+  for (let i = 0; i < m.flares.length; i += 2) if (Math.abs(m.flares[i]! - x) < 2 && Math.abs(m.flares[i + 1]! - z) < 2) return
+  m.flares.push(Math.round(x * 100) / 100, Math.round(z * 100) / 100)
+}
+
 function stepKnowledge(state: WoodsState, world: WoodsWorld, p: Player, feel: Feel) {
   const m = p.map
   const lx = m.trail[m.trail.length - 2]!, lz = m.trail[m.trail.length - 1]!
   const n = m.trail.length / 2
   if (n < TRAIL_MAX && Math.hypot(p.x - lx, p.z - lz) >= TRAIL_STEP * (1 + Math.floor(n / TRAIL_COARSEN))) m.trail.push(p.x, p.z)
   for (const t of state.tapes) if (Math.hypot(t.x - p.x, t.z - p.z) < feel.tapeSeen) addUnique(m.tapes, t.id)
+  for (const f of state.flares.list) {
+    const b = f.body
+    if (!b?.rest || state.t < f.lit || state.t > f.lit + feel.flareBurn) continue
+    const dx = b.x - p.x, dz = b.z - p.z
+    if (dx * dx + dz * dz < FLARE_SEEN * FLARE_SEEN) markFlare(m, b.x, b.z)
+  }
   for (const k of world.markers) {
     if (m.markers.includes(k.id) || Math.hypot(k.x - p.x, k.z - p.z) > feel.findRadius) continue
     m.markers.push(k.id)
@@ -400,6 +428,7 @@ function compareMaps(state: WoodsState, a: Player, b: Player) {
     for (const id of from.map.tapes) addUnique(to.map.tapes, id)
     for (const id of from.map.markers) addUnique(to.map.markers, id)
     for (const id of from.map.clues) addUnique(to.map.clues, id)
+    for (let i = 0; i < from.map.flares.length; i += 2) markFlare(to.map, from.map.flares[i]!, from.map.flares[i + 1]!)
     const heard = to.map.heard.filter((h) => h.from !== from.id)
     heard.push({ from: from.id, serial: from.serial, trail: from.map.trail.slice() })
     for (const h of from.map.heard) if (h.from !== to.id && !heard.some((x) => x.from === h.from)) heard.push({ from: h.from, serial: h.serial, trail: h.trail.slice() })
@@ -585,6 +614,8 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     p.light = light
     stepFlicker(state, p, feel, dt)
     stepTie(state, world, p, input.tie && p.mapRaise < 0.3, feel, dt)
+    if (p.capture) dropFlare(state.flares, world, p, state.t, state.events)
+    else if (!p.bot) stepFlareHand(state.flares, world, p, !!input.flare, state.t, state.events)
     const wasSignal = p.signal > SIGNAL_HOLD
     p.signal = p.light && p.pitch > SIGNAL_PITCH ? p.signal + dt : 0
     if (!wasSignal && p.signal > SIGNAL_HOLD) state.events.push({ kind: "signal", by: p.id, x: p.x, z: p.z })
@@ -596,6 +627,7 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     const brain = e.kind === "clue-found" ? state.brains.find((b) => b.id === e.by) : undefined
     if (brain) { brain.mode = "found"; brain.timer = 14 }
   }
+  stepFlareBodies(state.flares, world, state.t, dt, feel, new Set(state.players.filter((p) => !p.capture).map((p) => p.id)))
   for (let i = 0; i < state.players.length; i++) for (let j = i + 1; j < state.players.length; j++) {
     const a = state.players[i]!, b = state.players[j]!
     if ((a.mapRaise > 0.9 || b.mapRaise > 0.9) && Math.hypot(a.x - b.x, a.z - b.z) < COMPARE_RANGE) compareMaps(state, a, b)
@@ -605,7 +637,7 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   const people = state.players.filter((p) => !p.bot)
   const sound = stepDistant(state.distant, world, people, state.t, feel.distantRate, feel)
   if (sound) state.events.push(sound)
-  const creature = stepCreature(state.distant, world, state.players, state.t, feel, SIGNAL_HOLD)
+  const creature = stepCreature(state.distant, world, state.players, state.t, feel, SIGNAL_HOLD, flareSources(state.flares, world, state.players, state.t, feel))
   if (creature) state.events.push(creature)
   // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]

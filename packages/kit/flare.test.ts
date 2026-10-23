@@ -169,3 +169,17 @@ test("an obstacles callback that pushes never sees last substep's cylinders", ()
   expect(seen.length).toBeGreaterThan(10)
   expect(seen.every(n => n === 0)).toBe(true)
 })
+
+test("a wall box stops it and its roof can catch it", () => {
+  const env: ThrownEnv = {
+    ground: () => 0,
+    boxes: (_x, _z, _r, out) => { out.push(3, -2, 5, 2, 2.5); return 1 },
+  }
+  const b = throwBody(0, 1, 0, 8, 1, 0, 5)
+  for (let i = 0; i < 600 && !b.rest; i++) stepThrown(b, 1 / 60, env)
+  expect(b.rest).toBe(true)
+  expect(b.x).toBeLessThan(3)
+  const roof = throwBody(4, 4, 0, 0, 0, 0, 5)
+  for (let i = 0; i < 600 && !roof.rest; i++) stepThrown(roof, 1 / 60, env)
+  expect(roof.y).toBeCloseTo(2.5125, 3)
+})

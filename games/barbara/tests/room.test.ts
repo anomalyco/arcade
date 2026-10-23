@@ -2,10 +2,11 @@ import { expect, test } from "bun:test"
 import { WoodsRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { BOT_ID, MAX_TAPES, TRAIL_MAX, tieTarget, type MapKnowledge } from "../shared/sim"
-import { applyMapDelta, decodeServer, packIntent, ROOM_FEEL, TEAM, tapeFromRow, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { applyFlares, applyMapDelta, decodeServer, packIntent, ROOM_FEEL, TEAM, tapeFromRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import type { PlayerInput } from "../shared/sim"
 import { trunkBetween } from "../shared/creature"
 import { isDeepWater } from "../shared/world"
+import { createFlares, flyFor } from "../shared/flares"
 
 /** A fake client that keeps what a real one would: the tapes (join list + events) and its map (from deltas). */
 type Client = { conn: { send(d: string): void; close(): void }; got: ServerMsg[]; keep: boolean; bytes: number; biggest: number; token?: string; seq: number; closed: boolean; tapes: Map<number, number>; map: MapKnowledge }
@@ -27,7 +28,7 @@ function setup() {
   const room = new WoodsRoomCore("test1", () => now)
   const tick = (n = 1) => { for (let i = 0; i < n; i++) { now += 1000 / 30; room.step() } }
   const connect = (name: string, token?: string, keep = true): Client => {
-    const c: Client = { got: [], keep, bytes: 0, biggest: 0, seq: 0, closed: false, tapes: new Map(), map: { trail: [], heard: [], tapes: [], markers: [], clues: [] }, conn: { send: (d) => { c.bytes += d.length; c.biggest = Math.max(c.biggest, d.length); const m = decodeServer(d); if (m) receive(c, m) }, close: () => { c.closed = true } } }
+    const c: Client = { got: [], keep, bytes: 0, biggest: 0, seq: 0, closed: false, tapes: new Map(), map: { trail: [], heard: [], tapes: [], markers: [], clues: [], flares: [] }, conn: { send: (d) => { c.bytes += d.length; c.biggest = Math.max(c.biggest, d.length); const m = decodeServer(d); if (m) receive(c, m) }, close: () => { c.closed = true } } }
     room.open(c.conn)
     room.message(c.conn, JSON.stringify({ type: "hello", build: BUILD, name, token }))
     const w = c.got.find((m) => m.type === "welcome") as { token: string } | undefined
@@ -283,3 +284,26 @@ test("a long room stays bounded: tapes, known tapes, copied paths, and bytes per
   expect(Math.max(kit.biggest, aiden.biggest)).toBeLessThan(16_000)
   console.log(`long room, KB/s per seat by minute (Kit, Aiden): ${perMinute.map((r) => r.map((b) => (b / 60 / 1024).toFixed(2)).join("/")).join(" ")}; biggest frame ${Math.max(kit.biggest, aiden.biggest)} B`)
 }, 120_000)
+
+test("a thrown flare reaches everyone and survives a deploy: pocket count after the hop fields, rows, checkpoint", () => {
+  const { room, tick, connect, send, last, advance } = setup()
+  const a = connect("Kit"), b = connect("Aiden")
+  for (let i = 0; i < 2; i++) { send(a, { flare: true }); send(b, {}); tick() }
+  for (let i = 0; i < 150; i++) { send(a, {}); send(b, {}); tick() }
+  const f = room.state.flares.list[0]!
+  expect(f.body?.rest).toBe(true)
+  // `you`: x, z, vx, vz, map raise, hop y, hop v, yaw, pitch, light, then the pocket.
+  expect(last(a).you!.length).toBe(11)
+  expect(last(a).you![10]).toBe(0)
+  expect(last(b).you![10]).toBe(1)
+  const copy = createFlares()
+  for (const m of b.got) if (m.type === "s" && m.fl) applyFlares(copy, m.fl, m.t, (g, s) => flyFor(room.world, g, s))
+  expect(copy.list.map((g) => [g.id, g.body!.x, g.body!.z, g.body!.rest])).toEqual([[f.id, f.body!.x, f.body!.z, true]])
+  // Saved and restored (a deploy): the flare lies where it was, nobody's key counts as still down.
+  room.state.players.find((p) => p.id === 1)!.flareLatch = true
+  const saved = JSON.parse(JSON.stringify(room.checkpoint()))
+  const back = WoodsRoomCore.restore(saved, () => advance(0))
+  expect(back.state.flares.list.map((g) => [g.id, g.body!.x, g.body!.z, g.body!.rest])).toEqual([[f.id, f.body!.x, f.body!.z, true]])
+  expect(back.state.players.filter((p) => !p.bot).every((p) => !p.flareLatch)).toBe(true)
+  expect(() => WoodsRoomCore.restore({ ...saved, state: { ...saved.state, flares: undefined } }, () => 0)).toThrow()
+})
