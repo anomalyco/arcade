@@ -268,6 +268,16 @@ a column, not a point.
 and lamps (Outbreak `games/outbreak/src/air/smoke.ts`); curl-advected tyre smoke that stays where the tyre made it
 (`packages/kit/fx/smoke-trail.ts`, Getaway).
 
+**Road flare (1996 fusee).** Strontium-red flame, sparks, slag and a smoke column lit red from below, one kit
+`Particles` pool lit only by the flares (`packages/kit/fx/flare.ts`, burn curve `sim/flare-burn.ts`, throw
+`sim/thrown.ts`). In BARBARA (`games/barbara/src/flare-view.ts`) it is a dim, broad point light (power 4 against the
+torch's 70, reach 18 m) whose trunks cast polar shadows, a mist fog lamp, a point glow for range and, past 40 m, a
+soft haze sprite (`ForestGlow.soft`) the trunks cut up, since the fog march's lamp glow is all behind trunks there.
+- Cost: +1.43 ms High, +1.5 ms Low on `pro` at 1280×720 with one flare 5 m ahead (`mini`: +1.09 / +0.91); about half
+  the light, half the mist lamp, shadows and smoke in the noise. Decision: pending Kit.
+- Pitfalls: a held flare a hand from the eye fills the frame with lit smoke and mist; cut its own fog, smoke and halo.
+  Far off, the haze has to be bright (peak ~0.5 × power × fog) to show in the few gaps a dense stand leaves at 120 m.
+
 - Pitfalls:
   - **Software-GPU smoke tests time out on heavy scenes (#392).** One Lot frame takes ~190 s to rasterize on CI's
     SwiftShader. The Lot smoke now draws offscreen and checks validation with an error-scope round trip instead of

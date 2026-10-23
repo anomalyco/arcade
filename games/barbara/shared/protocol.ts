@@ -5,6 +5,7 @@ import { FEEL, SIGNAL_HOLD_SECONDS, type MapKnowledge, type Player, type PlayerI
 import { TAPE_HEIGHT } from "./sim"
 import type { DistantState } from "./distant"
 import type { NightPhase, NightReason, NightState } from "./night"
+import { launchBody, type Flare, type FlareState } from "./flares"
 import type { WoodsWorld } from "./world"
 
 /**
@@ -34,19 +35,19 @@ export function quantizeInput(i: PlayerInput): PlayerInput {
   return unpackIntent(packIntent(i))
 }
 export function packIntent(i: PlayerInput): number[] {
-  const bits = (i.light ? 1 : 0) | (i.tie ? 2 : 0) | (i.map ? 4 : 0) | (i.sprint ? 8 : 0) | (i.jump ? 16 : 0)
+  const bits = (i.light ? 1 : 0) | (i.tie ? 2 : 0) | (i.map ? 4 : 0) | (i.sprint ? 8 : 0) | (i.jump ? 16 : 0) | (i.flare ? 32 : 0)
   return [Math.round(i.mx * 100), Math.round(i.mz * 100), Math.round(wrapAngle(i.yaw) * 1000), Math.round(i.pitch * 1000), bits]
 }
 export function unpackIntent(a: readonly number[]): PlayerInput {
   const n = (k: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number.isFinite(a[k]) ? a[k]! : 0))
-  const bits = n(4, 0, 31) | 0
+  const bits = n(4, 0, 63) | 0
   let mx = n(0, -100, 100) / 100, mz = n(1, -100, 100) / 100
   const len = Math.hypot(mx, mz)
   if (len > 1) { mx /= len; mz /= len }
-  return { mx, mz, yaw: n(2, -3200, 3200) / 1000, pitch: n(3, -1500, 1500) / 1000, light: !!(bits & 1), tie: !!(bits & 2), map: !!(bits & 4), sprint: !!(bits & 8), jump: !!(bits & 16) }
+  return { mx, mz, yaw: n(2, -3200, 3200) / 1000, pitch: n(3, -1500, 1500) / 1000, light: !!(bits & 1), tie: !!(bits & 2), map: !!(bits & 4), sprint: !!(bits & 8), jump: !!(bits & 16), flare: !!(bits & 32) }
 }
 
-/** Tie/map are held; a jump press is carried over stalls and never repeated by a stand-in. */
+/** Tie, map and flare are held; a jump press is carried over stalls and never repeated by a stand-in. */
 export const intentOps: InputOps<PlayerInput> = {
   merge: (a, b) => ({ ...b, jump: !!(a.jump || b.jump) }),
   standIn: (last) => ({ ...last, jump: false }),
@@ -101,7 +102,7 @@ export type Snapshot = {
   ack: number
   /** Your player id. */
   me: number
-  /** Your authoritative motion: x, z, vx, vz, map raise, hop y, hop v, yaw, pitch, light (0/1). */
+  /** Your authoritative motion: x, z, vx, vz, map raise, hop y, hop v, yaw, pitch, light (0/1); then the flares in your pocket (`you[10]`). */
   you?: number[]
   p: PlayerRow[]
   /** Everyone's names by player id, when the set of walkers changes. */
@@ -116,6 +117,8 @@ export type Snapshot = {
   distant?: DistantState
   /** The night (clock, finds, spares taken), when it changes. */
   night?: NightWire
+  /** Every flare (`flareRow`) and the camp's spares, on join and whenever one is struck, thrown, lands or goes. */
+  fl?: { spares: number; rows: number[][] }
 }
 
 /**
@@ -131,19 +134,22 @@ export type MapDelta = {
   markers?: number[]
   /** Clue ids on your map, all of them, when that changes. */
   clues?: number[]
+  /** Every flare seen burning (x, z pairs), when it grows. */
+  flares?: number[]
   heard?: { from: number; at: number; trail: number[] }[]
   unheard?: number[]
 }
 
 /** A client's copy of its map from the room's deltas. */
 export function applyMapDelta(m: MapKnowledge, d: MapDelta): void {
-  if (d.reset) { m.trail = []; m.tapes = []; m.markers = []; m.heard = []; m.clues = [] }
+  if (d.reset) { m.trail = []; m.tapes = []; m.markers = []; m.heard = []; m.clues = []; m.flares = [] }
   m.trail.length = Math.min(m.trail.length, d.from)
   m.trail.push(...d.trail)
   if (d.gone) m.tapes = m.tapes.filter((id) => !d.gone!.includes(id))
   if (d.tapes) for (const id of d.tapes) if (!m.tapes.includes(id)) m.tapes.push(id)
   if (d.markers) m.markers = d.markers
   if (d.clues) m.clues = d.clues
+  if (d.flares) m.flares = d.flares
   if (d.unheard) m.heard = m.heard.filter((h) => !d.unheard!.includes(h.from))
   for (const h of d.heard ?? []) {
     let e = m.heard.find((x) => x.from === h.from)
@@ -158,6 +164,42 @@ export type ServerMsg = RoomFrame<RosterRow, WoodsEvent> | Snapshot
 export function playerRow(p: Player, away: boolean): PlayerRow {
   const bits = (p.light ? BIT.light : 0) | (p.flickerLeft > 0 ? BIT.flicker : 0) | (p.bot ? BIT.bot : 0) | (p.signal > SIGNAL_HOLD_SECONDS ? BIT.signal : 0) | (p.tie?.removing ? BIT.untie : 0) | (p.mapRaise > 0.5 ? BIT.map : 0) | (away ? BIT.away : 0) | (p.spare ? BIT.spare : 0) | (p.swap > 0 ? BIT.swap : 0)
   return [p.id, Math.round(p.x * 100), Math.round(p.z * 100), Math.round(p.vx * 100), Math.round(p.vz * 100), Math.round(wrapAngle(p.yaw) * 1000), Math.round(p.pitch * 1000), bits, p.tie ? Math.round(p.tie.progress * 100) : 0, p.tie ? p.tie.tree : -1, Math.ceil(p.charge * 100), Math.round(p.air.y * 1000), Math.round(p.air.v * 1000)]
+}
+
+/**
+ * A flare: id, by, seed, lit·1000, thrown·1000 (−1 held); once thrown its launch (x, y, z, vx, vy, vz)·1000; once at
+ * rest where it lies (x, y, z, spin)·1000. The room rounds all of these to mm in the sim, so the numbers are exact.
+ */
+export function flareRow(f: Flare): number[] {
+  const k = (v: number) => Math.round(v * 1000)
+  const row = [f.id, f.by, f.seed, k(f.lit), f.thrown < 0 ? -1 : k(f.thrown)]
+  if (f.launch) row.push(...f.launch.map(k))
+  if (f.launch && f.body?.rest) row.push(k(f.body.x), k(f.body.y), k(f.body.z), k(f.body.spin))
+  return row
+}
+
+/**
+ * The room's flares into a client's copy. A flight already under way keeps flying on this machine; a new one starts
+ * from its launch, caught up to the room's time `t`; a resting place snaps the body to it.
+ */
+export function applyFlares(s: FlareState, fl: NonNullable<Snapshot["fl"]>, t: number, fly: (f: Flare, seconds: number) => void): void {
+  const old = new Map(s.list.map((f) => [f.id, f]))
+  s.spares = fl.spares
+  s.list = fl.rows.map((r) => {
+    const n = (i: number) => r[i]! / 1000
+    // Ids start again each night: an old flare is the same one only if it was struck by the same hand at the same time.
+    const prev = old.get(r[0]!), same = prev && prev.by === r[1] && prev.lit === r[3]! / 1000 ? prev : undefined
+    const f: Flare = same ?? { id: r[0]!, by: r[1]!, seed: r[2]!, lit: n(3), thrown: -1, launch: null, body: null }
+    f.thrown = r[4]! < 0 ? -1 : n(4)
+    if (r.length >= 11 && !f.launch) {
+      f.launch = [n(5), n(6), n(7), n(8), n(9), n(10)]
+      f.body = launchBody(f)
+      if (f.body) fly(f, Math.max(0, t - f.thrown))
+    }
+    if (r.length >= 15 && f.body) Object.assign(f.body, { x: n(11), y: n(12), z: n(13), spin: n(14), vx: 0, vy: 0, vz: 0, rest: true })
+    return f
+  })
+  s.rev++
 }
 
 export const tapeRow = (t: Tape): number[] => [t.id, t.tree, Math.round(t.yaw * 1000), t.by, Math.round(t.at * 10)]

@@ -97,9 +97,9 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/sim/abilities" || s === "@arcade/kit/sim/props" || s === "@arcade/kit/sim/boids",
   },
   {
-    area: "`sim/thrown`",
-    description: "Deterministic thrown body: ballistic arc, bounce and roll on terrain, stops against trunks and rocks, comes to rest",
-    match: (s) => s === "@arcade/kit/sim/thrown",
+    area: "`sim/{thrown,flare-burn}`",
+    description: "Deterministic thrown body (arc, bounce, roll, stops against trunks, rocks and walls, rests) and a road flare's pure burn and sputter",
+    match: (s) => s === "@arcade/kit/sim/thrown" || s === "@arcade/kit/sim/flare-burn",
   },
   {
     area: "`server/*`",

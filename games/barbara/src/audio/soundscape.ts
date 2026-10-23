@@ -21,7 +21,13 @@ import { canopyDensity, gustAt, indoorsAt, insectLevel, nearestShore, nearestStr
 
 export type Listener = { x: number; y: number; z: number; yaw: number }
 /** Layers the listening page and the Lab can solo. */
-export type SoundLayer = "wind" | "creaks" | "room" | "leaves" | "insects" | "lake" | "dock" | "lights" | "walls" | "distant"
+export type SoundLayer = "wind" | "creaks" | "room" | "leaves" | "insects" | "lake" | "dock" | "lights" | "walls" | "distant" | "flares"
+/** A burning road flare as the ears get it (`shared/flares.ts` `flareSources`). */
+export type FlareSound = { id: number; x: number; y: number; z: number; level: number }
+/** Road flares' levels: the scrape and the catch in the hand, and the hiss within 1.5 m (it falls off as 1/d past that). */
+const FLARE_LEVEL = { strike: 0.16, ignite: 0.25, burn: 0.75 }
+/** Hissing flares heard at once (the nearest). */
+const FLARE_LOOPS = 4
 
 const SPEED_OF_SOUND = 343
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
@@ -205,6 +211,7 @@ export class Soundscape {
   /** One-shots scheduled or sounding, so a lost focus stops them and a signal fades the distant ones. */
   private voices = new Set<Voice>()
   private signalSince: number | null = null
+  private flareLoops = new Map<number, { src: AudioBufferSourceNode; gain: GainNode; lp: BiquadFilterNode; pan: PannerNode; wet: GainNode }>()
 
   constructor(readonly ctx: BaseAudioContext, private readonly out: AudioNode, private readonly settings: SoundSettings, private readonly baseUrl: string, private readonly world: () => WoodsWorld) {
     this.outdoor = ctx.createBiquadFilter()
@@ -256,6 +263,54 @@ export class Soundscape {
   stopAll(): void {
     for (const v of this.voices) { try { v.src.stop() } catch {} }
     this.voices.clear()
+    this.flares([], { x: 0, y: 0, z: 0, yaw: 0 })
+  }
+
+  /**
+   * A flare struck in a hand at (x, y, z): the cap's scrape now, and `scrape` seconds later the pop and whoosh of it
+   * catching. `elapsed` of it has already passed (a room's event arriving late).
+   */
+  flareStrike(seed: number, x: number, y: number, z: number, l: Listener, scrape: number, elapsed = 0): void {
+    if (!this.on("flares")) return
+    const s = this.settings.soundFlares
+    if (elapsed < 0.4) this.oneShot("flare.strike", seed % 3, x, y, z, l, FLARE_LEVEL.strike * s, { reverb: 0.12, elapsed, rate: 0.95 + 0.1 * ((seed * 0.37) % 1) })
+    if (elapsed < scrape + 0.4) this.oneShot("flare.ignite", (seed >> 2) % 3, x, y, z, l, FLARE_LEVEL.ignite * s, { reverb: 0.2, elapsed: elapsed - scrape })
+  }
+
+  /** Once a frame: the hiss and sputter of the nearest burning flares, each a loop where it lies (or in a hand). */
+  flares(list: readonly FlareSound[], l: Listener): void {
+    if (!list.length && !this.flareLoops.size) return
+    const ctx = this.ctx, now = ctx.currentTime
+    const buffer = this.buffers.get("flare.burn")?.[0]
+    const near = buffer && this.on("flares") ? [...list].sort((a, b) => Math.hypot(a.x - l.x, a.z - l.z) - Math.hypot(b.x - l.x, b.z - l.z)).slice(0, FLARE_LOOPS) : []
+    for (const [id, v] of this.flareLoops) {
+      if (near.some((f) => f.id === id)) continue
+      v.gain.gain.setTargetAtTime(0, now, 0.15)
+      v.src.stop(now + 0.8)
+      this.flareLoops.delete(id)
+    }
+    for (const f of near) {
+      let v = this.flareLoops.get(f.id)
+      if (!v) {
+        const src = this.loop(buffer!, "flare.burn", (f.id * 2.3) % 6, 0.94 + ((f.id * 0.61) % 1) * 0.12)
+        const lp = ctx.createBiquadFilter()
+        lp.type = "lowpass"
+        lp.Q.value = 0.5
+        const gain = ctx.createGain()
+        gain.gain.value = 0
+        const pan = this.panner(true)
+        const wet = ctx.createGain()
+        src.connect(lp); lp.connect(gain); gain.connect(pan); pan.connect(this.outdoor); gain.connect(wet); wet.connect(this.verbIn)
+        src.onended = () => { for (const n of [src, lp, gain, pan, wet]) n.disconnect() }
+        this.flareLoops.set(f.id, (v = { src, gain, lp, pan, wet }))
+      }
+      const d = Math.hypot(f.x - l.x, f.y - l.y, f.z - l.z)
+      Soundscape.place(v.pan, f.x, f.y, f.z, now)
+      v.lp.frequency.setTargetAtTime(distanceCutoff(d), now, 0.1)
+      // Sputtering harder in the flare-up, quieter as it gutters; a point source past arm's length.
+      v.gain.gain.setTargetAtTime(FLARE_LEVEL.burn * this.settings.soundFlares * Math.min(1.2, f.level) / Math.max(1.5, d), now, 0.08)
+      v.wet.gain.setTargetAtTime(0.3 * (0.3 + 0.7 * Math.min(1, d / 220)), now, 0.1)
+    }
   }
 
   private random(): number {

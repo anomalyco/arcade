@@ -8,6 +8,7 @@ export const SOUND = {
   soundLake: 1,
   soundCamp: 1,
   soundRoom: 1,
+  soundFlares: 1,
   distantLevel: 1,
   soundReverb: 1,
 }
@@ -22,4 +23,5 @@ export const SOUND_CONTROLS: LabControl[] = [
   { key: "soundLake", label: "Lake and dock", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "soundCamp", label: "String-light buzz", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "soundRoom", label: "Forest room tone", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "soundFlares", label: "Road flares", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
 ]
