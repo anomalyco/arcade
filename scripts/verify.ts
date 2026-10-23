@@ -1,6 +1,6 @@
 // One-command verification.
 //
-//   bun run verify              affected typechecks and unit tests, with incremental typecheck caches
+//   bun run verify              affected typechecks and unit tests
 //   bun run verify --all        every workspace target, same headless path
 //   bun run verify:remote       snapshot changed paths here, then run verify through HiveMind (cargo)
 //   bun run verify:smoke --game lot   build and smoke one game at PR pitch time (browser admission)
@@ -22,8 +22,9 @@
 // and root changes check everything, a games/outbreak change checks Outbreak and the Lab, and docs check nothing.
 //
 // Both modes split each target's `check` script into its commands and run them in parallel. Test suites run one at
-// a time, game suites with `bun test --parallel=<test-workers>`, all with a 20 s per-test timeout. The fast path adds `tsc --incremental` build info under
-// node_modules/.cache/arcade-verify and runs packages/kit's suite once instead of also inside Getaway and Blackout.
+// a time, game suites with `bun test --parallel=<test-workers>`, all with a 20 s per-test timeout. Typechecks use
+// scripts/typecheck.ts (Bun's TS7 checker, bounded threads, no incremental cache). The fast path runs packages/kit's
+// suite once instead of also inside Getaway and Blackout.
 // Smoke uses Metal on macOS and SwiftShader elsewhere (scripts/smoke.mjs).
 import { $ } from "bun"
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs"
@@ -118,9 +119,7 @@ function expand(scripts: Record<string, string>, script: string): string[] {
   })
 }
 
-const cacheDir = join(repo, "node_modules/.cache/arcade-verify")
-
-function targetSteps(target: Target, root: string, { incremental, dedupeKit }: { incremental: boolean; dedupeKit: boolean }): Step[] {
+function targetSteps(target: Target, root: string, { dedupeKit }: { dedupeKit: boolean }): Step[] {
   const steps: Step[] = []
   for (const dir of target.dirs) {
     const cwd = join(root, dir)
@@ -143,13 +142,8 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
       if (isBuildId(raw)) continue
       let cmd = raw.replace(/^bun scripts\/build-id\.ts && /, "")
       let kind = "other"
-      if (/^tsc\b/.test(cmd)) {
+      if (/^bun (?:\.\.\/)*scripts\/typecheck\.ts\b/.test(cmd)) {
         kind = "typecheck"
-        if (incremental) {
-          const project = cmd.match(/-p\s+(\S+)/)?.[1] ?? "tsconfig.json"
-          const info = join(cacheDir, `${relative(root, cwd).replaceAll("/", "-")}-${basename(project, ".json")}.tsbuildinfo`)
-          cmd = `${cmd} --incremental --tsBuildInfoFile ${info}`
-        }
       } else if (/^bun test\b/.test(cmd)) {
         kind = "test"
         // Getaway and Blackout also run packages/kit's suite; when the packages target is in the plan it runs once there.
@@ -159,7 +153,7 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
         if (!/--max-concurrency\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --max-concurrency=4")
         if (!/--timeout\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --timeout=20000")
       } else if (/^vite build\b/.test(cmd)) kind = "build"
-      const id = tag(kind === "typecheck" ? `tsc ${cmd.match(/-p\s+tsconfig\.(\w+)\.json/)?.[1] ?? "app"}` : kind)
+      const id = tag(kind === "typecheck" ? `typecheck ${cmd.match(/-p\s+(\S+)/)?.[1] ?? "tsconfig.json"}` : kind)
       steps.push({ id, cwd, cmd, deps: kind === "other" && build ? [...prep, build] : [...prep], kind })
       if (kind === "build") build = id
     }
@@ -308,12 +302,11 @@ if (release && !flag("--list")) {
 }
 
 const withPackages = selected.some((t) => t.name === "packages")
-const steps = tierSteps(selected.flatMap((t) => targetSteps(t, root, { incremental: !release, dedupeKit: !release && withPackages })))
+const steps = tierSteps(selected.flatMap((t) => targetSteps(t, root, { dedupeKit: !release && withPackages })))
 if (flag("--list")) {
   for (const s of steps) console.log(`${s.id.padEnd(28)} ${relative(root, s.cwd).padEnd(16)} ${s.cmd}${s.deps.length ? `   (after ${s.deps.join(", ")})` : ""}`)
   process.exit(0)
 }
-if (!release && steps.some((s) => s.kind === "typecheck")) await $`mkdir -p ${cacheDir}`.quiet()
 
 let results: Result[] = []
 try {

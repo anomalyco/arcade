@@ -1,7 +1,5 @@
 {
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": "../../node_modules/.cache/tsc/outbreak-app.tsbuildinfo",
     "lib": ["ESNext", "DOM", "DOM.Iterable"], "target": "ESNext", "module": "Preserve",
     "moduleResolution": "bundler", "types": ["@webgpu/types", "vite/client", "bun"],
     "allowImportingTsExtensions": true, "verbatimModuleSyntax": true, "noEmit": true,

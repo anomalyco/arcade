@@ -88,7 +88,7 @@ export type ForestFrameInput = {
   casters?: readonly SpotShadowCaster[]
   /**
    * Kit particles (a road flare's flame, sparks and smoke), lit only by `lights` (the forest's torches are beams, not
-   * points) over a night-dark `ambient`. The game steps the pool.
+   * points) over a night-dark `ambient`. The game steps the pool. A light with a plan `cone` lights them only inside it.
    */
   particles?: { pool: Particles; lights: readonly SceneLight[]; ambient?: readonly [number, number, number] }
   /** A storm this frame (`ForestStorm.frame(...).view`): lightning, rain, wet surfaces, storm wind, the eye after a flash. */
@@ -558,7 +558,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     if (f.particles && f.particles.pool.count > 0) {
       fxLights.update(f.particles.lights, [])
       lastFrame.fxParticles = f.particles.pool
-      lastFrame.fxLighting = { ambient: f.particles.ambient ?? [0.002, 0.0022, 0.003], lights: fxLights.lights, lightCount: fxLights.lightCount }
+      lastFrame.fxLighting = { ambient: f.particles.ambient ?? [0.002, 0.0022, 0.003], lights: fxLights.lights, lightCount: fxLights.lightCount, spotCones: true }
     }
   }
 

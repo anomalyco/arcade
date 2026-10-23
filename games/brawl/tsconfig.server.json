@@ -1,7 +1,5 @@
 {
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": "../../node_modules/.cache/tsc/brawl-server.tsbuildinfo",
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",

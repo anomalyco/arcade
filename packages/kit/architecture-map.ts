@@ -57,6 +57,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s.startsWith("@arcade/kit/proof/"),
   },
   {
+    area: "`sim/replay`",
+    description: "Seeded input recordings, per-tick state hashes and first-divergence golden checks",
+    match: (s) => s === "@arcade/kit/sim/replay",
+  },
+  {
     area: "`sim/rng`",
     description: "Seeded PRNG (`Rng`, `mulberry32`, `seedOf`, `hash2`, `hash3`)",
     match: (s) => s === "@arcade/kit/sim/rng",

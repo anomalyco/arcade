@@ -1,8 +1,9 @@
-import { BodycamRig } from "@arcade/kit/client/bodycam-rig"
+import { BodycamRig, type BodycamRigSettings } from "@arcade/kit/client/bodycam-rig"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { CAMERA_ARTIFACT_DEFAULTS, CameraArtifacts, cameraArtifactControls, type CameraArtifactFlicker, type CameraArtifactSettings, type CameraArtifactSource } from "@arcade/kit/gpu/post/camera-artifacts"
 import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CameraFilter, applyCameraFilterPreset, cameraFilterControls, createCameraFilterSettings, type CameraFilterSettings } from "@arcade/kit/gpu/post/camcorder"
+import { CAMERA_BLUR_DEFAULTS, CameraBlur, turnSpeed } from "@arcade/kit/gpu/post/camera-blur"
 import { FinalPassChain } from "@arcade/kit/gpu/post/final-chain"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { torchProfile } from "@arcade/kit/forest/settings"
@@ -25,47 +26,78 @@ import type { PlaceLights } from "./world-view"
  * artifacts. All off composites straight to the canvas. World-side pieces stay here: eyeshine sprites and the
  * camcorder's infrared lamp (a light at the lens).
  */
-export type CameraLookId = "eyes" | "bodycam" | "nightshot" | "phone" | "vhs"
+export type CameraLookId = "eyes" | "bodycam" | "nightshot" | "phone" | "vhs" | "hi8" | "trail"
 export const CAMERA_LOOK_DEFAULTS = {
   look: "eyes" as CameraLookId,
   eyeshine: false,
   /** NightShot's infrared lamp beside the lens (cd×, like the torch's power). */
   irLight: false,
   irPower: 24,
+  /** Body cam: switches to infrared (monochrome, its own IR lamp) a moment after your torch goes off. */
+  irAuto: false,
+  /** Motion blur on fast turns (× the camera feel's own); a recorded look smears more than eyes. */
+  blur: 0.25,
+  /** Extra head bob from the camera feel (×); a chest rig bounces on its own. */
+  bob: 1,
+  /** Hold the right mouse button to zoom (a camcorder's motor zoom), to this much of the FOV at full tele. */
+  zoom: false,
+  zoomTele: 0.35,
 }
 export type CameraLookSettings = typeof CAMERA_LOOK_DEFAULTS
 
-type Preset = { label: string; note: string; look?: Partial<CameraLookSettings>; artifacts?: Partial<CameraArtifactSettings>; filter?: Partial<CameraFilterSettings> }
+/** `lab` looks are for found footage and debriefs, not for playing in (they stay out of the Settings menu). */
+type Preset = { label: string; note: string; lab?: boolean; look?: Partial<CameraLookSettings>; artifacts?: Partial<CameraArtifactSettings>; filter?: Partial<CameraFilterSettings> }
 const strip = <T extends { label: string }>({ label: _, ...rest }: T) => rest
+/** The night of the search, for every burned-in stamp (STORY.md: November 1996). */
+export const STORY_EPOCH = new Date(1996, 10, 15, 22, 41, 0).getTime()
 export const CAMERA_LOOKS: Record<CameraLookId, Preset> = {
   eyes: { label: "Eyes (today)", note: "Today's look: the forest renderer's own camera, nothing added." },
   bodycam: {
     label: "Body cam, night",
-    note: "Chest mount, 140° fisheye, rolling shutter, auto-gain hunting and a starved encoder; a friend's LED torch bands.",
-    filter: { mode: "bodycam", ...strip(BODYCAM_PRESETS.night), bodyPreset: "night" },
-    artifacts: { compression: true, compressionAmount: 0.8, sensorGain: true, gainAmount: 0.7, gainSmear: 0.35, pwm: true, flare: true, flareAmount: 0.7 },
-    look: { eyeshine: true },
+    note: "Chest mount at sternum height swaying with your torso and steps, a 120° lens with a slight barrel, the time and unit burned in top right, rolling shutter on fast turns, a starved encoder that blocks up in the dark, auto exposure that pumps when a beam crosses the lens, and infrared when your torch is off.",
+    filter: { mode: "bodycam", ...strip(BODYCAM_PRESETS.night), bodyPreset: "night", bodyLens: 120, bodyFisheye: 0.7, bodyMount: 0.38, bodyExposure: 1, bodyRolling: 1.4, bodyCompression: 1 },
+    artifacts: { compression: true, compressionAmount: 0.9, sensorGain: true, gainAmount: 0.8, gainSmear: 0.35, pwm: true, flare: true, flareAmount: 0.9 },
+    look: { eyeshine: true, irAuto: true, irPower: 12, blur: 1, bob: 0.3 },
   },
   nightshot: {
     label: "Camcorder NightShot",
     note: "A '90s Sony in infrared, Blair Witch: green monochrome, the IR lamp's own hotspot, blooming whites, crushed blacks, eyes that glow, and focus hunting in the dark.",
     filter: { mode: "vhs", strength: 0.45, overlay: false, vhsColor: 0, vhsDropouts: 0.4, vhsTracking: 0.2, vhsRoll: 0 },
     artifacts: { infrared: true, infraredBloom: 0.8, sensorGain: true, gainAmount: 1.3, gainSmear: 0.45, focusHunt: true, focusAmount: 0.8 },
-    look: { irLight: true, eyeshine: true },
+    look: { irLight: true, eyeshine: true, blur: 0.8, bob: 0.7 },
   },
   phone: {
     label: "Phone night mode",
     note: "Heavy temporal denoise that ghosts on motion, sharpening halos, noise that grows in the dark, lifted exposure.",
     filter: { mode: "iphone", phoneHdr: 1, phoneSharpen: 1.6, phoneNoise: 1.6, phoneDenoise: 1, phoneExposure: 0.8, phoneFocus: 0.4, phoneCompression: 0.6, phoneFlare: 0.7, phoneShake: 0.25 },
     artifacts: { sensorGain: true, gainAmount: 1, gainSmear: 1, compression: true, compressionAmount: 0.45, flare: true, flareAmount: 0.6 },
+    look: { blur: 0.6, bob: 0.8 },
   },
   vhs: {
     label: "VHS camcorder",
-    note: "An '80s VHS camcorder: soft luma, late colour, tape noise, its date stamp, gain-up in the dark and a lazy autofocus.",
-    filter: { mode: "vhs" },
-    artifacts: { sensorGain: true, gainAmount: 0.6, focusHunt: true, focusAmount: 0.5 },
+    note: "A shoulder VHS camcorder: soft luma, colour that bleeds and arrives late, tracking that wanders, the head-switch tear along the bottom, dropouts, its date stamp, an iris that pumps open in the dark and clamps on a light, and an autofocus that hunts.",
+    filter: { mode: "vhs", vhsYear: 0, vhsSoftness: 1.2, vhsChroma: 1.3, vhsTracking: 0.8, vhsHeadSwitch: 1, vhsDropouts: 1.3, vhsIris: 0.75, vhsRoll: 0.25 },
+    artifacts: { sensorGain: true, gainAmount: 0.7, focusHunt: true, focusAmount: 0.7 },
+    look: { blur: 0.8, bob: 0.8 },
+  },
+  hi8: {
+    label: "Hi8 camcorder",
+    note: "A '90s Hi8 handycam through its viewfinder: sharper and cleaner than VHS, REC, tape counter, battery and the date in the corner, an iris and autofocus that hunt, and a motor zoom on the right mouse button.",
+    filter: { mode: "vhs", vhsYear: 0, stamp: "hi8", vhsSoftness: 0.55, vhsChroma: 0.6, vhsSharpen: 0.7, vhsColor: 0.5, vhsNoise: 0.7, vhsDropouts: 0.5, vhsTracking: 0.25, vhsHeadSwitch: 0.6, vhsInterlace: 0.8, vhsBloom: 0.45, vhsVignette: 0.4, vhsRoll: 0, vhsIris: 0.6 },
+    artifacts: { sensorGain: true, gainAmount: 0.8, gainSmear: 0.3, focusHunt: true, focusAmount: 0.8 },
+    look: { blur: 0.7, bob: 0.8, zoom: true },
+  },
+  trail: {
+    label: "Trail cam (stills)",
+    note: "A trail camera's infrared burst: three grainy monochrome stills a second under its IR flash, its data strip along the bottom. Found footage for a debrief, not for playing in.",
+    lab: true,
+    filter: { mode: "iphone", stamp: "trail", phoneFps: 3, phoneHdr: 0, phoneSharpen: 0.5, phoneNoise: 1.6, phoneDenoise: 0, phoneExposure: 0.25, phoneWhiteBalance: 0, phoneFocus: 0, phoneCompression: 0.8, phoneFlare: 0, phoneShake: 0, phoneMotionBlur: 1, phoneRolling: 0 },
+    artifacts: { infrared: true, infraredBloom: 0.9, infraredTint: 1, sensorGain: true, gainAmount: 1.2, gainSmear: 0 },
+    look: { irLight: true, irPower: 30, eyeshine: true, blur: 0, bob: 0 },
   },
 }
+/** The looks you can play in (the Settings menu's choices); `lab` ones stay in the Lab. */
+export const PLAYABLE_LOOKS = (Object.keys(CAMERA_LOOKS) as CameraLookId[]).filter((id) => !CAMERA_LOOKS[id].lab)
 
 const GROUP = "Camera look"
 
@@ -120,6 +152,25 @@ export type CameraLookFrame = {
   place: PlaceLights
   /** The spider's eyes, drawn whatever the look (`Eyeshine.drawSpider`). */
   spiderEyes?: readonly SpiderEye[]
+  /** How far your map is up (0…1): the whole look fades off as it comes up, so the sheet (drawn before the look) stays sharp. */
+  mapRaise: number
+  /** The camera feel's motion blur (×) and reduce camera motion. */
+  feelBlur: number
+  reduced: boolean
+  /** The zoom button is held (looks with a motor zoom). */
+  zoomHeld: boolean
+  /** The view's vertical field of view (radians) and aspect, for how fast a turn sweeps the screen. */
+  fovY: number
+  aspect: number
+}
+
+/**
+ * The chest rig from the filter's settings with its sway, torso lag and step bob scaled by `motion` (0 under reduced
+ * motion); the lens and the chest mount stay, so the fisheye still matches the render.
+ */
+export function bodycamRig(fs: CameraFilterSettings, motion: number): BodycamRigSettings {
+  const m = Math.max(0, Math.min(1, motion))
+  return { lens: fs.bodyLens, mount: fs.bodyMount, sway: fs.bodySway * m, lag: fs.bodyLag * m, bob: fs.bodyBob * m }
 }
 
 /**
@@ -128,7 +179,7 @@ export type CameraLookFrame = {
  * so proofs stay reproducible and query parameters win.
  */
 export function savedCameraLook(saved: string | null, params: URLSearchParams, automated: boolean): CameraLookId | null {
-  if (automated || !saved || !(saved in CAMERA_LOOKS)) return null
+  if (automated || !saved || !PLAYABLE_LOOKS.includes(saved as CameraLookId)) return null
   if (params.get("lab") === "camera" || [...params.keys()].some((k) => k === "camera" || k.startsWith("woods.camera") || k.startsWith("woods.artifacts"))) return null
   return saved as CameraLookId
 }
@@ -141,9 +192,22 @@ export class CameraLook {
   readonly codec: CameraArtifacts
   readonly eyeshine: Eyeshine
   readonly chain: FinalPassChain
+  /** Shutter blur on fast turns, first in the chain so stamps and HUD stay sharp. */
+  readonly blur: CameraBlur
+  /** Motor zoom position (0 wide … 1 tele) and the field of view it leaves (× the camera's). */
+  zoomLevel = 0
+  fovScale = 1
+  /** The zoom motor ran this frame. */
+  zooming = false
+  /** The infrared mode is on (body cam with your torch off). */
+  infrared = false
+  /** A relay clicked (the IR filter swinging over); the page plays it. */
+  onClick: (() => void) | null = null
+  private dark = 0
   private readonly rig = new BodycamRig()
   private lastEye: readonly number[] = [0, 0, 0]
   private lastYaw = 0
+  private lastPitch = 0
   private lastT = 0
   private world: WoodsWorld | null = null
   private near: ReturnType<typeof treesNear> = []
@@ -156,10 +220,12 @@ export class CameraLook {
     this.lens = new CameraArtifacts(device, format, this.artifacts, "lens", opts.seed)
     this.codec = new CameraArtifacts(device, format, this.artifacts, "codec", opts.seed)
     this.eyeshine = new Eyeshine(opts.seed)
-    this.chain = new FinalPassChain([this.lens, this.filter, this.codec])
+    this.blur = new CameraBlur(device, format, { ...CAMERA_BLUR_DEFAULTS })
+    this.filter.epoch = STORY_EPOCH
+    this.chain = new FinalPassChain([this.blur, this.lens, this.filter, this.codec])
     renderer.setFinalPass(this.chain)
     const fs = this.filter.settings
-    camera.rig = (cam, dt, aspect) => this.rig.step(cam, dt, aspect, { lens: fs.bodyLens, mount: fs.bodyMount, sway: fs.bodySway, lag: fs.bodyLag, bob: fs.bodyBob }, fs.strength, fs.mode === "bodycam")
+    camera.rig = (cam, dt, aspect) => this.rig.step(cam, dt, aspect, bodycamRig(fs, this.filter.motion), fs.strength, fs.mode === "bodycam")
     const sync = () => queueMicrotask(() => panel.sync())
     panel.addControls(this.settings as unknown as Record<string, string | number | boolean>, this.lookControls(sync), { ...CAMERA_LOOK_DEFAULTS })
     panel.addControls(this.artifacts as unknown as Record<string, string | number | boolean>, cameraArtifactControls({ group: GROUP, prefix: "woods.artifacts.", subsection: "Realism" }), { ...CAMERA_ARTIFACT_DEFAULTS })
@@ -173,6 +239,12 @@ export class CameraLook {
   private lookControls(sync: () => void): LabControl[] {
     return [
       { key: "woods.cameraLook", field: "look", label: "Camera look", group: GROUP, type: "select", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })), change: (v) => { this.apply(String(v) as CameraLookId); sync(); this.onLook?.() } },
+      { key: "woods.cameraLookNote", label: "This look", group: GROUP, type: "readout", read: () => CAMERA_LOOKS[this.settings.look]?.note ?? "" },
+      { key: "woods.lookBlur", field: "blur", label: "Motion blur on fast turns", group: GROUP, subsection: "Feel", min: 0, max: 2, step: 0.05, unit: "×" },
+      { key: "woods.lookBob", field: "bob", label: "Extra head bob", group: GROUP, subsection: "Feel", min: 0, max: 2, step: 0.05, unit: "×" },
+      { key: "woods.lookZoom", field: "zoom", label: "Motor zoom (hold right mouse)", group: GROUP, subsection: "Feel", type: "toggle" },
+      { key: "woods.lookZoomTele", field: "zoomTele", label: "Full tele (× the FOV)", group: GROUP, subsection: "Feel", min: 0.15, max: 0.9, step: 0.01, unit: "×", visible: (s) => s["woods.lookZoom"] === true },
+      { key: "woods.irAuto", field: "irAuto", label: "Infrared when your torch is off", group: GROUP, subsection: "World", type: "toggle" },
       { key: "woods.eyeshine", field: "eyeshine", label: "Eyeshine", group: GROUP, subsection: "World", type: "toggle" },
       { key: "woods.eyeshineNow", label: "Show eyes now", group: GROUP, subsection: "World", type: "action", visible: (s) => s["woods.eyeshine"] === true, run: () => this.showEyes() },
       { key: "woods.irLight", field: "irLight", label: "Infrared lamp", group: GROUP, subsection: "World", type: "toggle" },
@@ -185,6 +257,13 @@ export class CameraLook {
     const p = CAMERA_LOOKS[id]
     if (!p) return
     Object.assign(this.settings, CAMERA_LOOK_DEFAULTS, p.look ?? {}, { look: id })
+    this.infrared = false
+    this.dark = 0
+    // A look without a zoom must not keep the last one's tele.
+    this.zoomLevel = 0
+    this.fovScale = 1
+    this.zooming = false
+    this.filter.zoom = 0
     Object.assign(this.artifacts, CAMERA_ARTIFACT_DEFAULTS, p.artifacts ?? {})
     Object.assign(this.filter.settings, CAMERA_FILTER_DEFAULTS, p.filter ?? {})
     if (this.filter.settings.mode === "bodycam") applyCameraFilterPreset(this.filter.settings, "bodycam", this.filter.settings.bodyPreset)
@@ -242,18 +321,51 @@ export class CameraLook {
   frame(f: CameraLookFrame) {
     const s = this.settings, look = this.opts.forest.settings, cam = this.opts.forest.camera
     this.world = f.world
+    const prevYaw = this.lastYaw
     this.lastEye = f.eye; this.lastYaw = f.yaw; this.lastT = f.t
     const halfAngle = (look.torchAngle * Math.PI) / 180
     const profile = torchProfile(look)
     const prof = (t: number) => beamProfileCpu(t, profile)
     const own = f.torches.find((t) => t.kind !== "remote" && t.on) ?? null
     const axis = viewDir(f.yaw, f.pitch)
-    if (s.irLight) {
+    const dt = Math.max(0, Math.min(f.dt, 0.1))
+    // Body cam at night: a beat after your torch goes off the IR-cut filter swings out (a click) and the lamp comes on.
+    this.dark = own ? 0 : this.dark + dt
+    const ir = s.irAuto && this.dark > 0.6
+    if (ir !== this.infrared) {
+      this.infrared = ir
+      this.artifacts.infrared = ir
+      this.artifacts.infraredBloom = 0.9
+      this.artifacts.infraredTint = 1
+      this.onClick?.()
+    }
+    // Motor zoom: about two seconds end to end, easing at the ends, the lens's field of view narrowing with it.
+    const zoomTo = s.zoom && f.zoomHeld ? 1 : 0, wasZoom = this.zoomLevel
+    this.zoomLevel += Math.sign(zoomTo - this.zoomLevel) * Math.min(Math.abs(zoomTo - this.zoomLevel), dt / 2.2)
+    const zl = this.zoomLevel * this.zoomLevel * (3 - 2 * this.zoomLevel)
+    this.fovScale = 1 - (1 - s.zoomTele) * zl
+    this.zooming = this.zoomLevel !== wasZoom
+    this.filter.zoom = this.zoomLevel
+    this.filter.battery = Math.max(0.05, 1 - f.t / (60 * 60))
+    // Reduced motion: no shake, rig sway or shutter blur in the filter, and no turn blur.
+    this.filter.motion = f.reduced ? 0 : 1
+    // The held map is drawn before the final passes, so every one of them fades off as it comes up; stamps and the
+    // viewfinder are drawn at full strength regardless.
+    const clear = Math.max(0, Math.min(1, 1 - f.mapRaise))
+    this.filter.strengthScale = clear
+    this.lens.strengthScale = clear
+    this.codec.strengthScale = clear
+    // Blur on fast turns: the look's share of the feel's, and only while the view is actually turning that fast.
+    this.blur.settings.strength = s.blur * f.feelBlur
+    this.blur.scale = f.reduced ? 0 : clear
+    this.blur.speed = turnSpeed(f.yaw - prevYaw, f.pitch - this.lastPitch, f.dt, f.fovY, f.aspect)
+    this.lastPitch = f.pitch
+    if (s.irLight || this.infrared) {
       f.place.scene.push({ id: 990, x: f.eye[0]!, y: f.eye[2]!, h: f.eye[1]! - 0.05, r: 16, color: [1, 1, 1], power: s.irPower, size: 0.03, unshadowed: true, beam: { axis, halfAngle: 0.55 } })
     }
     const lights = [
       ...(own ? [{ pos: own.pos, dir: own.dir, power: look.torchPower * 5 * (own.level ?? 1), halfAngle, profile: prof }] : []),
-      ...(s.irLight ? [{ pos: f.eye, dir: axis, power: s.irPower * 5, halfAngle: 0.55, profile: prof }] : []),
+      ...(s.irLight || this.infrared ? [{ pos: f.eye, dir: axis, power: s.irPower * 5, halfAngle: 0.55, profile: prof }] : []),
     ]
     if (s.eyeshine) {
       this.eyeshine.step(f.world, f.eye, f.yaw, f.t)

@@ -20,6 +20,17 @@ proven animation techniques to animation.md, not here.
   native 3200×1800), 23.9–24.1 vs 40.6–41.0 ms. Static warmed view, cached shadows, before combined deploy #476;
   this is not a walking/60 fps guarantee. Settings and proof method: [perf/barbara-ultra.md](../../perf/barbara-ultra.md).
 
+- **Use golden replays for simulation regressions.** `@arcade/kit/sim/replay` records seeded per-player inputs and
+  checks a state hash after every tick in `bun test`. Outbreak's first two tapes cover 30 seconds each of four-player
+  scavenging and two-player combat in 526 ms combined on Studio. With short bot-runner contract checks, they replace
+  the 90-second determinism and 60-second squad loops: 635 → 556 ms median (nine noisy warm samples, October 22).
+  Outbreak normalizes snapshot fractions to nine decimal places to absorb measured Mac/Linux math drift; input
+  hashes stay exact and the sim is untouched. The shared helper's default is bit-exact.
+  Failures name the first divergent tick and changed fields. Re-record only after reviewing an intentional sim
+  change; commands and coverage are in [the fixture README](../../games/outbreak/tests/replays/README.md).
+  Use replays and unit tests for logic work, scoped to changed games. Real play is for iterating on that game's
+  look or feel; unchanged games do not need repeated play. Long difficulty and soak coverage remains separate.
+
 - **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
   halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
   non-emissive surfaces in HDR alpha; `forest/post.ts` limits those source taps before the bloom downsample.

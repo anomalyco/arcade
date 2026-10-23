@@ -2,7 +2,8 @@
   "name": "arcade",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.4",
+  "engines": { "bun": ">=1.4.3" },
   "bin": {
     "arcade": "./scripts/arcade.ts"
   },
@@ -12,7 +13,8 @@
     "arcade": "bun scripts/arcade.ts",
     "agent-ops": "bun scripts/agent-ops.ts",
     "check:packages": "bun run --filter '@arcade/*' check",
-    "check:scripts": "bun games/blackout/scripts/build-id.ts && bun games/outbreak/scripts/build-id.ts && tsc --noEmit -p scripts/tsconfig.json && bun test --max-concurrency 4 scripts/verify-scripts.test.ts",
+    "typecheck": "bun scripts/typecheck.ts -p scripts/tsconfig.json",
+    "check:scripts": "bun games/blackout/scripts/build-id.ts && bun games/outbreak/scripts/build-id.ts && bun run typecheck && bun test --max-concurrency 4 scripts/verify-scripts.test.ts scripts/typecheck.test.ts",
     "verify": "bun scripts/verify.ts",
     "verify:remote": "bun scripts/verify-remote.ts",
     "verify:smoke": "bun scripts/verify.ts --smoke",
@@ -23,6 +25,7 @@
     "@webgpu/types": "^0.1.74",
     "vite": "^8.3.4",
     "playwright-core": "^1.64.0",
-    "typescript": "^5.9.3"
+    "typescript": "7.1.0-beta",
+    "typescript-api": "npm:@typescript/typescript6@6.0.2"
   }
 }

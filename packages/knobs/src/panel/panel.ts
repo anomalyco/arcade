@@ -492,7 +492,7 @@ function buildPanel<S extends Schema>(
   let positioned: { constrain(): void; dispose(): void } | undefined
   let helpButton: HTMLButtonElement | undefined
   const togglePopover = (open?: boolean) => {
-    const next = open ?? (popover.hidden || popover.dataset.leaving === "true")
+    const next = open ?? (Boolean(popover.hidden) || popover.dataset.leaving === "true")
     if (next) describeScope()
     reveal(popover, next)
     helpButton?.setAttribute("aria-expanded", String(next))

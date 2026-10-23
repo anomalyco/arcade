@@ -1,6 +1,7 @@
 import { FirstPerson } from "@arcade/kit/client/first-person"
 import { Walk } from "@arcade/kit/client/walk"
 import type { WalkCameraSettings } from "@arcade/kit/client/walk-camera"
+import type { CameraFeel } from "./camera-feel"
 
 /**
  * The shared pointer-locked first-person camera with the shared walk gait (head motion, footsteps), drawn wherever the
@@ -12,6 +13,13 @@ export class WoodsCamera extends FirstPerson {
   private last: { x: number; z: number } | null = null
   private wasAirborne = false
   private dip = { x: 0, v: 0 }
+  /** Camera feel (bob, jolts, leans, FOV push, turning inertia, shake), added to `mount` after the rig each frame. */
+  feel: CameraFeel | null = null
+  /** Per frame, for the feel: walking speed (m/s) and how much extra head bob the camera look wants. */
+  feelInput = { walkSpeed: 1.9, bobScale: 1 }
+  /** A camera look's zoom: × the field of view (1 wide open). */
+  lensScale = 1
+  private applied = { yaw: 0, pitch: 0, roll: 0, fov: 0 }
 
   constructor(canvas: HTMLCanvasElement, private readonly isBlocked: () => boolean, private readonly settings: WalkCameraSettings, private readonly active: () => boolean) {
     super(canvas, isBlocked)
@@ -22,6 +30,7 @@ export class WoodsCamera extends FirstPerson {
     this.last = null
     this.wasAirborne = false
     this.dip.x = this.dip.v = 0
+    this.feel?.reset()
   }
 
   /** The view from (x, z) with the eye at `height`, swaying with the distance walked since last frame. */
@@ -47,11 +56,27 @@ export class WoodsCamera extends FirstPerson {
     this.body.vx = dt > 0 ? dx / dt : 0
     this.body.vy = dt > 0 ? dz / dt : 0
     this.height = height
+    // Last frame's feel comes back out first, so the rig (or nothing) owns `mount` again.
+    const m = this.mount, a = this.applied
+    m.yaw -= a.yaw; m.pitch -= a.pitch; m.roll -= a.roll; m.fov -= a.fov
     // A body-worn camera's mount (camera looks): the view hangs and sways, the aim stays yours.
     this.rig?.(this, dt, aspect)
+    a.yaw = a.pitch = a.roll = a.fov = 0
+    let lift = 0
+    if (this.feel) {
+      const f = this.feel
+      f.frame({ dt, walk: this.walk, vx: this.body.vx, vz: this.body.vy, yaw: this.yaw, rise, walkSpeed: this.feelInput.walkSpeed, reduced: s.reduceMotion, bobScale: this.feelInput.bobScale })
+      a.yaw = f.out.yaw; a.pitch = f.out.pitch; a.roll = f.out.roll; a.fov = f.out.fov
+      m.yaw += a.yaw; m.pitch += a.pitch; m.roll += a.roll; m.fov += a.fov
+      lift = f.out.height
+    }
+    // A camcorder's zoom narrows whatever field of view the rig and feel left.
+    const zoom = (this.fov + m.fov) * (this.lensScale - 1)
+    a.fov += zoom
+    m.fov += zoom
     const w = this.walk, sy = Math.sin(this.yaw), cy = Math.cos(this.yaw)
     this.eye[0] = x + w.lateral * cy
-    this.eye[1] = height + rise + this.mount.height + w.vertical + (s.reduceMotion ? 0 : this.dip.x)
+    this.eye[1] = height + rise + this.mount.height + w.vertical + lift + (s.reduceMotion ? 0 : this.dip.x)
     this.eye[2] = z - w.lateral * sy
     this.direction[0] = -sy * Math.cos(this.pitch)
     this.direction[1] = Math.sin(this.pitch)

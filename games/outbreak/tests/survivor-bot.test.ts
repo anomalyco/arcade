@@ -131,18 +131,20 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     expect(seenAfterReaction?.actionable).toBe(true)
   })
 
-  test("deterministic headless runs and bit-identical replay playback", () => {
+  // Long playback is covered by the checked-in per-tick goldens in replay.test.ts.
+  // Keep the runner/telemetry contract here, including two independent bot decisions.
+  test("deterministic headless runner telemetry and replay playback", () => {
     const runA = runHeadlessBotGame({
       seed: 7,
       preset: "Skilled",
-      maxDurationSeconds: 90,
+      maxDurationSeconds: 3,
       timeScale: 240,
       recordReplay: true,
     })
     const runB = runHeadlessBotGame({
       seed: 7,
       preset: "Skilled",
-      maxDurationSeconds: 90,
+      maxDurationSeconds: 3,
       timeScale: 240,
       recordReplay: false,
     })
@@ -163,17 +165,17 @@ describe("SurvivorBot perception, input-only contract, determinism, and tuning",
     expect(replayed.time).toBe(runA.survivalTime)
   })
 
-  test("supports 4-player co-op bot squads and searches containers", () => {
+  test("supports 4-player co-op bot squads", () => {
     const coopRun = runHeadlessBotGame({
       seed: 7,
       preset: "Skilled",
       playerCount: 4,
-      maxDurationSeconds: 60,
+      maxDurationSeconds: 3,
       timeScale: 180,
     })
     expect(coopRun.playerCount).toBe(4)
-    expect(coopRun.itemsLooted.containersSearched).toBeGreaterThan(0)
-    expect(coopRun.distanceExplored.totalDistanceWalked).toBeGreaterThan(15)
+    // Searching and movement over time are checked by the four-player scavenging golden.
+    expect(coopRun.distanceExplored.totalDistanceWalked).toBeGreaterThan(0)
     expect(coopRun.unfairSpawns).toEqual({ inView: 0, behindPlayer: 0 })
   })
 

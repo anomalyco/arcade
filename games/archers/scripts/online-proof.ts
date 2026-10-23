@@ -80,11 +80,12 @@ const proxy = Bun.serve<{ path: string; link?: Link }>({
   websocket: {
     open(ws: ServerWebSocket<{ path: string; link?: Link }>) {
       const up = new WebSocket(`ws://${upstream}${ws.data.path}`)
+      const sendUp = (m: string | Buffer) => up.send(typeof m === "string" ? m : new Uint8Array(m))
       const toDown = delayed((m) => ws.send(m))
-      const link: Link = { up, open: false, queued: [], toUp: delayed((m) => (link.open ? up.send(m) : link.queued.push(m))) }
+      const link: Link = { up, open: false, queued: [], toUp: delayed((m) => (link.open ? sendUp(m) : link.queued.push(m))) }
       up.onopen = () => {
         link.open = true
-        for (const m of link.queued.splice(0)) up.send(m)
+        for (const m of link.queued.splice(0)) sendUp(m)
       }
       up.onmessage = (e) => toDown(e.data as string)
       up.onclose = () => ws.close()

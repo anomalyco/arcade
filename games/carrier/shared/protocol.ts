@@ -235,7 +235,7 @@ export function roomName(v: string | null | undefined): string {
 }
 
 /** A binary frame for the high-rate messages (shared/wire.ts), JSON text for the rest. */
-export const encode = (msg: ClientMsg | ServerMsg): string | Uint8Array => encodeWire(msg) ?? JSON.stringify(msg)
+export const encode = (msg: ClientMsg | ServerMsg): string | Uint8Array<ArrayBuffer> => encodeWire(msg) ?? JSON.stringify(msg)
 
 /** Client frames are tiny; server frames carry the crew and every ship (the same caps in bytes for binary frames). */
 const MAX_CLIENT_FRAME = 512

@@ -1,7 +1,5 @@
 {
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": "../../node_modules/.cache/tsc/nightshift-app.tsbuildinfo",
     "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"], "types": ["@webgpu/types", "bun", "vite/client"],
     "strict": true, "noEmit": true, "skipLibCheck": true

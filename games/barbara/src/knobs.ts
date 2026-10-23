@@ -46,6 +46,7 @@ function placeOf(c: LabControl): Place {
     case "Sound": return { section: "Sound", sub: s ?? "Mix" }
     case "Voices": return { section: "Sound", sub: "Voices" }
     case "Camera": return { section: "Camera", sub: s ?? "Exposure" }
+    case "Camera feel": return { section: "Camera", sub: s ? `Feel: ${s.toLowerCase()}` : "Feel" }
     case "Camera look": return { section: "Camera", sub: s ? `Camera look: ${s.toLowerCase()}` : "Camera look" }
     default: return { section: "Debug", sub: s ? `${g || "Other"}: ${s}` : g || "Other" }
   }

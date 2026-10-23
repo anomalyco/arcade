@@ -1,6 +1,6 @@
 // Sequential, muted Metal proof. Run from the repository root against the two Nexus previews.
 import { browserBudget } from "./browser-budget.ts"
-import ts from "typescript"
+import ts from "typescript-api"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, join, dirname } from "node:path"
 import { execFileSync } from "node:child_process"
