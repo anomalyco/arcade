@@ -43,7 +43,7 @@ import { PLANE, type Vec3, worldToShip } from "../../shared/plane"
 import { type Target, clearLock } from "../../shared/weapons"
 import { HitStop } from "@arcade/kit/client/camera"
 import { type SamSound, TurretAudio } from "../audio/turret-audio"
-import { FEEDBACK } from "../feedback/settings"
+import { FEEDBACK, punchScale } from "../feedback/settings"
 import type { Renderer } from "../render/renderer"
 import { WeaponFx } from "../render/weapon-fx"
 import { TURRET_CAM, TurretCam } from "./camera"
@@ -275,7 +275,7 @@ export class Gunnery {
           if (this.seat) this.cam.shake.add(0.35 * Math.max(0, 1 - d / 900), 0.5)
           if (e.owner === this.id && e.on >= 0) {
             this.cam.shake.add(0.15, 0.6)
-            this.stop.trigger(0.07, 0.1)
+            this.stop.trigger(0.07, 0.1, !this.cam.shake.reduced)
           }
         }
         else if (e.surface === "sea") {
@@ -316,20 +316,15 @@ export class Gunnery {
     this.hud.hit(true)
     if (!this.seat) return
     this.punch = 0
-    this.stop.trigger(0.1, 0.05)
+    this.stop.trigger(0.1, 0.05, !this.cam.shake.reduced)
   }
 
-  /** The kill punch-in: the sight's fov scale this frame (1 at rest), the same curve as the pilot's (src/feedback). */
+  /** The kill punch-in: the sight's fov scale this frame (1 at rest and under reduced motion), the pilot's curve. */
   private punchScale(dt: number): number {
     if (this.punch < 0) return 1
     this.punch += dt
-    const u = this.punch / FEEDBACK.punchTime
-    if (u >= 1) {
-      this.punch = -1
-      return 1
-    }
-    const e = u < 0.12 ? u / 0.12 : u < 0.4 ? 1 : 1 - ((u - 0.4) / 0.6) ** 2 * (3 - 2 * ((u - 0.4) / 0.6))
-    return 1 - FEEDBACK.punchZoom * e
+    if (this.punch >= FEEDBACK.punchTime) this.punch = -1
+    return punchScale(this.punch, this.cam.shake.reduced)
   }
 
   // ---- our turret --------------------------------------------------------------------------------------------------------

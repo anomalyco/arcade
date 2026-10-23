@@ -48,6 +48,10 @@ import { buildShipWeapons, WEAPON_SCALE } from "../src/render/ship-weapons"
 import { CAPACITY, joinCrew, leaveCrew, makeCrew, playerOf, runOp, scuttle, shipOf } from "../shared/crew"
 import { OPS, gunOp, gunnerAt, shipOps } from "../shared/ops"
 import { add } from "./crew-helpers"
+import { HitStop } from "@arcade/kit/client/camera"
+import { FEEDBACK, punchScale } from "../src/feedback/settings"
+import { TurretCam } from "../src/gunnery/camera"
+import { SHAKE } from "../src/render/camera"
 import { RoomCore } from "../server/core"
 import { BUILD } from "../shared/build.gen"
 import { type ClientMsg, type ServerMsg, decodeClient, decodeServer, encode } from "../shared/protocol"
@@ -870,5 +874,36 @@ describe("the room", () => {
     expect(decodeServer(encode({ type: "turrets", t: [[1, 2, 900, 300, 1, 4]] }))).toEqual({ type: "turrets", t: [[1, 2, 900, 300, 1, 4]] })
     expect(decodeServer(encode({ type: "kill", on: 1, by: 2, w: "sam" }))).toEqual({ type: "kill", on: 1, by: 2, w: "sam" })
     expect(decodeServer('{"type":"gboom","b":[1,2,3]}')).toBeNull()
+  })
+})
+
+describe("kill moment under reduced motion", () => {
+  test("the punch-in and the hit-stop stand still when reduced motion is on, for the sight and the pilot", () => {
+    const was = SHAKE.reduceMotion
+    try {
+      const mid = FEEDBACK.punchTime * 0.25
+      SHAKE.reduceMotion = false
+      const cam = new TurretCam()
+      expect(cam.shake.reduced).toBe(false)
+      expect(punchScale(mid, cam.shake.reduced)).toBeLessThan(1)
+      const on = new HitStop()
+      on.trigger(0.1, 0.05, !cam.shake.reduced)
+      expect(on.step(1 / 60)).toBeLessThan(1 / 60)
+
+      SHAKE.reduceMotion = true
+      expect(cam.shake.reduced).toBe(true)
+      expect(punchScale(mid, cam.shake.reduced)).toBe(1)
+      const off = new HitStop()
+      off.trigger(0.1, 0.05, !cam.shake.reduced)
+      expect(off.step(1 / 60)).toBe(1 / 60)
+    } finally {
+      SHAKE.reduceMotion = was
+    }
+  })
+
+  test("the punch-in is 1 at rest and after it ends", () => {
+    expect(punchScale(-1, false)).toBe(1)
+    expect(punchScale(FEEDBACK.punchTime, false)).toBe(1)
+    expect(punchScale(FEEDBACK.punchTime * 0.2, false)).toBeCloseTo(1 - FEEDBACK.punchZoom, 6)
   })
 })
