@@ -46,7 +46,7 @@ export class VoiceChat {
   private generation = 0
   private held = { proximity: false, radio: false }
   private state: VoiceState = { proximity: false, radio: false }
-  private refresh: ReturnType<typeof setInterval> | null = null
+  private refresh: ReturnType<typeof setTimeout> | null = null
   private readonly listeners = new Set<() => void>()
 
   constructor(private readonly options: VoiceOptions) {}
@@ -59,6 +59,7 @@ export class VoiceChat {
     this.error = ""
     if (!on) {
       this.pending = false
+      this.release()
       this.send?.({ type: "voice.leave" })
       this.resetPeers()
       for (const t of this.stream?.getTracks() ?? []) t.stop()
@@ -107,7 +108,7 @@ export class VoiceChat {
     for (const id of this.peers.keys()) this.remove(id)
     this.id = this.session = ""
     this.state = { proximity: false, radio: false }
-    if (this.refresh) clearInterval(this.refresh)
+    if (this.refresh) clearTimeout(this.refresh)
     this.refresh = null
   }
 
@@ -118,7 +119,8 @@ export class VoiceChat {
       this.iceServers = frame.iceServers
       this.relay = frame.relay
       for (const p of this.peers.values()) p.pc.setConfiguration({ iceServers: this.iceServers })
-      if (!this.refresh) this.refresh = setInterval(() => this.send?.({ type: "voice.refresh" }), 30 * 60_000)
+      if (this.refresh) clearTimeout(this.refresh)
+      this.refresh = setTimeout(() => this.send?.({ type: "voice.refresh" }), Math.max(10_000, Math.min(30 * 60_000, frame.retryAfterMs ?? 30 * 60_000)))
       this.changed()
       return
     }

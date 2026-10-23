@@ -4,12 +4,16 @@
 WebSocket carries signalling only. `RoomCore.voice = new VoiceRoom(...)` opts a game in. The room stamps the sender
 from its authenticated seat, restricts targets to the room, validates bounded SDP/ICE frames, and removes voice
 membership immediately on disconnect or idle kick. A fresh voice session id rejects stale reconnect messages.
+Each seat has separate signalling limits: 20 frames/s (40-frame ICE burst), 1 SDP description/s (five-peer
+negotiation burst), four state changes/s and two opt-ins/s. Limits survive opt-out/rejoin; excess state changes
+coalesce to the last value so a throttled key-up still stops the remote radio.
 
 Pass the `VoiceChat` to `RoomSocket` and the shared shell as `voice`. The shell supplies the lobby toggle,
 Settings, voice volume, open mic / push-to-talk and individual player mutes. Only switching the toggle on calls
 `getUserMedia`; switching off stops its tracks. Permission failures stay in the shell, with a retry by toggling on.
 Voice opt-in is not saved across page loads. Reconnecting the room reuses the already-consented microphone and
 rebuilds peer connections. No microphone is requested by solo or bot play.
+Fatal room errors and version reloads release the microphone; transient socket loss retains consent for reconnect.
 
 ## Audio and controls
 
@@ -66,7 +70,8 @@ To enable relaying for BARBARA:
 `server/voice-turn` calls Cloudflare's `generate-ice-servers` API server-side with a one-hour TTL. Only authenticated
 room members can request credentials. Clients refresh every 30 minutes with `setConfiguration`; per-seat caching,
 refresh throttling and a room token bucket bound minting even if players toggle or churn seats. Provider failures
-fall back to STUN. No public credential endpoint or new signalling service is deployed.
+fall back to STUN. A depleted mint bucket returns STUN without caching it and asks the client to retry after ten
+seconds. No public credential endpoint or new signalling service is deployed.
 
 Source: https://developers.cloudflare.com/realtime/turn/generate-credentials/
 

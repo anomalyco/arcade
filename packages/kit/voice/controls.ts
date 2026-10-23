@@ -16,6 +16,7 @@ export function bindVoiceKeys(voice: VoiceChat, blocked: () => boolean, keys: { 
   const abort = new AbortController(), signal = abort.signal
   const release = () => voice.release()
   window.addEventListener("keydown", (e) => {
+    if (!voice.enabled) return
     if (e.metaKey || e.ctrlKey || e.altKey || blocked() || isTextEntry(e.target)) { release(); return }
     if (e.code === keys.mute && !e.repeat) voice.toggleMic()
     if (e.code === keys.radio) voice.hold("radio", true)

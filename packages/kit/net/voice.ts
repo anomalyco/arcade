@@ -12,7 +12,7 @@ export type VoiceClientFrame =
   | { type: "voice.state"; state: VoiceState }
   | { type: "voice.signal"; to: string; session: string; signal: VoiceSignal }
 export type VoiceServerFrame =
-  | { type: "voice.ready"; id: string; session: string; iceServers: VoiceIceServer[]; relay: boolean }
+  | { type: "voice.ready"; id: string; session: string; iceServers: VoiceIceServer[]; relay: boolean; retryAfterMs?: number }
   | { type: "voice.members"; members: VoiceMember[] }
   | { type: "voice.signal"; from: string; session: string; signal: VoiceSignal }
 
@@ -21,7 +21,7 @@ const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 const short = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= 128
 
 export function decodeVoiceClient(raw: unknown): VoiceClientFrame | null {
-  if (typeof raw !== "string" || raw.length > 16_384) return null
+  if (typeof raw !== "string" || raw.length > 16_384 || !raw.includes('"voice.')) return null
   let m: unknown
   try { m = JSON.parse(raw) } catch { return null }
   if (!record(m)) return null
@@ -43,11 +43,24 @@ export function decodeVoiceClient(raw: unknown): VoiceClientFrame | null {
 }
 
 export type VoiceIce = { iceServers: VoiceIceServer[]; relay: boolean }
-type Member = { public: VoiceMember; send: (m: VoiceServerFrame) => void; refreshed: number; ready: boolean }
+type Bucket = { tokens: number; at: number }
+function take(bucket: Bucket, now: number, rate: number, burst = rate): boolean {
+  bucket.tokens = Math.min(burst, bucket.tokens + Math.max(0, now - bucket.at) * rate / 1000)
+  bucket.at = now
+  if (bucket.tokens < 1) return false
+  bucket.tokens--
+  return true
+}
+type Budget = { signals: Bucket; descriptions: Bucket; states: Bucket; joins: Bucket }
+type Member = Budget & {
+  public: VoiceMember; send: (m: VoiceServerFrame) => void; refreshAt: number; ready: boolean
+  pending?: VoiceState; stateTimer?: ReturnType<typeof setTimeout>
+}
 
 /** Room-local, opt-in mesh of at most six authenticated seats. Sender identity is always supplied by RoomCore. */
 export class VoiceRoom {
   private readonly members = new Map<string, Member>()
+  private readonly budgets = new Map<string, Budget>()
   private readonly credentials = new Map<string, { at: number; value: Promise<VoiceIce> }>()
   private tokens = 6
   private refillAt = 0
@@ -58,7 +71,17 @@ export class VoiceRoom {
     let member = this.members.get(id)
     if (msg.type === "voice.join") {
       if (member || this.members.size >= 6) return
-      member = { public: { id, session: crypto.randomUUID(), proximity: false, radio: false }, send, refreshed: -Infinity, ready: false }
+      const at = this.clock()
+      let budget = this.budgets.get(id)
+      if (!budget) {
+        budget = { signals: { tokens: 40, at }, descriptions: { tokens: 5, at }, states: { tokens: 4, at }, joins: { tokens: 2, at } }
+        if (this.budgets.size >= 64) this.budgets.delete(this.budgets.keys().next().value!)
+        this.budgets.set(id, budget)
+      }
+      // Re-enrolling cannot reset a seat's limits or flood membership broadcasts.
+      if (!take(budget.joins, at, 2)) return
+      member = { public: { id, session: crypto.randomUUID(), proximity: false, radio: false }, send, refreshAt: -Infinity, ready: false,
+        ...budget }
       this.members.set(id, member)
       this.refresh(id, member)
       return
@@ -66,36 +89,64 @@ export class VoiceRoom {
     if (!member) return
     if (msg.type === "voice.refresh") return this.refresh(id, member)
     if (msg.type === "voice.state") {
-      if (member.public.proximity === msg.state.proximity && member.public.radio === msg.state.radio) return
-      Object.assign(member.public, msg.state)
-      return this.publish()
+      member.pending = msg.state
+      return this.publishState(member)
     }
     const target = this.members.get(msg.to)
     if (!target?.ready || !member.ready || target === member || target.public.session !== msg.session) return
+    const now = this.clock()
+    if (!take(member.signals, now, 20, 40)) return
+    // Five descriptions can establish a full mesh; subsequent offers/answers share a 1/s budget.
+    if ("description" in msg.signal && !take(member.descriptions, now, 1, 5)) return
     target.send({ type: "voice.signal", from: id, session: member.public.session, signal: msg.signal })
   }
 
   leave(id: string): void {
+    const timer = this.members.get(id)?.stateTimer
+    if (timer !== undefined) clearTimeout(timer)
     if (this.members.delete(id)) this.publish()
   }
 
+  private publishState(member: Member): void {
+    if (member.stateTimer !== undefined) clearTimeout(member.stateTimer)
+    member.stateTimer = undefined
+    const state = member.pending
+    if (!state || (member.public.proximity === state.proximity && member.public.radio === state.radio)) { member.pending = undefined; return }
+    if (!take(member.states, this.clock(), 4)) {
+      // Coalesce a burst to its final state: dropping a key-up could leave a remote radio hissing forever.
+      member.stateTimer = setTimeout(() => this.publishState(member), Math.ceil((1 - member.states.tokens) * 250))
+      return
+    }
+    member.pending = undefined
+    Object.assign(member.public, state)
+    this.publish()
+  }
+
   private refresh(id: string, member: Member): void {
-    if (this.clock() - member.refreshed < 60_000) return
-    member.refreshed = this.clock()
     const now = this.clock()
+    if (now < member.refreshAt) return
+    member.refreshAt = now + 60_000
+    let retryAfterMs: number | undefined
     let issued = this.credentials.get(id)
     if (!issued || now - issued.at >= 30 * 60_000) {
       // Toggling voice or churning seats cannot turn this public game into an unbounded credential mint.
       this.tokens = Math.min(6, this.tokens + Math.max(0, now - this.refillAt) / 10_000)
       this.refillAt = now
-      const value = this.tokens >= 1 ? (this.tokens--, this.ice().catch(() => ({ iceServers: STUN_SERVERS, relay: false }))) : Promise.resolve({ iceServers: STUN_SERVERS, relay: false })
-      issued = { at: now, value }
-      if (this.credentials.size >= 64) this.credentials.delete(this.credentials.keys().next().value!)
-      this.credentials.set(id, issued)
+      if (this.tokens >= 1) {
+        this.tokens--
+        issued = { at: now, value: this.ice().catch(() => ({ iceServers: STUN_SERVERS, relay: false })) }
+        if (this.credentials.size >= 64) this.credentials.delete(this.credentials.keys().next().value!)
+        this.credentials.set(id, issued)
+      } else {
+        // This is admission backoff, not a credential result: don't cache it for thirty minutes.
+        retryAfterMs = 10_000
+        member.refreshAt = now + retryAfterMs
+        issued = { at: now, value: Promise.resolve({ iceServers: STUN_SERVERS, relay: false }) }
+      }
     }
     void issued.value.then((ice) => {
       if (this.members.get(id) !== member) return
-      member.send({ type: "voice.ready", ...member.public, ...ice })
+      member.send({ type: "voice.ready", ...member.public, ...ice, ...(retryAfterMs ? { retryAfterMs } : {}) })
       member.ready = true
       this.publish()
     })

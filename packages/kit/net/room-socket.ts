@@ -20,6 +20,7 @@ export type RoomSocketOptions<Hello> = {
   encode: (msg: unknown) => string
   decode: (raw: string) => { type: string } | null
   voice?: {
+    setEnabled(on: boolean): Promise<void>
     connected(send: (msg: VoiceClientFrame) => void): void
     disconnected(): void
     receive(msg: VoiceServerFrame): void
@@ -117,11 +118,13 @@ export class RoomSocket<Hello> {
         return
       case "error":
         this.closed = true
+        void this.o.voice?.setEnabled(false)
         this.o.voice?.disconnected()
         this.o.fatal(m.message)
         return
       case "reload": {
         this.closed = true
+        void this.o.voice?.setEnabled(false)
         this.o.voice?.disconnected()
         // Reload once into the same room (the page rejoins on its own); a second mismatch within a minute means the
         // new build isn't being served yet, so say so instead of looping.

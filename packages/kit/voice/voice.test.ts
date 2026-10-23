@@ -44,6 +44,80 @@ describe("voice signalling", () => {
     expect(messages.filter((m) => m.type === "voice.ready")).toHaveLength(5)
     expect(messages.filter((m) => m.type === "voice.members").every((m) => m.type === "voice.members" && m.members.every((p) => p.id !== "0" && p.id !== "6"))).toBe(true)
   })
+
+  test("bounds per-seat ICE and SDP floods, preserves other senders and refills without opt-in resetting the limits", async () => {
+    let now = 0
+    const room = new VoiceRoom(undefined, () => now), a: VoiceServerFrame[] = [], b: VoiceServerFrame[] = []
+    room.message("a", { type: "voice.join" }, (m) => a.push(m))
+    room.message("b", { type: "voice.join" }, (m) => b.push(m))
+    await flush()
+    const readyA = a.find((m) => m.type === "voice.ready")!, readyB = b.find((m) => m.type === "voice.ready")!
+    if (readyA.type !== "voice.ready" || readyB.type !== "voice.ready") throw new Error("missing ready")
+    const candidate = { type: "voice.signal", to: "b", session: readyB.session, signal: { candidate: { candidate: "candidate", sdpMid: "0", sdpMLineIndex: 0 } } } as const
+    b.length = 0
+    for (let i = 0; i < 200; i++) room.message("a", candidate, () => {})
+    expect(b.filter((m) => m.type === "voice.signal")).toHaveLength(40)
+    a.length = 0
+    room.message("b", { ...candidate, to: "a", session: readyA.session }, () => {})
+    expect(a.filter((m) => m.type === "voice.signal")).toHaveLength(1)
+    room.leave("a")
+    room.message("a", { type: "voice.join" }, (m) => a.push(m))
+    await flush()
+    b.length = 0
+    room.message("a", candidate, () => {})
+    expect(b).toHaveLength(0)
+    now = 1000
+    for (let i = 0; i < 100; i++) room.message("a", candidate, () => {})
+    expect(b).toHaveLength(20)
+    now = 2000
+    b.length = 0
+    for (let i = 0; i < 100; i++) room.message("a", { ...candidate, signal: { description: { type: i % 2 ? "offer" : "answer", sdp: "s".repeat(12_000) } } }, () => {})
+    expect(b).toHaveLength(5)
+    now = 3000
+    b.length = 0
+    for (let i = 0; i < 100; i++) room.message("a", { ...candidate, signal: { description: { type: "offer", sdp: "v=0" } } }, () => {})
+    expect(b).toHaveLength(1)
+    room.leave("a"); room.leave("b")
+  })
+
+  test("bounds state broadcasts and eventually publishes the last key release", async () => {
+    const room = new VoiceRoom(), messages: VoiceServerFrame[] = []
+    room.message("a", { type: "voice.join" }, (m) => messages.push(m))
+    await flush()
+    messages.length = 0
+    // Four distinct changes exhaust the burst, ending with the radio still keyed.
+    for (const state of [{ proximity: true, radio: false }, { proximity: true, radio: true }, { proximity: false, radio: false }, { proximity: true, radio: true }]) room.message("a", { type: "voice.state", state }, () => {})
+    for (let i = 0; i < 200; i++) room.message("a", { type: "voice.state", state: { proximity: i % 2 === 0, radio: i % 2 === 0 } }, () => {})
+    expect(messages).toHaveLength(4)
+    // Wait for the server's bounded coalescing timer, not a network/browser polling loop.
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(messages).toHaveLength(5)
+    expect(messages.at(-1)).toMatchObject({ type: "voice.members", members: [{ id: "a", proximity: false, radio: false }] })
+    room.leave("a")
+  })
+
+  test("exhausted credential budget retries after ten seconds instead of caching STUN for thirty minutes", async () => {
+    let now = 0, calls = 0
+    const room = new VoiceRoom(async () => { calls++; return { iceServers: [], relay: true } }, () => now)
+    for (let i = 0; i < 6; i++) room.message(String(i), { type: "voice.join" }, () => {})
+    await flush()
+    room.leave("0")
+    const messages: VoiceServerFrame[] = []
+    room.message("new", { type: "voice.join" }, (m) => messages.push(m))
+    await flush()
+    expect(calls).toBe(6)
+    expect(messages.find((m) => m.type === "voice.ready")).toMatchObject({ relay: false, retryAfterMs: 10_000 })
+    now = 9999
+    room.message("new", { type: "voice.refresh" }, () => {})
+    expect(calls).toBe(6)
+    now = 10_000
+    messages.length = 0
+    room.message("new", { type: "voice.refresh" }, () => {})
+    await flush()
+    expect(calls).toBe(7)
+    expect(messages.find((m) => m.type === "voice.ready")).toMatchObject({ relay: true })
+    expect(messages.find((m) => m.type === "voice.ready")).not.toHaveProperty("retryAfterMs")
+  })
 })
 
 test("nearby speech fades out completely, including reverb; occlusion darkens and attenuates it", () => {
