@@ -4,8 +4,12 @@ import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
 import { CAST } from "@arcade/kit/people/cast/woods.gen"
 import { People, type CastMember, type Person } from "@arcade/kit/people/view"
+import type { HandPose } from "@arcade/kit/people/retarget"
 import type { V3 } from "@arcade/kit/rig"
 import type { Player } from "../shared/sim"
+
+/** The left hand on a map's edge: fingers flat under the sheet, the thumb on top. */
+const SHEET_GRIP: HandPose = { index: [12, 18, 8], middle: [14, 20, 10], ring: [18, 24, 12], pinky: [22, 28, 14], thumbOppose: 25, thumbAlong: 15, thumb: [5, 8, 6], together: 0 }
 
 export type Log = { x: number; z: number; yaw: number; length: number; r: number; y: number }
 
@@ -37,6 +41,14 @@ export class PeopleView {
     return m
   }
 
+  /**
+   * Fetches the first `n` cast members (the first friends you meet wear them) and resolves when they can be drawn, so
+   * Play shows them at once instead of popping them in; later arrivals still load on first sight. Never rejects.
+   */
+  preload(n: number): Promise<void> {
+    return Promise.all(CAST.slice(0, n).map((m) => this.people.load(m).catch((e) => console.error(`people: ${m.id} failed to load`, e)))).then(() => {})
+  }
+
   /** Ground under (x, z): the terrain/dock height, raised over any log's round top. */
   ground(stand: (x: number, z: number) => number, x: number, z: number): number {
     let g = stand(x, z)
@@ -51,8 +63,11 @@ export class PeopleView {
     return g
   }
 
-  /** Poses friend `p` and returns its torch frame for the beam, or null while its person loads (draw it blocky). */
-  frame(p: Player, t: number, dt: number, aim: number, dir: V3, reach: Avatar["reach"], stand: (x: number, z: number) => number, eye: V3 | null, steps: () => void): { p: V3; x: V3 } | null {
+  /**
+   * Poses friend `p` and returns its torch frame for the beam and where its left hand is, or null while its person
+   * loads (draw it blocky). `read` (0..1) bows the head over a map held in the left hand.
+   */
+  frame(p: Player, t: number, dt: number, aim: number, dir: V3, reach: Avatar["reach"], stand: (x: number, z: number) => number, eye: V3 | null, steps: () => void, read = 0): { p: V3; x: V3; left: V3 } | null {
     const m = this.member(p.id)
     const s = this.people.scale(m)
     if (s === null) return null
@@ -67,7 +82,9 @@ export class PeopleView {
     a.reach = reach
     if ((animate(a, dt, t, p.x / s, p.z / s, p.vx / s, p.vz / s, aim) & EV.step) && !p.air.airborne) steps()
     const pitch = Math.max(-0.5, Math.min(0.6, p.pitch * 0.55))
-    return this.people.drive(person, a, { dt, time: t, ground: (x, z) => this.ground(stand, x, z), rise: p.air.y, torch: { side: 1, dir }, look: { yaw: 0, pitch }, eye: eye ?? undefined })
+    const torch = this.people.drive(person, a, { dt, time: t, ground: (x, z) => this.ground(stand, x, z), rise: p.air.y, torch: { side: 1, dir }, look: { yaw: 0, pitch: pitch + (-0.6 - pitch) * read },
+      grip: [read > 0.3 ? SHEET_GRIP : null, null], eye: eye ?? undefined })
+    return torch && { p: torch.p, x: torch.x, left: person.pose.pos[person.rest.arms[0].end]! }
   }
 
   /** Torch-shadow casters: every drawn person within `reach` of `from` (your torch). */

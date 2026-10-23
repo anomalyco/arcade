@@ -120,6 +120,17 @@ export type CameraLookFrame = {
   place: PlaceLights
 }
 
+/**
+ * The camera look saved from Settings, if it should apply: never under automation (`navigator.webdriver`, the smoke)
+ * or when the URL asks for a camera itself (`?camera=`, `?lab=camera`, `woods.camera*` / `woods.artifacts.*` knobs),
+ * so proofs stay reproducible and query parameters win.
+ */
+export function savedCameraLook(saved: string | null, params: URLSearchParams, automated: boolean): CameraLookId | null {
+  if (automated || !saved || !(saved in CAMERA_LOOKS)) return null
+  if (params.get("lab") === "camera" || [...params.keys()].some((k) => k === "camera" || k.startsWith("woods.camera") || k.startsWith("woods.artifacts"))) return null
+  return saved as CameraLookId
+}
+
 export class CameraLook {
   readonly settings: CameraLookSettings = { ...CAMERA_LOOK_DEFAULTS }
   readonly artifacts: CameraArtifactSettings = { ...CAMERA_ARTIFACT_DEFAULTS }
@@ -134,6 +145,8 @@ export class CameraLook {
   private lastT = 0
   private world: WoodsWorld | null = null
   private near: ReturnType<typeof treesNear> = []
+  /** Called when the Lab picks a look, so the shell's Settings row follows. */
+  onLook: (() => void) | null = null
 
   constructor(private readonly opts: { renderer: Renderer; device: GPUDevice; format: GPUTextureFormat; camera: WoodsCamera; forest: ForestView; panel: LabPanel; params: URLSearchParams; smoke: boolean; seed: number }) {
     const { renderer, device, format, camera, panel, params, smoke } = opts
@@ -157,7 +170,7 @@ export class CameraLook {
 
   private lookControls(sync: () => void): LabControl[] {
     return [
-      { key: "woods.cameraLook", field: "look", label: "Camera look", group: GROUP, type: "select", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })), change: (v) => { this.apply(String(v) as CameraLookId); sync() } },
+      { key: "woods.cameraLook", field: "look", label: "Camera look", group: GROUP, type: "select", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })), change: (v) => { this.apply(String(v) as CameraLookId); sync(); this.onLook?.() } },
       { key: "woods.eyeshine", field: "eyeshine", label: "Eyeshine", group: GROUP, subsection: "World", type: "toggle" },
       { key: "woods.eyeshineNow", label: "Show eyes now", group: GROUP, subsection: "World", type: "action", visible: (s) => s["woods.eyeshine"] === true, run: () => this.showEyes() },
       { key: "woods.irLight", field: "irLight", label: "Infrared lamp", group: GROUP, subsection: "World", type: "toggle" },

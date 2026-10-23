@@ -543,6 +543,15 @@ first build.
 - **History in motion.** Volume slots keep their history while the camera moves, clipped to mean ± 1.25σ and blended
   in a luminance-compressed space (`VolumeInput.moving`). Exception: the fog's in-scatter follows the view ray, so a
   kept fog history made the Lot's booth halo jump; it stays at 1.
+- **Light that moves on its own (2026-10-22, Barbara playtest).** The forest fog keeps its volume history (0.12 still,
+  0.45 moving) because dropping it leaves your own beam's disc in dither noise, but `VolumeInput.moving` only knows
+  the camera, so a friend's swinging beam left a fading wedge behind it for many frames (real-time screencast at the
+  lake, 3 rad/s swing). Fix: a per-lamp swept angle (`FogLamp.motion`, the forest view's frame-to-frame torch turn)
+  and a reactive volume slot (`VolumeLightShader.reactive`): the fog march writes the air light a moving beam may have
+  taken off each pixel since last frame (its profile at the angle minus the sweep, less its light now), and the
+  accumulate pass drops that share of the history. Weigh it against the history, not the current sample: a
+  ratio against the noisy current frame picks dark samples and leaves the wedge speckled. Your own torch sends 0
+  (the camera's motion covers it). `games/barbara/scripts/playtest-look.ts --scenario live --variants base,nomotion`.
 - **Footprint filtering and specular AA** everywhere a pattern can drop below a pixel; LEAN for glints.
 - **Fades instead of cuts:** lamp reach (Outbreak), spot-shadow reach (`SpotSlot.reach`), Bayer LOD cross-fades.
 - **Jitter pattern.** IGN slid 5.588 px a frame; golden-ratio offsets left a diagonal pattern in converged wet

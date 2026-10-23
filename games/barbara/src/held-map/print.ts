@@ -1,4 +1,4 @@
-import { terrainHeight, type WoodsWorld } from "../../shared/world"
+import { boundaryLine, terrainHeight, type WoodsWorld } from "../../shared/world"
 import { rng, scaleOf, SHEET, worldToSheet } from "./sheet"
 
 /**
@@ -494,6 +494,21 @@ export function printSheet(world: WoodsWorld, longSide: number, images: PrintIma
     for (const [name, x, z] of [["Hemlock Hollow", -150, 60], ["Beaver Meadow", 120, 150], ["Bear Swamp", 150, -40]] as const) {
       const [px, py] = worldToSheet(world, x, z)
       g.fillText(name, px, py)
+    }
+    // The state forest boundary: its posted fence all round, in the collar's "selected fence lines" red, with the line
+    // named along each side.
+    const L = boundaryLine(world)
+    const [bx0, by0] = worldToSheet(world, -L, -L), [bx1, by1] = worldToSheet(world, L, L)
+    // Private land past it in a light red tint.
+    g.fillStyle = RED; g.globalAlpha = 0.22
+    g.beginPath(); g.rect(M.x, M.y, M.size, M.size); g.rect(bx0, by1, bx1 - bx0, by0 - by1); g.fill("evenodd")
+    g.globalAlpha = 1
+    g.strokeStyle = RED; g.lineWidth = 0.75; g.setLineDash([1.8, 0.8])
+    g.strokeRect(bx0, by0, bx1 - bx0, by1 - by0); g.setLineDash([])
+    g.fillStyle = RED; g.font = `600 2px ${SANS}`; g.textAlign = "center"; g.textBaseline = "middle"
+    const label = "STATE FOREST BOUNDARY · POSTED"
+    for (const [x, y, a] of [[(bx0 + bx1) / 2, by0 + 2.2, 0], [(bx0 + bx1) / 2, by1 - 2.2, 0], [bx0 + 2.2, (by0 + by1) / 2, -Math.PI / 2], [bx1 - 2.2, (by0 + by1) / 2, Math.PI / 2]] as const) {
+      g.save(); g.translate(x, y); g.rotate(a); g.fillText(label, 0, 0); g.restore()
     }
   })
   phase("culture")

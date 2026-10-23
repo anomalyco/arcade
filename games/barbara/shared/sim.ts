@@ -8,7 +8,7 @@ import { NIGHT_LINES } from "./night-lines.gen"
 import { botWaypoint, CALL_EVERY, handOff, canLight, CLUE, createNight, stepNight, type NightEvent, type NightState } from "./night"
 import { isGone, radioLive } from "./verdict"
 import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTaken, sayTape, voiceRoles, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
-import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
+import { clampInside, isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
  * The woods' rules as plain data, ready for a room: players (people and bots), flagging tapes, survey markers and what
@@ -443,11 +443,13 @@ function compareMaps(state: WoodsState, a: Player, b: Player) {
 
 /** Moves a player through the forest (the shared `stepBody`, trunks and rocks as solids, deep water refused). */
 export function movePlayer(world: WoodsWorld, p: Player, mx: number, mz: number, speed: number, dt: number, players: readonly Player[] = []) {
+  clampInside(world, p, PLAYER_RADIUS)
   const body = { collisionId: p.id, x: p.x, y: p.z, vx: p.vx, vy: p.vz }
   const circles = players.filter((q) => q.id !== p.id).map((q) => ({ collisionId: q.id, x: q.x, y: q.z, radius: PLAYER_RADIUS }))
   stepBody(body, mx, mz, speed, solidsNear(world, p.x, p.z, 3), dt, PLAYER_RADIUS, PLAYER_ACCEL, circles)
   if (isDeepWater(world, body.x, body.y)) { body.x = p.x; body.y = p.z; body.vx = body.vy = 0 }
   p.x = body.x; p.z = body.y; p.vx = body.vx; p.vz = body.vy
+  clampInside(world, p, PLAYER_RADIUS)
 }
 
 /**

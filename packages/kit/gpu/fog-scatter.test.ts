@@ -4,7 +4,7 @@ import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "./test-naga"
 import { FOG_DEFAULTS, FOG_GLOW_SIZE, FogLampPicker, FogScatter, bakeLampGlow, createFogSettings, fogOpticalDepth, fogSceneWgsl, fogScatterVolume, type FogLamp, type Vec3 } from "./fog-scatter"
 import { makeSceneShader, postShader, spriteShader } from "./shaders"
-import { volumeAccumulateShader, volumeBilinearShader, volumeUpsampleShader } from "./volume-pass"
+import { volumeAccumulateShader, volumeAccumulateWgsl, volumeBilinearShader, volumeUpsampleShader } from "./volume-pass"
 import { fogBlurDownWgsl, fogBlurMixWgsl } from "./fog-blur"
 
 const medium = { density: 0.01, falloff: 0.05, base: 0 }
@@ -44,6 +44,10 @@ test("lamp packing applies extinction and preserves the street lens ABI", () => 
   const transmittance = Math.exp(-fogOpticalDepth(eye, [0, 8, 20], medium))
   expect(frame.lamps[4]).toBeCloseTo(2000 * sigma * transmittance * FOG_DEFAULTS.strength, 4)
   expect(frame.lamps[19]).toBeCloseTo(sigma, 6)
+  expect(frame.lamps[15]).toBe(0)
+  fog.update({ eye, viewProj: vp, lamps: [{ ...lamp(0, 20), beam: 0.3, motion: 0.05 }] })
+  expect(frame.lamps[14]).toBeCloseTo(0.3, 6)
+  expect(frame.lamps[15]).toBeCloseTo(0.05, 6)
   fog.update({ eye, viewProj: vp, lamps: [{ ...lamp(0, 20), lens: { arm: [0, 2], a: 0.3, b: 0.14 } }] })
   expect(Array.from(frame.lamps.subarray(20, 24))).toEqual([0, 1, Math.fround(0.3), Math.fround(0.14)])
 })
@@ -70,7 +74,7 @@ const sources = {
   atmosphere: fogScatterVolume({ atmosphere: true, normal: "vec3f(0.0, 1.0, 0.0)", reflectionSamples: 4 }).code,
   forest: fogScatterVolume({ atmosphere: true, bankLocal: "vec3f(p.y * 0.0, 1.0, 1.0)", bankExtinction: true, torches: true, surface: true, reflectionSamples: 2 }).code,
   blurDown: fogBlurDownWgsl, blurMix: fogBlurMixWgsl,
-  accumulate: volumeAccumulateShader, upsample: volumeUpsampleShader, bilinear: volumeBilinearShader,
+  accumulate: volumeAccumulateShader, accumulateReactive: volumeAccumulateWgsl(true), upsample: volumeUpsampleShader, bilinear: volumeBilinearShader,
   scene: makeSceneShader({ lampGrid: false, declarations: fogSceneWgsl, ambient: "fogAmbient(n)", surface: "col = fogApply(col, F.cam.xyz, o.world); if (mat == 3 && o.aux < 0.0) { col = fogSky(F.cam.xyz, normalize(o.world - F.cam.xyz)) + fogEnv(n) * 0.0; }" }),
   sprite: spriteShader(), spriteMotion: spriteShader(true),
   post: postShader(false, false, { chromatic: 0, bloom: 0.26, grain: 0.01, vignette: 0.45, bloomGate: { cap: 0.02, hot: 4 } }),
