@@ -21,6 +21,9 @@ proven animation techniques to animation.md, not here.
   reduced excursions 14% and the worst spike 32%, with a rough 0.75 ms renderer increase. This remains a visual
   review candidate, not proof that every excursion is a sampling bug. `scripts/barbara-shadow-probe.ts` records
   both membership and image metrics; `perf/barbara-shadow-pops.md` records the limitations and failed setups.
+  Follow-up: broader caster coverage and texel snapping also gave no gain. Bypassing TAA colour clipping reduced
+  excursions 25%, but bounded variants recovered only 0.3–2.4% beyond lens-only. All follow-up production changes
+  were reverted. A lower temporal score alone cannot distinguish anti-aliasing from stale-light smoothing.
 
 - **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
   halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,

@@ -193,8 +193,10 @@ with its existing 2 cm torch radius and a fixed sampling pattern. Nearby fronds 
 - Evidence: one matched slow walk reduced reprojected excursions 643.54 → 553.16/frame (14.0%) and the peak
   1,983 → 1,353 (31.8%). Fixed caster admission changed the metric by 0.05%; freezing visible wind reduced it
   7%. The shadow caster geometry itself has no wind. [Full diagnosis](../perf/barbara-shadow-pops.md).
-- Kit: awaiting visual review. Remaining excursions include genuine moving light and wind; this is a partial
-  reduction, and volumetric shadow sampling retains its existing path.
+- Kit: insufficient to ship alone; unmerged. Four follow-up toggles found no useful caster/snap reduction,
+  8.1% from disabling visible wind, and 25% from bypassing TAA colour clipping. Bounded temporal corrections
+  recovered only 0.3–2.4% beyond lens-only and were reverted; bypassing rejection is not evidence of a safe fix.
+  Remaining excursions include genuine moving light and wind; volumetric sampling retains its existing path.
 
 **Soft character shadows from capsules.** Each body is 14 bone capsules; every fragment gets a contact term and a
 soft shadow from each of its four strongest lights, sharp at the feet and widening up the body. It exists only where
