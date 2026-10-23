@@ -1,8 +1,11 @@
 // Bounded Metal proof against the named Nexus preview. No visible window or audio.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const base = process.env.URL ?? "http://wizards.localhost:1355"
 const out = process.env.OUT ?? "captures/wizards"

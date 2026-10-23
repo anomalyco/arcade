@@ -11,9 +11,13 @@
 // 2. a 25° dive from 2,300 m, released on the cue from a wing station with the jet flying on; the burst is seen from
 //    off the ship and compared with the prediction.
 // 3. the SIGHT tab of the debug menu (the shared Lab panel with the bombsight's settings).
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -382,4 +386,4 @@ check(rows >= 8, `the Flight tab shows the bombsight settings on the dev panel (
 console.log(logs.length ? `console:\n${logs.slice(0, 20).join("\n")}` : "no console errors")
 await browser.close()
 console.log(failures ? `${failures} FAILED` : "all ok")
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

@@ -12,7 +12,11 @@ import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import type { ServerWebSocket } from "bun"
 import { CHROME_ARGS, PACE_60 } from "./headless"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const { values: o } = parseArgs({
   options: {
@@ -172,4 +176,4 @@ await browser.close()
 proxy.stop(true)
 wrangler?.kill()
 console.log(`videos (tab 1, tab 2):\n${videos0.join("\n")}`)
-process.exit(0)
+await budget.exit(0)

@@ -6,11 +6,15 @@
 //   bun scripts/deck-jets-shot.ts --base=http://127.0.0.1:5297/ --out=captures/deck-jets [--swiftshader]
 //
 // On hailmary (Metal) leave out --swiftshader and pass --chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { DECK_BAYS } from "../shared/deck-jets"
 import { DECK_Y } from "../shared/carrier-spec"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -147,4 +151,4 @@ check((await parked()).join() === "2", `only the F-35C still stands (${(await pa
 
 await browser.close()
 console.log(failures ? `${failures} check(s) failed` : "all checks passed")
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

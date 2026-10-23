@@ -1,9 +1,12 @@
 // Screenshots a practice round with headless Chromium (WebGPU on SwiftShader).
 // Usage: bun scripts/shot.ts [url] [--out=dir] [--wait=seconds] [--keys=WWDD...]
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.split("=")[1] ?? d

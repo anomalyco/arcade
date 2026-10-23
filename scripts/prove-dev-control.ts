@@ -1,11 +1,14 @@
 // End-to-end proof of the Arcade Dev Control bridge and `arcade` CLI.
 // Exercises token/origin security, Hub, Catalogue, Lab Workbench, all 4 workspace games,
 // live-input conflict handling, undo history, screenshots, and production build exclusion.
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { createServer as createNetServer, connect as netConnect } from "node:net"
 import { join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dirname, "..")
 const outDir = join(root, "captures/dev-control")

@@ -8,9 +8,13 @@
 // edge arrow), the full map held on G, a missile homing on us, a fixed 10 km range. mp: two pages in one room, each
 // on its own carrier: an enemy jet ahead and above (radar arrow with its height tick, diamond), the enemy jet over its
 // carrier, and the full map with both jets.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -301,4 +305,4 @@ if (only.includes("solo")) await solo()
 if (only.includes("mp")) await mp()
 console.log(logs.length ? logs.slice(0, 40).join("\n") : "no console errors")
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

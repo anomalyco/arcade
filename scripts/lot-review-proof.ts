@@ -2,8 +2,11 @@ import assert from "node:assert/strict"
 import { existsSync, readdirSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { mat4 } from "wgpu-matrix"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { serveDist } from "../games/lot/scripts/serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Review regression: the actual ?camera=bodycam rig must survive WalkCamera's final view assembly.
 // No screenshots, recordings or sound playback; the existing walking clip is the visual proof.

@@ -1,8 +1,12 @@
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { serveDist } from "./serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Forest/ground-dressing proof at the title camera, headless and muted, through HiveMind browser admission:
 //   bun scripts/capture-forest.ts [--base <dist of origin/main's lot>]

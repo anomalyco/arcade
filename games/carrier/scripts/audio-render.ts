@@ -7,9 +7,12 @@
 //
 // Serves the folder, opens it, renders every scene of scripts/audio-demo.ts (or --scenes=a,b) and writes <scene>.wav
 // with a line of stats (peak, RMS, takes loaded). Spectrograms and MP3s are made from the WAVs with ffmpeg.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

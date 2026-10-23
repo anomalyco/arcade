@@ -1,8 +1,12 @@
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { serveDist } from "./serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Glass, lit-window rooms and contact shadows: Today vs new stills at fixed poses, Ashwood at the same poses, and the
 // paired in-page GPU cost of each feature (Renderer.measure, alternating A/B rounds). Headless and muted; run through

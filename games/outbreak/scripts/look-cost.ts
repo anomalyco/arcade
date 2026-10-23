@@ -2,7 +2,10 @@ import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { cpus } from "node:os"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root=resolve(import.meta.dir,"../../.."), out=resolve(root,process.env.COST_PATH??"captures/outbreak-look/cost")
 const baselineRef=process.env.BASELINE_REF??"cd77303", scene=process.env.COST_SCENE??"street"

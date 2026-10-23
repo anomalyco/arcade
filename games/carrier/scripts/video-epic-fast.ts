@@ -38,6 +38,9 @@ import { spawn } from "node:child_process"
 import { WEATHER_PRESETS, mixWeather, makeWeather, type Weather } from "../shared/weather"
 import { phaseOfHour } from "../shared/daycycle"
 import { launch, requireGpu, masterSpec, streamFormat, h264In, fileSink, procSink, teeSink, muxH264, ffmpeg, run, sec, type Session, type Sink } from "./video/core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -77,9 +80,9 @@ mkdirSync(shotsDir, { recursive: true })
 if (!Number.isInteger(EVERY) || EVERY < 1) throw new Error(`--fps must divide ${STEP_HZ}`)
 const T0 = performance.now()
 // Any failure ends the run (an open encoder pipe or browser would otherwise keep the process alive).
-const die = (e: unknown) => {
+const die = async (e: unknown) => {
   console.error(e)
-  process.exit(1)
+  await budget.exit(1)
 }
 process.on("unhandledRejection", die)
 process.on("uncaughtException", die)
@@ -620,12 +623,12 @@ if (truthSink) {
   await truthSink.end()
   lap(`truth: ${truthOut}`)
   for (const s of sessions) await s.shutdown()
-  process.exit(0)
+  await budget.exit(0)
 }
 
 /** Plays the whole script on one page: video (records the shots), audio (renders the mix in lockstep) or both. */
 async function render(role: Role): Promise<void> {
-  const session = await launch({ dist, width: role.width, height: role.height, path: `?seed=${seed}&lab=0`, logs, quiet: !role.capture })
+  const session = await launch({ dist, width: role.width, height: role.height, path: `?seed=${seed}&lab=0`, logs, quiet: !role.capture }, budget)
   // Browsers close at the very end: on macOS, Bun stops reporting child-process exits once a Playwright browser has
   // been closed (later ffmpeg runs would never resolve).
   sessions.push(session)

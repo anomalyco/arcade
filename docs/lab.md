@@ -6,6 +6,44 @@ API; [dev-control.md](dev-control.md) covers driving an open browser page with `
 [lab-adapters.md](lab-adapters.md) covers adapters; [game-notes.md](game-notes.md) records measured techniques.
 The rules below apply to new authoring work. Existing gaps are listed explicitly and do not add release gates.
 
+## Browser proof budget
+
+Every Chromium proof, capture and Lab script owns one `browserBudget()` from
+`scripts/browser-budget.ts`, held with `await using budget = browserBudget()`. Launch through
+`budget.chromium`; keep existing server cleanup and any early browser closes. `await using` supplies
+the scope's `finally`: the shared disposer closes every browser, including browsers opened concurrently
+or before an exception. Use `await budget.exit(code)` for an early process exit after creating the scope.
+Imported launcher helpers receive their caller's budget rather than creating a fresh deadline per launch.
+For long video jobs, build before creating the budget. Once frames, offline browser audio and title-card
+stills are captured, call `await budget.finish()` to close every browser and retire the deadline before
+FFmpeg encoding/mastering. Finishing is idempotent and permanently prevents further launches; never pause
+the deadline with an open browser. Streaming an encoder while capturing still counts as browser time.
+
+The budget is **180 seconds for the entire scope**, printed at start. A deadline closes Chromium and exits
+124 even if a page evaluation or the script's own promise never resolves. Shutdown gets at most three
+additional seconds before Playwright's process-exit hook kills its browser process groups. For an explicitly
+requested longer proof, set `ARCADE_BROWSER_BUDGET_S` to a positive number no greater than **300**; invalid
+values fail before launch. Headless and muted launches are enforced. Narrow shots/variants to fit; run each
+proof separately through `hivemind run --kind browser`.
+
+An independent watchdog thread also enforces this clock while host JavaScript is blocked in a synchronous
+loop/build. It requests graceful shutdown first; if the host cannot respond within the grace period, it
+kills only the script's descendant processes and the host (reported as SIGKILL rather than exit 124).
+
+CPU-only physics, gait, bot and simulation sweeps import the production modules directly in Bun and use
+`hivemind run --kind cargo`. They do not need Chromium or a Vite build. Outbreak's `prove-first-night.ts`
+now writes its four ten-minute sim reports without a browser; `--capture` adds the historical GPU stills.
+Its `run-bot-tuning.ts`, `difficulty-ramp.ts`, `stepsim-bench.ts`, `behaviour-trace.ts` and `parity.ts` already
+run directly in Bun, as do Walkers' `train.ts`, `pretrain.ts`, `human-metrics.ts` and `strip.ts`, Getaway's
+`sim-smoke.ts`, Blackout's numeric `scripts/animation/` sweeps, Nightshift's `walk-trace.ts` and root
+`scripts/quality-sim.ts`. Pixel/depth/GPU timing and real DOM/input proofs retain Chromium under the budget.
+
+`hivemind run --kind browser -- bun scripts/browser-budget-proof.ts` checks success, an exception, a
+persistent context, a never-resolving page, a never-resolving host promise and a blocked host with a
+three-second override, then checks that the Chromium process IDs are gone or awaiting OS reaping.
+The `phases` case also checks that browser-free preparation and encoding can each outlast a ten-second
+browser budget, and that a finished budget cannot launch another browser.
+
 ## Tune one change and reproduce it
 
 1. Open the Lab at `/arcade/lab/` (one app for every game; the top-bar Game picker loads one game's adapters or

@@ -4,8 +4,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import type { LabStation, StationCommand } from "@arcade/kit/lab/stations/types"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const id = process.argv[2]
 assert(id && !id.startsWith("--"), "usage: prove-station.ts <station-id> [--out dir]")

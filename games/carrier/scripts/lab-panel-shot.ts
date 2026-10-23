@@ -5,7 +5,11 @@
 // The dev server must run its Worker with CARRIER_DEV=1 (.dev.vars) for the bot check.
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -118,4 +122,4 @@ if (prod) {
 
 await browser.close()
 console.log(failures ? `${failures} FAILED` : "all ok")
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

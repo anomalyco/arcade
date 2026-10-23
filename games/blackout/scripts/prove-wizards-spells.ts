@@ -1,4 +1,4 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { createServer } from "vite"
@@ -6,6 +6,9 @@ import type { World } from "../shared/sim/world"
 import type { Game } from "../src/game/game"
 import type { Camera } from "../src/render/camera"
 import type { Input } from "../src/game/input"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 declare global { interface Window { practice: World; wizardProof: { game: Game; cam: Camera; input: Input }; advance(ms:number):Promise<void> } }
 const out=resolve(process.env.OUT??"captures/wizards-click")

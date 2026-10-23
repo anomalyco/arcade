@@ -1,8 +1,11 @@
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { serveDist } from "../games/lot/scripts/serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 const out=resolve(process.argv[2]??"captures/lot/paired-cost.json")
 const servers={before:serveDist(resolve(process.env.LOT_COST_BEFORE??"../lot-walk-before/games/lot/dist")),after:serveDist(resolve("games/lot/dist"))}
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`

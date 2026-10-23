@@ -1,5 +1,5 @@
 /** Requested beat-1 review tape: headless GPU readback, file-only audio. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync,readdirSync,mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import type { WalkCamera } from "../src/walk-camera"
@@ -15,6 +15,9 @@ import type { Continuity } from "../src/polish/continuity"
 import type { DustField } from "../src/polish/dust"
 import type { tubeSignal } from "../src/polish/tube"
 import type { CameraFilter } from "@arcade/kit/gpu/post/camcorder"
+
+await using budget = browserBudget()
+const { chromium } = budget
 /** Real E answers 4.5 s after the opening hands over (the look-round below takes the 3 s before). */
 const ANSWER_AT=Math.round(OPENING.end+4.5)
 type App={camera:WalkCamera;renderer:Renderer;opening:Opening;elevator:Elevator;settings:Settings;audio:OfficeAudio;call:Call;physics:OfficePhysics;continuity:Continuity;dustField:DustField;tubeSignal:typeof tubeSignal;clock:number;paused:boolean;step(ms:number):void;renderBeatAudio:typeof renderBeatAudio}

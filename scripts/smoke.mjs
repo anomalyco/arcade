@@ -1,7 +1,10 @@
 // Run from a game directory after `bun run check` has built its production bundle.
 import assert from "node:assert/strict"
 import { basename, resolve, sep } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget.ts"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = basename(process.cwd())
 assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift"].includes(game), `Unknown game: ${game}`)
@@ -36,7 +39,7 @@ let passed = false
 const deadline = setTimeout(async () => {
   const boot = await Promise.race([bootTimeline().catch(() => "?"), Bun.sleep(1_000).then(() => "page unresponsive")])
   console.error(`${game}: smoke exceeded ${DEADLINE_MS / 1000} seconds; boot ${boot}`)
-  process.exit(1)
+  await budget.exit(1)
 }, DEADLINE_MS)
 // CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster and must actually
 // start: there the "needs WebGPU" fallback counts as a failure.
@@ -152,6 +155,6 @@ try {
   clearTimeout(deadline)
   if (!closed) {
     console.log(`${game}: browser still closing after ${CLOSE_MS / 1000} s; killing it`)
-    if (passed) process.exit(0)
+    if (passed) await budget.exit(0)
   }
 }

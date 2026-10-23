@@ -2,9 +2,13 @@ import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { AdaptiveQualityController, type QualityTier } from "@arcade/kit/quality"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { OUTBREAK_QUALITY_PROFILES } from "../src/quality"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * What Auto quality settles on for this machine at a given display size, at night at the crossroads east of Ash and

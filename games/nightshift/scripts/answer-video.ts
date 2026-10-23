@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir,readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import type { FirstPerson } from "@arcade/kit/client/first-person"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { Call } from "../shared/call"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out=resolve(process.env.NIGHTSHIFT_VIDEO_DIR??"captures/nightshift-call")
 await mkdir(out,{recursive:true})

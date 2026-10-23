@@ -8,9 +8,13 @@
 // 2 km" spawns a dogfighter that closes and shoots at her; her client's rounds (the `hits` path) shoot it down. bomber:
 // BO, at the helm of another carrier, runs "Bomber run on my carrier": an F-35C bot bombs it. boat: BO runs "Boat attack
 // ×2". prod: a production build (--prod=URL, the built dist served as is) has no debug menu: ` does nothing.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -362,4 +366,4 @@ if (only.includes("prod") && prod) {
 
 await browser.close()
 console.log(failures ? `${failures} FAILED` : "all ok")
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

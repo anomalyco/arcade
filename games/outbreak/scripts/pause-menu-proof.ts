@@ -1,10 +1,13 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import type { CameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import type { OutbreakHarness } from "../src/harness"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // One headless, muted run and one still. The live pacer must hold both the sim and the final filter while paused.
 // hivemind run --kind browser --fetch captures/outbreak-pause -- bun games/outbreak/scripts/pause-menu-proof.ts

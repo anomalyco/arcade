@@ -1,8 +1,11 @@
 /// <reference types="@webgpu/types" />
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root=resolve(import.meta.dir,"../../.."),out=join(root,"captures/lab-spawn")
 mkdirSync(out,{recursive:true})

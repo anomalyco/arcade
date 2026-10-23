@@ -9,9 +9,12 @@
 //          --bench=1 (GPU throughput with and without rain at heavy)  --eval='js' (run before each capture)
 //          --storm=N (chase-camera storm sequence: N frames 0.5 s apart, head seas at full speed, plus a low camera
 //          beside the hull; writes storm-<i>.png with the ship's pitch/roll/heave/bow clearance per frame)
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -127,7 +130,7 @@ const adapter = await page.evaluate(async () => {
 console.log(`adapter: ${adapter}`)
 if (/swiftshader/i.test(adapter) || adapter === "no adapter") {
   console.log("no hardware adapter: refusing to trust these captures")
-  process.exit(2)
+  await budget.exit(2)
 }
 
 /** Loads and captures, retrying when another agent's edit HMR-reloads the page mid-capture. */

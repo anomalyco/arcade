@@ -1,11 +1,14 @@
 /** One matched turning tape, with source ablations to isolate Scrawl's vertical bands. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir,readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import type { FirstPerson } from "@arcade/kit/client/first-person"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { Settings } from "../src/settings"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out=resolve(process.env.NIGHTSHIFT_TURN_DIR??"captures/nightshift-turn")
 const stableHash=`fn officeHash(p: vec3f) -> f32 { var v=vec3u(vec3i(floor(p))); v=((v>>vec3u(8u))^v.yzx)*1103515245u; v=((v>>vec3u(8u))^v.yzx)*1103515245u; return f32(v.x^v.y^v.z)/4294967295.0; }`

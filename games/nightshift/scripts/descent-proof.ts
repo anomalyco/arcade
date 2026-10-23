@@ -1,5 +1,5 @@
 /** One requested elevator-to-hall tape, headless/muted, real movement and file-muxed production audio. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync,readdirSync,mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import type { WalkCamera } from "../src/walk-camera"
@@ -10,6 +10,9 @@ import type { DescentAudio,DescentAudioFrame,renderDescentAudio } from "../src/d
 import type { FoleyFrame } from "../src/foley"
 import type { Settings } from "../src/settings"
 import type { Call } from "../shared/call"
+
+await using budget = browserBudget()
+const { chromium } = budget
 type App={camera:WalkCamera;renderer:Renderer;opening:Opening;elevator:Descent;settings:Settings;descent:DescentSettings;storyAudio:DescentAudio;audio:{ready:boolean};parked:number;call:Call;storyFrame:DescentAudioFrame;clock:number;paused:boolean;step(ms:number):void;renderDescentAudio:typeof renderDescentAudio}
 type Host=Window&{nightshift:App;capture(ms:number):Promise<string>;tape:DescentAudioFrame[];feet:FoleyFrame[];pixelMax:number}
 const review=process.argv.includes("--review-fixes")

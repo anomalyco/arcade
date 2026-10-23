@@ -1,8 +1,11 @@
 /** One fixed-pose before/after for the shared contact-depth correction. Headless, muted. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { serveDist } from "../games/lot/scripts/serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 const out=resolve(process.env.LEASE_OUT??"captures/lot-contact-review");mkdirSync(out,{recursive:true})
 const server=serveDist(resolve("games/lot/dist")),cache=`${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath=readdirSync(cache).filter(n=>/^chromium_headless_shell-/.test(n)).sort().reverse().map(n=>`${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)

@@ -1,11 +1,14 @@
 // Headless Metal proof for soldier crouch-run posture and weapon stability.
 // Run through hivemind: captures side-view + top-down close run-cycle contact sheet and a mux compare.html video.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out = join(import.meta.dir, "../../../captures/soldier-run")
 mkdirSync(out, { recursive: true })

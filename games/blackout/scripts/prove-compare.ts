@@ -1,7 +1,10 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const opt = (key: string, fallback: string) => process.argv.find((s) => s.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback
 const game = opt("game", "blackout")

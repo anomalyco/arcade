@@ -5,8 +5,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { SFX_LIBRARY } from "@arcade/kit/audio"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const lab = resolve(import.meta.dir, "..")
 const out = resolve(import.meta.dir, "../../../captures/lab-sfx-library")

@@ -9,7 +9,10 @@
 import { mkdirSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const { values } = parseArgs({ options: { creature: { type: "string", default: "biped" }, task: { type: "string", default: "room" }, max: { type: "string", default: "170" }, speed: { type: "string", default: "2" }, heist: { type: "boolean", default: false }, train: { type: "string", default: "22" }, "replay-only": { type: "boolean", default: false } } })
 const out = resolve(process.env.LEASE_OUT ?? "../../captures/walkers")
@@ -62,7 +65,7 @@ if (values["replay-only"]) {
   const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-sseof", "-12", "-i", await video.path(), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-movflags", "+faststart", join(out, "human-replay.mp4")])
   if (ff.exitCode || errors.length || !result.includes("replay matches")) throw new Error(JSON.stringify({ result, errors, ffmpeg: ff.stderr.toString() }))
   console.log(result, `\nwrote ${out}`)
-  process.exit(0)
+  await budget.exit(0)
 }
 if (values.heist) await heist()
 let s = await read()
@@ -142,5 +145,5 @@ async function heist(): Promise<never> {
   const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", ...inputs, "-filter_complex", filter, "-map", "[out]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-movflags", "+faststart", join(out, "walkers-heist.mp4")])
   if (ff.exitCode !== 0) console.error(ff.stderr.toString())
   console.log(`wrote ${out}`)
-  process.exit(0)
+  return await budget.exit(0)
 }

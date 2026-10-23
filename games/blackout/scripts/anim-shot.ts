@@ -1,9 +1,12 @@
 // Captures frames of the dev animation viewer (anim.html) with headless Chromium.
 // Usage: bun scripts/anim-shot.ts [--base=url] [--q=only=a&zoom=9] [--start=2000] [--step=60] [--n=8] [--out=dir] [--clip=x,y,w,h]
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

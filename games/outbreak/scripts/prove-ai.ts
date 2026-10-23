@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const out = resolve(game, "../../captures/outbreak-ai-phase3")

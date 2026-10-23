@@ -1,8 +1,11 @@
 /// <reference types="@webgpu/types" />
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { EmissionStudy } from "../src/game/emission-study"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out = join(import.meta.dir, "../../../captures/getaway-smoke-realistic-v2")
 mkdirSync(out, { recursive: true })

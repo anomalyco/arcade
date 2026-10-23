@@ -2,8 +2,11 @@
 import assert from "node:assert/strict"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { instrumentGetaway } from "./compare-video/getaway"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out = resolve(process.env.OUT ?? "captures/integration")
 mkdirSync(out, { recursive: true })

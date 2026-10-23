@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "../compare"
 import { blackoutRoot, parseArgs } from "./common"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Stills and a short muted clip of the Characters page's Lab-only reference ghost walking beside an actor,
 // stepped deterministically with window.advance (no real-time stutter).

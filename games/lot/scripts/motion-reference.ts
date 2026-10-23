@@ -1,9 +1,12 @@
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { matchedPaths } from "./motion-paths"
 import { START } from "../src/world"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // The local Ashwood preview's acknowledged camera bridge, without modifying its checkout.
 // Camera poses match motion.ts. Atmosphere advances on Ashwood's own clock; this

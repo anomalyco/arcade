@@ -5,9 +5,13 @@
 //
 // Options: --base=URL  --seed=7  --size=1536x1024  --only=start,accel,turn,swell,island,waterline  --mp (two pages in
 //          one room, each capturing the other's carrier)  --eval='js' (run in the page after load)
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -161,7 +165,7 @@ if (!mp) {
   console.log(`adapter: ${info}`)
   if (/swiftshader/i.test(info)) {
     console.log("SwiftShader adapter: refusing to trust these captures")
-    process.exit(2)
+    await budget.exit(2)
   }
   await page.waitForTimeout(2500)
   if (only.includes("start")) await shot(page, "01-start")

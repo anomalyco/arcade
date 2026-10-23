@@ -1,7 +1,10 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../browser-budget.ts"
 import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const repoRoot = resolve(import.meta.dir, "../..")
 const getawayRoot = join(repoRoot, "games/getaway")

@@ -4,8 +4,12 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const { values: flags } = parseArgs({
   options: {

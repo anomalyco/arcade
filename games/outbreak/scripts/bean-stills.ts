@@ -12,9 +12,13 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { SOFT_BEAN_STYLE } from "../src/look/hero"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {

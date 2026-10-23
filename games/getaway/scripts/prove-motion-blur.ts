@@ -1,8 +1,11 @@
 /// <reference types="@webgpu/types" />
-import { chromium } from 'playwright-core'
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from 'vite'
 import { mkdirSync, readdirSync, existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+
+await using budget = browserBudget()
+const { chromium } = budget
 const root=resolve(import.meta.dir,'..'),out=resolve(root,'../../captures/motion-blur')
 mkdirSync(out,{recursive:true})
 const server=await createServer({root,configFile:join(root,'vite.config.ts'),server:{host:'127.0.0.1',port:0}})

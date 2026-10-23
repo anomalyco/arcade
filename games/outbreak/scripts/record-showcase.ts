@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { TICK_DT } from "../shared/clock"
 import { LocalSession } from "../shared/session"
 
@@ -83,6 +84,8 @@ const chrome = readdirSync(cache)
   .find(existsSync)
 assert(chrome, "Install Chromium before the Metal proof")
 
+await using budget = browserBudget()
+const { chromium } = budget
 const browser = await chromium.launch({
   executablePath: chrome,
   headless: true,
@@ -116,6 +119,8 @@ async function encodeClip(name: string, framesDir: string) {
   console.log(`Encoded ${outMp4}`)
 }
 
+const clips: { name: string; framesDir: string }[] = []
+
 async function recordScenario(
   page: Page,
   name: string,
@@ -139,7 +144,7 @@ async function recordScenario(
       await page.screenshot({ path: resolve(artifactDir, `${name}-still.jpg`), type: "jpeg", quality: 92 })
     }
   }
-  await encodeClip(name, framesDir)
+  clips.push({ name, framesDir })
 }
 
 try {
@@ -373,8 +378,10 @@ try {
   )
 
   assert.deepEqual(errors, [])
-  console.log(`All 5 showcase videos and stills recorded to ${artifactDir}`)
 } finally {
-  await browser.close()
+  await budget.finish()
   fixture.stop(true)
 }
+
+for (const { name, framesDir } of clips) await encodeClip(name, framesDir)
+console.log(`All 5 showcase videos and stills recorded to ${artifactDir}`)

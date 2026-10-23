@@ -1,8 +1,11 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { VIEWPOINTS } from "../src/interior/viewpoints"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Matched cameras on both actual renderers. Run through approved HiveMind browser admission.
 const out=resolve(process.env.LEASE_OUT ?? process.env.LOT_CAPTURE_DIR ?? "captures/lot/interior")

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { build } from "vite"
 import { serveDist } from "./serve-dist"
 import { SurfaceQuery } from "../src/surface-query"
 import { matchedPaths } from "./motion-paths"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * Temporal stability of the lot in motion: scripted camera paths (walk, strafe, turn) rendered frame by frame on a

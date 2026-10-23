@@ -9,9 +9,13 @@
 // Hornet diving into open sea, into an island slope and onto the carrier's deck (the game's crash camera, plus a
 // fixed side view for the sea); `seq`: 8-frame sequences of the 300 m kill and the sea crash; `bench`: GPU throughput
 // with a big explosion on screen, the explosion passes on against off (alternating pairs). --tod=10.5 (day) or 22.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

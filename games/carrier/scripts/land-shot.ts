@@ -8,9 +8,13 @@
 // carrier (B watches the landing glued to the deck), then on the other friendly carrier and ends up aboard it.
 // launch (--only=launch, into <out>/launch-v2/): the one continuous catapult launch, pinned at 0, 0.5, 1.5, 3 s after
 // launchStart and at the bow, then free.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -317,4 +321,4 @@ try {
 }
 console.log(failures ? `${failures} FAILED` : "all ok")
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

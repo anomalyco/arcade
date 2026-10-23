@@ -1,7 +1,10 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync, mkdirSync, symlinkSync, writeFileSync, copyFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable, installGpuInstrumentation } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = join(import.meta.dir, "../../..")
 const diagnostic = process.argv.find(a => a.startsWith("--shadow="))?.slice(9)

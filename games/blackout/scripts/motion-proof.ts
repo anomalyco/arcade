@@ -1,7 +1,10 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable, installGpuInstrumentation } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Deterministic rendering fixture: real game geometry, camera pan and moving actor/vehicle instances.
 // Replay identical transforms on both sides. Times cover polar compute through final composite.

@@ -6,10 +6,13 @@
  * Builds and serves dist/ with the network throttled so the stages are visible. `--fail` returns 404 for one prop and
  * checks the in-world DISK ERROR and retry instead. Writes captures/nightshift-boot/.
  */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync } from "node:fs"
 import { mkdir, readdir, rename } from "node:fs/promises"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const arg=(name:string)=>{const i=process.argv.indexOf(`--${name}`);return i<0?undefined:process.argv[i+1]}
 const mbps=Number(arg("mbps")??24),fail=process.argv.includes("--fail"),root=resolve(import.meta.dir,".."),out=resolve(root,"captures/nightshift-boot")

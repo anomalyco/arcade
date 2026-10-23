@@ -5,8 +5,11 @@
 //
 // --presets=HERO,0°,...,TOP,PORT (default: HERO, the 8-yaw ring, TOP, PORT, STARBOARD, BOW), --weapons=0|1 (viewer
 // toggle), --close=1 adds orbit close-ups of each weapon mount (camera poses below, in ship space).
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

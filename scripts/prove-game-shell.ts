@@ -2,7 +2,8 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { build, createServer, preview } from "vite"
 
 // Stills of the shared game shell (title, settings, pause) in each game, and one clip: open Settings, change quality
@@ -20,6 +21,8 @@ const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache).filter((n) => /^chromium-\d+$/.test(n)).sort().reverse()
   .map((n) => `${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
 assert(executablePath, "Install Playwright Chromium")
+await using budget = browserBudget()
+const { chromium } = budget
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio", "--autoplay-policy=user-gesture-required"] })
 const report: Record<string, unknown> = {}
 /** Per-game URL extras and what to click to reach play. */
@@ -156,4 +159,4 @@ try {
   await browser.close()
 }
 console.log(JSON.stringify(report, null, 2))
-if (Object.values(report).some((r) => !(r as { ok: boolean }).ok)) process.exit(1)
+if (Object.values(report).some((r) => !(r as { ok: boolean }).ok)) await budget.exit(1)
