@@ -2343,6 +2343,13 @@ Candidates from the code audits; measure and playtest before moving any into the
   rides with it), slowing the twin-engine beat from 4 cents (≈3 Hz) to 0.6 cents, and halving the afterburner's level
   drift brought it to 1.3-2 dB. Smoothing the heard throttle (0.3 s) removes filter jumps; matching the cockpit
   interior's level to the chase view makes a camera switch change colour, not loudness.
+- **Pitch procedural engines side by side, loudness-matched.** Carrier's Hornet engine was picked from six procedural
+  candidates rendered offline through the real mix along one scripted flight (`games/carrier/scripts/audio-demo.ts`
+  `pitch` / `pitch-dry`: idle on deck, catapult, climb, cruise, military, afterburner, a flyby from the deck, cockpit),
+  each trimmed to the same cruise loudness (-36.8 LUFS engines alone) so the choice was about character, and shown as an
+  audio-only video (a card and a spectrogram with the section timeline per candidate, built by ffmpeg in ~20 s; a
+  gameplay render was too slow to iterate). The user chose "Jet Wash": pure jet noise, no tones, a band-passed roar
+  whose peak follows the Strouhal frequency of the exhaust (`games/carrier/src/audio/jet-engine-models.ts`).
 - **Generate many candidates, then let measurements do the first cut.** The shared library
   (`scripts/sfx/library.ts`, [sfx-library.md](sfx-library.md)) asks ElevenLabs for 2–12 takes per sound and scores
   them on numbers that catch bad takes without listening: near-silent takes (the first pistol prompt returned six

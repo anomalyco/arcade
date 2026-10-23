@@ -1,52 +1,33 @@
 import type { VehicleKind } from "../../shared/vehicles"
+import { ENGINE_BUILD, type EngineCharacter, type EngineModel, type Kit, type Noise, type Osc } from "./jet-engine-models"
 import type { Mixer } from "./mixer"
 
 /**
  * One jet's engine, fully procedural so it tracks the live jet exactly (no recorded loops: throttle, spool, afterburner,
- * Doppler and the listener's angle change every frame). After Wings' proven fighter voice
- * (removed `games/wings/src/audio/engines.ts`, see git history), richer but still smooth:
+ * Doppler and the listener's angle change every frame). The sound itself is each type's graph in jet-engine-models.ts:
  *
- *   whine     a quiet, low triangle turbine tone rising with core speed through a low-pass (no pure high tones, and
- *             only a third of the Doppler); the Hornet's second engine 0.6 cents off, quieter
- *   roar      pink noise behind a low-pass that opens with throttle; for your own Hornet two decorrelated roars, one
- *             per engine, slightly left and right (stereo width without moving the image)
- *   body      brown noise, low and warm, and a deep sub tone that grows with throttle
- *   burner    afterburner only: a brown-noise rumble under ~280 Hz that breathes (a slow ±5% drift), a sub,
- *             and a soft band-passed crackle
+ *   Hornet    "Jet Wash", pure jet mixing noise and no tones: a large-scale turbulence hump (band-passed pink noise
+ *             peaking at the Strouhal frequency 0.2·Vj/D, ~70 Hz idle → ~160 military → ~260 burner) behind the jet,
+ *             fine-scale air (broader, up to ~2 kHz) mostly ahead, a deep burner rumble; your own Hornet's two engines
+ *             decorrelated left and right
+ *   F-35C     the Wings-derived voice: a soft triangle whine (front), pink roar and brown body (rear), a deep sub, and
+ *             an afterburner rumble that breathes, with a sub and a soft crackle
  *
- * Whine is weighted by the cone's front, roar and body by its rear (softened, so no angle is ever empty), then level ×
- * distance gain × pass duck → air-absorption low-pass → a panner (rolloff 0: distance is ours), with sends into the
+ * This class owns everything after the graph. Front sources are weighted by the cone's front, rear ones by its rear
+ * (softened, so no angle is ever empty), then level × distance gain × pass duck → air-absorption low-pass → a panner (rolloff 0: distance is ours), with sends into the
  * outdoor reverb (more of it far away: a distant jet is mostly the sky's echo) and, close by, the water slapback. Your
  * own jet in the cockpit takes a muffled interior path (and the cockpit's small room) instead. Doppler scales every
  * oscillator, noise playback rate and filter together. Everything glides (setTargetAtTime); the first update lands at
  * once.
  */
 
-export type EngineCharacter = {
-  engines: number
-  /** Whine at idle and at full core speed (Hz), and its level. */
-  whine: readonly [number, number]
-  whineGain: number
-  /** Roar low-pass at idle and its opening with throttle (Hz), and level. */
-  roar: readonly [number, number]
-  roarGain: number
-  /** Body low-pass at idle and its opening (Hz), and level. */
-  body: readonly [number, number]
-  bodyGain: number
-  /** Afterburner rumble low-pass (Hz), sub tone (Hz), and level. */
-  burnLp: number
-  sub: number
-  burnGain: number
-}
+export { ENGINE_TUNE, type EngineCharacter } from "./jet-engine-models"
 
-/** Twin F414s: the brighter whine, a slow faint beat. The F135: one engine, deeper and heavier, less whine. */
+/** Engine count and the F-35C voice's character (the Hornet's Jet Wash uses only `engines`). */
 export const ENGINES: Readonly<Record<VehicleKind, EngineCharacter>> = {
   hornet: { engines: 2, whine: [300, 760], whineGain: 0.45, roar: [350, 1400], roarGain: 1, body: [220, 260], bodyGain: 1, burnLp: 280, sub: 42, burnGain: 1 },
   f35: { engines: 1, whine: [240, 600], whineGain: 0.3, roar: [280, 1050], roarGain: 0.95, body: [180, 240], bodyGain: 1.35, burnLp: 240, sub: 34, burnGain: 1.2 },
 }
-
-/** Live tuning (the AUDIO debug tab). */
-export const ENGINE_TUNE = { whine: 1, roar: 1, burner: 1 }
 
 /** Overall engine trim before the bus (calibrated against the gun and weather in scripts/audio-demo.ts). */
 const TRIM = 0.08
@@ -79,9 +60,6 @@ export type VoiceInput = {
 
 export const makeVoiceInput = (): VoiceInput => ({ rpm: 0.64, throttle: 0, burner: 0, doppler: 1, front: 1, rear: 1, level: 1, gain: 1, cutoff: 20000, x: 0, y: 0, z: -30, interior: 0, far: 0 })
 
-type Osc = { osc: OscillatorNode; gain: GainNode }
-type Noise = { src: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode }
-
 /** Glide time constant (s). */
 const TC = 0.06
 
@@ -90,18 +68,9 @@ export class JetVoice {
   dying = false
   stopAt = Number.POSITIVE_INFINITY
   private ctx: BaseAudioContext
-  private c: EngineCharacter
   private sources: AudioScheduledSourceNode[] = []
   private nodes: AudioNode[] = []
-  private whines: Osc[] = []
-  private whineLp: BiquadFilterNode
-  private roars: Noise[] = []
-  private body: Noise
-  private deep: Osc
-  private burn: Noise
-  private breathe: GainNode
-  private crackle: Noise
-  private sub: Osc
+  private engine: EngineModel
   private front: GainNode
   private rear: GainNode
   private mix: GainNode
@@ -123,7 +92,7 @@ export class JetVoice {
   ) {
     const ctx = (this.ctx = mixer.ctx!)
     this.kind = kind
-    const c = (this.c = ENGINES[kind])
+    const c = ENGINES[kind]
     const n = mixer.noise
     const gain = (v: number, to?: AudioNode | AudioParam) => {
       const g = ctx.createGain()
@@ -133,11 +102,12 @@ export class JetVoice {
       this.nodes.push(g)
       return g
     }
-    const filter = (type: BiquadFilterType, f: number, q: number) => {
+    const filter = (type: BiquadFilterType, f: number, q: number, to?: AudioNode) => {
       const b = ctx.createBiquadFilter()
       b.type = type
       b.frequency.value = f
       b.Q.value = q
+      if (to) b.connect(to)
       this.nodes.push(b)
       return b
     }
@@ -190,42 +160,36 @@ export class JetVoice {
       int.connect(gain(0.5, mixer.room))
     }
 
-    // Whine (front): soft, low triangles through a low-pass. No pure high tones: a rising or Doppler-swept sine read as
-    // a bird's screech.
-    this.whineLp = filter("lowpass", 1100, 0.5)
-    this.whineLp.connect(this.front)
-    for (let i = 0; i < c.engines; i++) {
-      // The second engine sits 0.6 cents off: a beat slower than a second, felt rather than heard (a few cents beat at
-      // 2-3 Hz, an audible wobble).
-      const w = osc("triangle", c.whine[0], this.whineLp)
-      w.osc.detune.value = i ? 0.6 : 0
-      this.whines.push(w)
+    const kit: Kit = {
+      ctx,
+      noise: n,
+      c,
+      twin: interior && c.engines > 1,
+      front: this.front,
+      rear: this.rear,
+      mix: this.mix,
+      gain,
+      filter,
+      osc,
+      loop: noise,
+      engines: (buf, type, f, q, to) => {
+        // One per engine, decorrelated (random loop offsets) and spread a little left and right: half of each side bleeds
+        // into the other, a little width, not two separate jets.
+        const merge = ctx.createChannelMerger(2)
+        this.nodes.push(merge)
+        merge.connect(to)
+        const out: Noise[] = []
+        for (let i = 0; i < 2; i++) {
+          const r = noise(buf, type, f, q, merge)
+          r.gain.disconnect()
+          r.gain.connect(merge, 0, i)
+          r.gain.connect(gain(0.5)).connect(merge, 0, 1 - i)
+          out.push(r)
+        }
+        return out
+      },
     }
-
-    // Roar (rear): one, or for your own Hornet one per engine, decorrelated and spread a little left and right.
-    if (interior && c.engines > 1) {
-      const merge = ctx.createChannelMerger(2)
-      this.nodes.push(merge)
-      merge.connect(this.rear)
-      for (let i = 0; i < 2; i++) {
-        const r = noise(n.pink, "lowpass", c.roar[0], 0.5, merge)
-        r.gain.disconnect()
-        r.gain.connect(merge, 0, i)
-        // Half of each side bleeds into the other: a little width, not two separate jets.
-        r.gain.connect(gain(0.5)).connect(merge, 0, 1 - i)
-        this.roars.push(r)
-      }
-    } else this.roars.push(noise(n.pink, "lowpass", c.roar[0], 0.5, this.rear))
-    this.body = noise(n.brown, "lowpass", c.body[0], 0.5, this.rear)
-    this.deep = osc("sine", c.sub * 1.25, this.mix)
-    // Afterburner: a rumble that breathes (its level drifts with slow, low-passed brown noise), and a soft crackle.
-    this.breathe = gain(1, this.rear)
-    this.burn = noise(n.brown, "lowpass", c.burnLp, 0.6, this.breathe)
-    noise(n.brown, "lowpass", 3, 0.5, this.breathe.gain, 1.2)
-    const crackleBp = filter("bandpass", 1800, 0.6)
-    crackleBp.connect(this.rear)
-    this.crackle = noise(n.crackle, "highpass", 600, 0.5, crackleBp)
-    this.sub = osc("sine", c.sub, this.mix)
+    this.engine = ENGINE_BUILD[kind](kit)
   }
 
   /** Per frame. */
@@ -241,46 +205,8 @@ export class JetVoice {
       this.mix.gain.setValueAtTime(0, now)
     }
     const set = (p: AudioParam, v: number, tc = TC) => (first ? p.setValueAtTime(v, now) : p.setTargetAtTime(v, now, tc))
-    const c = this.c
-    const d = s.doppler
-    const p = s.throttle
-    const b = s.burner * ENGINE_TUNE.burner
     // Core speed 0 (idle) .. 1 (military).
-    const n = Math.max(0, Math.min(1, (s.rpm - 0.64) / 0.36))
-
-    // Whine. It takes only a third of the Doppler shift (the roar carries the swoop), so a passing or launching jet
-    // never sweeps a tone up and down.
-    const wf = (c.whine[0] + (c.whine[1] - c.whine[0]) * n) * (1 + (d - 1) * 0.35)
-    const wg = (0.012 + 0.016 * n) * c.whineGain * ENGINE_TUNE.whine
-    for (let i = 0; i < this.whines.length; i++) {
-      const w = this.whines[i]!
-      set(w.osc.frequency, wf)
-      set(w.gain.gain, wg * (i ? 0.25 : 1))
-    }
-    set(this.whineLp.frequency, 1100)
-
-    // Roar, body, the deep sub.
-    const tr = ENGINE_TUNE.roar
-    const split = this.roars.length > 1 ? 0.75 : 1
-    for (const r of this.roars) {
-      set(r.src.playbackRate, (0.85 + 0.25 * p) * d)
-      set(r.filter.frequency, (c.roar[0] + c.roar[1] * p ** 1.2 + 500 * b) * d)
-      set(r.gain.gain, (0.2 + 0.3 * p + 0.15 * b) * c.roarGain * tr * split)
-    }
-    set(this.body.src.playbackRate, (0.85 + 0.2 * p) * d)
-    set(this.body.filter.frequency, (c.body[0] + c.body[1] * p) * d)
-    set(this.body.gain.gain, (0.25 + 0.25 * p) * c.bodyGain * tr)
-    set(this.deep.osc.frequency, c.sub * (1.1 + 0.3 * n) * d)
-    set(this.deep.gain.gain, (0.02 + 0.05 * p) * c.bodyGain)
-
-    // Afterburner.
-    set(this.burn.src.playbackRate, d)
-    set(this.burn.filter.frequency, c.burnLp * d)
-    set(this.burn.gain.gain, 0.5 * b * c.burnGain, 0.15)
-    set(this.crackle.src.playbackRate, d)
-    set(this.crackle.gain.gain, 0.09 * b * c.burnGain, 0.15)
-    set(this.sub.osc.frequency, c.sub * d)
-    set(this.sub.gain.gain, 0.22 * b * c.burnGain, 0.15)
+    this.engine.update(s, Math.max(0, Math.min(1, (s.rpm - 0.64) / 0.36)), set)
 
     // Cone: whine ahead, roar behind, never empty.
     set(this.front.gain, s.front)
@@ -288,7 +214,7 @@ export class JetVoice {
 
     // Level, air, position, space, cockpit.
     const ext = 1 - s.interior
-    if (!this.dying) set(this.mix.gain, TRIM * s.level * s.gain * (1 - 0.3 * s.far), 0.08)
+    if (!this.dying) set(this.mix.gain, TRIM * this.engine.trim * s.level * s.gain * (1 - 0.3 * s.far), 0.08)
     set(this.air.frequency, s.interior > 0.5 ? 20000 : s.cutoff, 0.08)
     set(this.reverb.gain, ext * (0.12 + 0.9 * s.far), 0.2)
     set(this.echo.gain, ext * 0.12 * (1 - s.far), 0.2)

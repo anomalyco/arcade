@@ -917,16 +917,20 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   the game plays, live; level trim; 0-5 ★ rating per take, Reset restores the shipped picks), a category filter, Stop,
   Copy picks / Save picks.json / Reset to shipped. Nothing plays until a ▶ is pressed. The Audio tab keeps the bus
   levels, engine/cockpit tuning, a recorded on/off switch, test buttons and a peak meter.
-- **Procedural jets**: the engine (`jet-engine.ts`, Wings-style): a soft triangle whine with a ×2.76 overtone (front of
-  the cone), pink roar behind a throttle-opened low-pass (rear; your own Hornet's two engines decorrelated left/right),
-  brown body and a deep sub, an afterburner rumble that breathes plus a soft crackle and sub; spool inertia
-  (`jet-math.ts`); distance gain, air absorption, a reverb send that grows with distance and a close water slapback;
-  the F-35 one deeper engine. The afterburner lighting in flight adds a soft whump (`jet-sfx.ts`). The cockpit (`jet-cockpit.ts`):
+- **Procedural jets**: the engine (`jet-engine.ts`, each type's graph in `jet-engine-models.ts` `ENGINE_BUILD`). The
+  Hornet is "Jet Wash" (picked by ear from six loudness-matched candidates, Oct 22; `captures/audio/hornet-pitch/`):
+  pure jet mixing noise, no tones: a large-scale turbulence hump (band-passed pink noise at the Strouhal frequency
+  0.2·Vj/D, ~70 Hz idle → ~160 military → ~260 afterburner, level ∝ (Vj/560)^1.1) behind the jet, fine-scale air up to
+  ~2 kHz mostly ahead, a deep burner rumble; your own Hornet's two engines decorrelated left/right. The F-35C keeps the
+  Wings-style voice: a soft triangle whine (front of the cone), pink roar behind a throttle-opened low-pass (rear),
+  brown body and a deep sub, an afterburner rumble that breathes plus a soft crackle and sub. Both: spool inertia
+  (`jet-math.ts`); distance gain, air absorption, a reverb send that grows with distance and a close water slapback.
+  Audio tab knobs: Whine (the Hornet's air layer), Roar, Afterburner. The afterburner lighting in flight adds a soft whump (`jet-sfx.ts`). The cockpit (`jet-cockpit.ts`):
   the engine through the airframe and the cockpit room, canopy wind by dynamic pressure, buffet, breathing under g,
   creaks, the stall warble, plus recorded `rain-canopy` when it rains. Flybys (`jet-sfx.ts`): an air rush, a low
   thunder body and (fast/burner) a bright tear, peaking on the closest approach predicted each frame (`jet-math.ts`)
   and panned with the jet, on top of the engine's own Doppler; head-on merges above 300 m/s get a procedural N-wave
-  crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS against a gun
+  crack. Levels (offline, 0.5 s RMS): your Hornet in chase idle -38, military -33, afterburner -28 dBFS (Jet Wash, engines alone, scripts/audio-demo.ts `pitch-dry`: idle -43.7, cruise -36.8, military -35.5, afterburner -29.8 LUFS) against a gun
   burst at -15 and medium weather at -21; a close pass peaks at -20, a distant one at -27.
 - **Where each recorded slot plays**: carrier ops (the trap). Weapons (`weapon-audio.ts`): missile launch, flares, bomb release (+ whistle),
   impacts (metal when we are hit); cockpit tones synthesized (sine seeker growl and
