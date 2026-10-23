@@ -1,7 +1,6 @@
 # carrier
 
-- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
-  and the `arcade-quality` skill.
+- Style: TBD (Kit). Visual work follows [quality-checklist.md](../../docs/quality-checklist.md) and the `arcade-quality` skill.
 - Right now the game is only the sea and islands: a procedural sunny archipelago (new seed per room) under an orbit
   camera, no ship yet. Waves are a pure function of `(seed, synced sea time)`, so every client sees the same sea.
   Look targets: `concept/shot-5-fleet.png` (sea, swell, sky) and `concept/shot-4-topdown.png` (islands, reefs).

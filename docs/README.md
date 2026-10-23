@@ -8,7 +8,9 @@ its own docs folder. Root `AGENTS.md` indexes visual work by task.
 
 - [quality-checklist.md](quality-checklist.md): one page for building anything visual (target, method per asset,
   finish pass, shared kit effects, pre-flight gates, showing Kit). Start here for any prop, creature, room, light or
-  look.
+  look. It opens with the game's style: realistic, stylized or toy prototype.
+- [realistic.md](realistic.md): the default build for a realistic game: the kit features and settings to turn on
+  (shipped or landing), the order of work, the gates and what Kit has approved or turned down.
 - [realism.md](realism.md): the realism playbook by topic (lights to ambience): which kit technique to use, its cost,
   Kit's decisions and taste, and how each goes wrong.
 - [assets.md](assets.md): where to find models, textures, motion and sound (accepted licences, sources Arcade uses

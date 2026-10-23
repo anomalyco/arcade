@@ -3,8 +3,8 @@
 What makes Arcade's scenes read as real, by what you see: lights, bounce, shadows, fog, smoke, wet ground, storms,
 foliage, materials, glass, the camera, stability, quality tiers and sound. Each entry says what the trick is and why
 it reads as real, where it lives (the kit path first, then the games using it), what it costs, what Kit picked or
-turned down, and how it goes wrong. Start a visual task from [quality-checklist.md](quality-checklist.md); come here
-to pick the technique.
+turned down, and how it goes wrong. Start a visual task from [quality-checklist.md](quality-checklist.md); a
+realistic game's default set is [realistic.md](realistic.md). Come here for a technique's detail.
 
 Evidence lives in [research/](research/README.md): proofs, detailed measurements, open candidates and sources in
 [realism-log.md](research/realism-log.md), how each technique works in

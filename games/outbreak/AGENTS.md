@@ -1,7 +1,7 @@
 # Outbreak
 
-- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
-  and the `arcade-quality` skill.
+- Style: **realistic** (top-down). Visual work (props, creatures, rooms, lighting, looks) follows [quality-checklist.md](../../docs/quality-checklist.md),
+  [realistic.md](../../docs/realistic.md) and the `arcade-quality` skill.
 - Unlisted prototype: deployed at `/arcade/outbreak/`, accessible by link without login. Keep `noindex`, no landing panel, and no sitemap entry until promoted.
 - Simulation lives in `shared/` (deterministic, no DOM or Worker APIs), presentation in `src/`. `shared/coop-sim.ts` is the one
   world simulation: offline `LocalSession` runs it with one survivor, the co-op room (`server/room-core.ts`, Durable Object

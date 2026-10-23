@@ -2,7 +2,7 @@
  * `createForestView`: the photoreal night-forest renderer as a drop-in world view. A game hands it a plain-data
  * `ForestWorld` (`@arcade/kit/sim/forest-world`) and, every frame, the camera and every player's torch; it owns the
  * kit `Renderer`, the forest passes, the torch's spot shadow, the mist and the camera model. See
- * `docs/game-notes.md` (Woods look) for what each trick buys and costs.
+ * `docs/research/game-notes.md` (Woods look) for what each trick buys and costs.
  */
 import { REACTIVE_TARGET, reactivePipelineDescriptor } from "../gpu/reactive"
 import { attachSky } from "../sky/controller"

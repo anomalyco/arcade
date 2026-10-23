@@ -10,7 +10,7 @@ const TAP_MS = 220
 
 /**
  * E by physical position only: the "e" character sits on Dvorak's D key (right rudder/strafe), so matching the character
- * would steal a movement key (docs/game-notes.md). In a jet E is the rudder, so the menu leaves it alone (`airborne`).
+ * would steal a movement key (docs/research/game-notes.md). In a jet E is the rudder, so the menu leaves it alone (`airborne`).
  */
 const isKey = (e: KeyboardEvent) => e.code === "KeyE"
 

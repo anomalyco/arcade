@@ -1,7 +1,6 @@
 # getaway
 
-- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
-  and the `arcade-quality` skill.
+- Style: TBD (Kit). Visual work follows [quality-checklist.md](../../docs/quality-checklist.md) and the `arcade-quality` skill.
 - Run `bun run check` before pushing; pushing to `main` deploys https://anoma.ly/arcade/getaway/ (follow `../../docs/agent-state.md` for deploy and branch rules).
 - WebGPU only runs in secure contexts: test via the deployed URL or `localhost`, never a bare LAN hostname.
 - Design and rules live in `docs/design.md`. The simulation in `shared/` runs on both the Durable Object server and the client (solo mode and prediction); keep it deterministic and free of DOM or Worker APIs.

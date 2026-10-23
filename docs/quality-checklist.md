@@ -1,8 +1,35 @@
 # Quality checklist
 
-For anything visual: a prop, creature, room, scene, light, look or effect. Work through the six steps in order; each
-ends on checks you can answer yes or no. Kit judges against something real, so a build with no target can't be judged.
-The `arcade-quality` skill runs this page; `arcade-props` and `arcade-lookdev` cover steps 2–3 and 1, 5, 6 in depth.
+For anything visual: a prop, creature, room, scene, light, look or effect. Decide the style first, then work through
+the six steps in order; each ends on checks you can answer yes or no. Kit judges against something real, so a build
+with no target can't be judged. The `arcade-quality` skill runs this page; `arcade-props` and `arcade-lookdev` cover
+steps 2–3 and 1, 5, 6 in depth.
+
+## Style
+
+Each game's `AGENTS.md` states one style. A new game picks one before its first visual commit; if the game's line
+says TBD, ask Kit.
+
+- **Realistic**: the default for a game that should look its best. Do all six steps below and build from
+  [realistic.md](realistic.md): the kit features to turn on, the order of work and Kit's decisions.
+- **Stylized**: a deliberate look of its own (Brawl's ring, Archers' noir silhouettes). The game's concept art is
+  the target; the stylized list below says what still applies.
+- **Toy prototype**: boxes and the stock look while the feel is proven ([prototyping.md](prototyping.md)). Only the
+  toy list below applies, and the build is labelled a toy.
+
+Stylized games still need:
+
+- a target (the game's concept art) and steps 5 and 6: legible at game exposure, nothing clipped or at the lens,
+  stable in motion, shown to Kit beside Today;
+- kit effects instead of game copies wherever the look uses one (particles, lights, shadows, grade presets in
+  `packages/kit/look.ts`), and licences and credits for every asset;
+- motion: shared camera shake, hit-stop and the rig's rules ([animation.md](animation.md)); the global
+  `kit-motion` skill for anything that animates;
+- the shell: title, Escape menu, settings and quality tiers from `@arcade/kit/shell`
+  ([game-shell.md](game-shell.md)).
+
+Toy prototypes still need the shell, the shared feel (camera shake, hit-stop, effects, sounds, rig) and the
+motion and stability gates; the rest waits until the toy graduates.
 
 ## 1. Target
 
@@ -34,8 +61,8 @@ The `arcade-quality` skill runs this page; `arcade-props` and `arcade-lookdev` c
 
 - Did you use the kit's version of every effect rather than a game copy: physical lights, torch beam, lens street
   lamps, flicker, spot/capsule/contact shadows, fog and mist, bounce, wet ground and SSR, glass and rooms, weather,
-  night sky, highlight shoulder, TAA, quality tiers? [realism.md](realism.md) lists each with cost and what Kit picked
-  per game. Landing: CRT display and screen light (`kit-crt`), baked lightmaps (`kit-lightmaps`), textured props
+  night sky, highlight shoulder, TAA, quality tiers? A realistic game turns on the set in
+  [realistic.md](realistic.md); [realism.md](realism.md) lists each with cost and what Kit picked per game. Landing: CRT display and screen light (`kit-crt`), baked lightmaps (`kit-lightmaps`), textured props
   (`kit-textured-props`).
 - Is anything new in `packages/kit/` behind a typed Lab setting, with Today one setting away
   ([adding a technique](realism.md#adding-a-technique))?

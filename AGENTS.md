@@ -7,10 +7,13 @@ game's own `AGENTS.md`. Practical guides live in `docs/`; measurements, studies 
 ## Visual work, by task
 
 Anything visual starts from [docs/quality-checklist.md](docs/quality-checklist.md) and the `arcade-quality` skill:
-target first, a method per asset, the finish pass, shared kit effects, pre-flight gates, then showing Kit.
+the game's style (realistic, stylized or toy prototype, stated in its `AGENTS.md`), then target first, a method per
+asset, the finish pass, shared kit effects, pre-flight gates and showing Kit. A realistic game builds from
+[docs/realistic.md](docs/realistic.md): the kit features to turn on, the order of work and what Kit has decided.
 
 | Task | Read | Skill |
 | --- | --- | --- |
+| Making a game look its best | [realistic.md](docs/realistic.md) | `arcade-quality` |
 | Building a prop or model | [assets.md](docs/assets.md#pick-the-right-method) | `arcade-props` |
 | A creature | [assets.md](docs/assets.md#pick-the-right-method), [animation.md](docs/animation.md) | `arcade-lookdev`, `arcade-props`, `procedural-animation-iteration` |
 | A room or interior | [assets.md](docs/assets.md#pick-the-right-method), [realism.md](docs/realism.md#glass-interiors-and-built-structures) | `arcade-lookdev`, `arcade-props` |

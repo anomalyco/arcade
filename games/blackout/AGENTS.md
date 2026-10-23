@@ -1,7 +1,6 @@
 # blackout
 
-- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
-  and the `arcade-quality` skill.
+- Style: TBD (Kit). Visual work follows [quality-checklist.md](../../docs/quality-checklist.md) and the `arcade-quality` skill.
 - Run `bun run check` before pushing; pushing to `main` deploys https://anoma.ly/arcade/blackout/ (follow `../../docs/agent-state.md` for deploy and branch rules).
 - WebGPU only runs in secure contexts: test via the deployed URL, the opentunnel dev URL or `localhost`, never a bare LAN hostname.
 - `TUNNEL=1 bun run dev` runs Wrangler (rooms, :8788) and Vite (:5191); opentunnel route `blackout` exposes it at https://blackout.lwoyjcaeyxv6.opentunnel.xyz.

@@ -12,6 +12,9 @@ a frame he could have been spared (an invisible subject, a white slab at the len
 
 ## Steps
 
+0. **Style.** Read the game's style line in its `AGENTS.md`. Realistic: build from
+   [docs/realistic.md](../../../docs/realistic.md) and do every step below. Stylized or toy prototype: follow the
+   checklist's lists for those styles. TBD: ask Kit before building. Done when you know the style.
 1. **Target.** Load `arcade-lookdev` and get a target image before writing geometry or shaders. Done when the target
    is saved with the work and the hero camera and exposure are fixed.
 2. **Method and models.** Pick a method per asset class from the checklist's step 2. For any model (furniture,
