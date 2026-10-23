@@ -32,7 +32,7 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
 try {
   await vite.listen()
   await using budget = browserBudget()
-  const browser = await budget.chromium.launch({ headless: true, args: ["--mute-audio", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${mic}`, "--autoplay-policy=no-user-gesture-required"] })
+  const browser = await budget.chromium.launch({ headless: true, args: ["--mute-audio", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${mic}`, "--autoplay-policy=no-user-gesture-required", "--disable-features=WebRtcHideLocalIpsWithMdns"] })
   const url = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?ws=${encodeURIComponent(`${workerUrl.replace("http:", "ws:")}/ws/test`)}`
   const contexts = await Promise.all([browser.newContext(), browser.newContext()])
   const pages = await Promise.all(contexts.map((c) => c.newPage()))
@@ -46,7 +46,7 @@ try {
   }
   for (const page of pages) assert.equal(await page.evaluate(() => window.proof.state().permissions), 0, "no mic request on join")
   for (const page of pages) await page.locator('[data-voice="enabled"]').check()
-  for (const page of pages) await page.waitForFunction(() => window.proof.state().peers.some((p) => p.connection === "connected" && p.level > 0.005)).catch(async (e) => { console.error("voice handshake", await Promise.all(pages.map((p) => p.evaluate(() => window.proof.state())))); throw e })
+  for (const page of pages) await page.waitForFunction(() => window.proof.state().peers.some((p) => p.connection === "connected" && p.level > 0.005)).catch(async (e) => { console.error("voice handshake", JSON.stringify(await Promise.all(pages.map((p) => p.evaluate(async () => ({ state: window.proof.state(), stats: await window.proof.stats() })))), null, 2)); throw e })
   const receiver = pages[1]!
   await receiver.waitForFunction(() => window.proof.state().peers[0]!.level > 0.01)
   const near = await receiver.evaluate(() => window.proof.level())

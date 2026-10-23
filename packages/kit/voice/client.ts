@@ -13,7 +13,7 @@ export type VoiceOptions = {
   audio(): Promise<VoiceGraph>
   changed?(): void
 }
-type Peer = { member: VoiceMember; pc: RTCPeerConnection; queue: Promise<void>; candidates: RTCIceCandidateInit[]; source?: MediaStreamAudioSourceNode; audio?: VoiceAudio; retries: number }
+type Peer = { member: VoiceMember; pc: RTCPeerConnection; queue: Promise<void>; candidates: RTCIceCandidateInit[]; source?: MediaStreamAudioSourceNode; audio?: VoiceAudio; playback?: HTMLAudioElement; retries: number; sentIce: number; receivedIce: number }
 
 /** Ask for Opus DTX in the negotiated SDP. setCodecPreferences keeps telephone codecs out of the preferred slot. */
 export function opusDtx(sdp: string): string {
@@ -138,6 +138,7 @@ export class VoiceChat {
     this.enqueue(peer, async () => {
       const signal = frame.signal
       if ("candidate" in signal) {
+        peer.receivedIce++
         if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(signal.candidate)
         else if (peer.candidates.length < 64) peer.candidates.push(signal.candidate)
         return
@@ -157,17 +158,27 @@ export class VoiceChat {
 
   private add(member: VoiceMember): void {
     const pc = new RTCPeerConnection({ iceServers: this.iceServers })
-    const peer: Peer = { member, pc, queue: Promise.resolve(), candidates: [], retries: 0 }
+    const peer: Peer = { member, pc, queue: Promise.resolve(), candidates: [], retries: 0, sentIce: 0, receivedIce: 0 }
     this.peers.set(member.id, peer)
     const track = this.stream!.getAudioTracks()[0]!
-    const transceiver = pc.addTransceiver(track, { direction: "sendrecv", streams: [this.stream!] })
+    // addTrack's transceiver is reused by an incoming offer; addTransceiver would leave the answer recvonly.
+    const sender = pc.addTrack(track, this.stream!)
+    const transceiver = pc.getTransceivers().find((t) => t.sender === sender)!
     const codecs = RTCRtpSender.getCapabilities("audio")?.codecs.filter((c) => c.mimeType.toLowerCase() === "audio/opus")
     if (codecs?.length) transceiver.setCodecPreferences(codecs)
-    pc.onicecandidate = (e) => { if (e.candidate) this.signal(peer, { candidate: e.candidate.toJSON() as Required<Pick<RTCIceCandidateInit, "candidate" | "sdpMid" | "sdpMLineIndex">> }) }
+    pc.onicecandidate = (e) => { if (e.candidate) { peer.sentIce++; this.signal(peer, { candidate: e.candidate.toJSON() as Required<Pick<RTCIceCandidateInit, "candidate" | "sdpMid" | "sdpMLineIndex">> }) } }
     pc.ontrack = (e) => {
       peer.source?.disconnect(); peer.audio?.dispose()
+      if (peer.playback) { peer.playback.pause(); peer.playback.srcObject = null }
       const graph = this.graph!
-      peer.source = graph.ctx.createMediaStreamSource(new MediaStream([e.track]))
+      const stream = e.streams[0] ?? new MediaStream([e.track])
+      // Chromium's remote WebRTC decoder needs a media sink even when WebAudio owns the audible path.
+      const playback = new Audio()
+      playback.muted = true
+      playback.srcObject = stream
+      peer.playback = playback
+      void playback.play().catch(() => {})
+      peer.source = graph.ctx.createMediaStreamSource(stream)
       peer.audio = new VoiceAudio(graph.ctx, graph.output, graph.reverb)
       peer.source.connect(peer.audio.input)
     }
@@ -204,6 +215,7 @@ export class VoiceChat {
     this.peers.delete(id)
     peer.pc.ontrack = peer.pc.onicecandidate = peer.pc.onconnectionstatechange = null
     peer.pc.close(); peer.source?.disconnect(); peer.audio?.dispose()
+    if (peer.playback) { peer.playback.pause(); peer.playback.srcObject = null }
   }
 
   hold(kind: "proximity" | "radio", on: boolean): void { this.held[kind] = on }
@@ -244,7 +256,10 @@ export class VoiceChat {
   }
 
   /** Read-only diagnostics for the two-client proof; contains no SDP, candidates or credentials. */
-  diagnostics() { return { enabled: this.enabled, pending: this.pending, peers: [...this.peers].map(([id, p]) => ({ id, connection: p.pc.connectionState, level: p.audio?.level() ?? 0 })), error: this.error } }
+  diagnostics() {
+    const media = (d: RTCSessionDescription | null) => d?.sdp.split(/\r?\n/).filter((l) => /^(m=audio|a=(sendrecv|recvonly|sendonly|inactive|rtpmap|fmtp))/.test(l))
+    return { enabled: this.enabled, pending: this.pending, context: this.graph?.ctx.state, transmitting: this.stream?.getAudioTracks().some((t) => t.enabled), peers: [...this.peers].map(([id, p]) => ({ id, connection: p.pc.connectionState, ice: p.pc.iceConnectionState, gathering: p.pc.iceGatheringState, sentIce: p.sentIce, receivedIce: p.receivedIce, signalling: p.pc.signalingState, localMedia: media(p.pc.localDescription), remoteMedia: media(p.pc.remoteDescription), receivedTrack: !!p.source, level: p.audio?.level() ?? 0 })), error: this.error }
+  }
   private changed(): void { this.options.changed?.(); for (const fn of this.listeners) fn() }
   dispose(): void { void this.setEnabled(false); this.disconnected() }
 }

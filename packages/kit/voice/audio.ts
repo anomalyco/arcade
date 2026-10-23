@@ -33,13 +33,13 @@ export class VoiceAudio {
     wet.gain.value = 0
     if (reverb) wet.connect(reverb)
     this.spatial = new SpatialPath(ctx, this.output, reverb ? wet : undefined)
-    this.input.connect(this.spatial.input)
+    this.analyser.connect(this.spatial.input)
     this.high = ctx.createBiquadFilter(); this.high.type = "highpass"; this.high.frequency.value = 300
     this.low = ctx.createBiquadFilter(); this.low.type = "lowpass"; this.low.frequency.value = 3400
     this.saturation = ctx.createWaveShaper()
     this.saturation.curve = Float32Array.from({ length: 1024 }, (_, i) => Math.tanh((i / 1023 * 2 - 1) * 1.4) / Math.tanh(1.4))
     this.radio = ctx.createGain(); this.radio.gain.value = 0
-    this.input.connect(this.high).connect(this.saturation).connect(this.low).connect(this.radio).connect(this.output)
+    this.analyser.connect(this.high).connect(this.saturation).connect(this.low).connect(this.radio).connect(this.output)
     this.noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
     const data = this.noiseBuffer.getChannelData(0), random = mulberry32(713)
     for (let i = 0; i < data.length; i++) data[i] = random() * 2 - 1

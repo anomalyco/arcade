@@ -18,6 +18,10 @@ neither proximity nor radio is active. Natural speech follows the friend's rende
 `audio/spatial-path`: travel delay at 343 m/s, HRTF, distance gain, obstruction low-pass and forest reverb send.
 The default hearing range is 36 m; the direct voice and its reverb send both reach zero there.
 
+Each remote stream also owns a muted media element to start Chromium's WebRTC decoder. Without it, ICE and RTP
+can be healthy while WebAudio receives zero samples. Only the spatial/radio WebAudio graph is audible. Peer
+cleanup pauses the element and clears its stream. `addTrack` lets incoming offers reuse the sending transceiver.
+
 The walkie adds a distance-independent receiver path: 300–3400 Hz, light saturation, squelch clicks and seeded
 static increasing with distance and depleted battery. Natural speech remains at the transmitter's position while
 the radio is keyed, so a nearby friend hears both the mouth and the radio. There is no local microphone sidetone.
@@ -53,9 +57,14 @@ Source: https://developers.cloudflare.com/realtime/turn/generate-credentials/
 
 ## Proof
 
-`hivemind run --kind browser -- bun scripts/prove-voice.ts` runs two headless Chromium contexts, fake microphone
+`hivemind run --worker pro --kind browser --browser-approval '<requested voice proof>' --fetch captures/voice-chat -- bun scripts/prove-voice.ts` runs two headless Chromium contexts, fake microphone
 PCM and `--mute-audio`, against a local Wrangler room using the production `RoomCore`, `RoomSocket`, relay and
 voice client. It measures received level at 2 m, 30 m and behind an obstruction, then re-renders the received PCM
 through the production audio chain in an `OfflineAudioContext`. It also checks opt-in and peer cleanup. Output is
 `captures/voice-chat/two-client.json` (or `$LEASE_OUT`). The launcher uses the shared browser budget. No video or
 audible playback is produced.
+
+The proof uses direct host ICE candidates (mDNS disabled only in its Chromium launch) and no public STUN/TURN.
+On Oct 22, 2026, Pro passed: received RMS 0.03392 at 2 m, 0.00073 at 30 m and 0.00139 behind an obstruction;
+offline proximity at 60 m was exactly zero and radio at 300 m was 0.02677. Mini failed to establish direct ICE,
+so it did not exercise audio decoding. Public relay, device permissions and human speech quality remain separate checks.
