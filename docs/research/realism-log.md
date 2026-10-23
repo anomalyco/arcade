@@ -34,8 +34,11 @@ and what Kit decided; this page keeps the evidence. Headings follow the playbook
   median luma 3 → 6–8 /255 across dense canopy, gap, clearing and lake; torch-on median 6 → 7. Paired GPU on the mini
   at the gap 10.47 → 11.18 ms with the earlier, heavier shaft march (upper bound). Clear-air shafts (`moonAir` 0.25–0.5)
   changed the gap's mean by under 0.2/255. Dark adaptation rarely acts under a full moon (the moonlit scene keeps the
-  camera below its lift); moonless at the dense spot it lifts exposure ×1.74 → ×3.5. Gallery
-  `barbara-moonlight-2026-10-22/`.
+  camera below its lift); moonless at the dense spot it lifts exposure ×1.74 → ×3.5. Review artifacts: bright specks
+  under the lake's treeline were the moonlit horizon sky seen past the drawn world, so the moonlit sky fades out over
+  the lowest ~5° (`MOON_SKY_HORIZON`); the dark blocky band at the gap is the far-LOD tree crowns (it goes with
+  `forest.debug.tree = false` and is already in the moonless before), only easier to see against the moonlit sky. Past
+  70–95 m the moon fades from its map to canopy openness (`MOON_MAP_FADE`). Gallery `barbara-moonlight-2026-10-22/`.
 - **Night sky.** Initial sky-only mini Metal proof, 1920×1080 MSAA4: +0.204 ms median (MAD 0.028 ms), before the lunar
   occultation and mip-filtering follow-up; no whole-game cost claim. Integrated star energy varies 0.035% across 32
   subpixel positions; translation-free sky TAA drifts 0.031 px after 64 m camera travel in the isolated

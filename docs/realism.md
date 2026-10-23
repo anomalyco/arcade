@@ -86,7 +86,8 @@ with your torch off; the torch resets it, lightning doesn't. No ambient floor: w
 - Kit: asked for it ("Without the flashlight on, it's really hard to see anything. Shouldn't we have some moon
   beams?"). The BARBARA default is pending his look; moonless is `skyMoon: "none"`.
 - Pitfalls: don't raise `moonMist` to make shafts show (the milky wash Kit rejects); clear-air shafts (`moonAir`) add
-  nothing visible and stay off.
+  nothing visible and stay off. A brighter sky shows the far-LOD crowns as a blockier dark band: that is the LOD,
+  not the moon.
 
 **Physical lights and surfaces.** GGX with height-correlated Smith, Karis sphere-light widening so a fixture
 mirrors as a patch, geometric specular AA, and a split-sum sky reflection with a fitted env BRDF. Reads as wet
