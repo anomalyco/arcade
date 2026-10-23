@@ -88,7 +88,7 @@ describe("arachnid legs", () => {
       const duty = planted / (600 * 8)
       const swing = (swings.reduce((a, b) => a + b, 0) / swings.length) * CREATURE_STEP
       // Lamplight measured 0.656 and 0.514; eased spring targets leave the run at 0.500.
-      expect(duty).toBeGreaterThan(pace === "walk" ? 0.63 : 0.49)
+      expect(duty).toBeGreaterThanOrEqual(pace === "walk" ? 0.63 : 0.5)
       expect(duty).toBeLessThan(pace === "walk" ? 0.68 : 0.55)
       expect(swing).toBeGreaterThan(0.14)
       expect(swing).toBeLessThan(0.16)
@@ -183,6 +183,24 @@ describe("creature root", () => {
       distances.push(furthest - start.x)
     }
     expect(distances[1]!).toBeGreaterThan(distances[0]! * 2.5)
+  })
+
+  test("a zero, negative or NaN step changes nothing", () => {
+    const r = rig(forest, 8.75, HARVESTMAN)
+    for (let i = 0; i < 90; i++) tick(r, walk(0.5))
+    const motion = JSON.stringify(r.motion), pose = JSON.stringify(r.legs.pose())
+    for (const dt of [0, -1 / 60, Number.NaN]) {
+      stepCreatureMotion(r.motion, walk(0.5), dt, r.ground)
+      r.legs.step(r.motion, r.ground, dt)
+    }
+    expect(JSON.stringify(r.motion)).toBe(motion)
+    expect(JSON.stringify(r.legs.pose())).toBe(pose)
+    const filter = new SecondOrder()
+    expect(filter.step(0.25, 1, 4, 0.8, 0, 0)).toBe(0.25)
+    expect(filter.step(0.25, 1, 4, 0.8, 0, Number.NaN)).toBe(0.25)
+    expect(filter.speed).toBe(0)
+    for (let i = 0; i < 30; i++) tick(r, walk(0.5))
+    expect(r.legs.pose().legs.every(l => l.joints.every(p => p.every(Number.isFinite)))).toBe(true)
   })
 
   test("Froude scaling: a creature S times larger walks √S times faster in metres", () => {

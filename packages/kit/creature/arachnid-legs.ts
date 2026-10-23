@@ -281,6 +281,7 @@ export class ArachnidLegs {
   /** Follows the root one tick (creature seconds, creature-unit ground). */
   step(root: CreatureMotion, g: CreatureSurface, dt: number): void {
     this.contacts.length = 0
+    if (!(dt > 0)) return
     const oldVx = this.vx, oldVz = this.vz
     this.x = root.x
     this.z = root.z

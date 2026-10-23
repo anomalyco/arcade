@@ -68,6 +68,8 @@ export type CreatureGates = { planted: boolean; aligned: boolean }
  * (bounded angular acceleration) → Travel; it resumes only once the feet would have caught up.
  */
 export function stepCreatureMotion(m: CreatureMotion, intent: CreatureIntent, dt: number, surface: CreatureSurface, gates?: CreatureGates): void {
+  // A zero, negative or NaN step would divide velocity by it and poison the state.
+  if (!(dt > 0)) return
   let dx = Number.isFinite(intent.dx) ? intent.dx : 0
   let dz = Number.isFinite(intent.dz) ? intent.dz : 0
   const raw = Math.hypot(dx, dz)
@@ -157,6 +159,7 @@ export class SecondOrder {
 
   /** Advances `value` toward `target` and returns the new value. */
   step(value: number, target: number, f: number, z: number, r: number, dt: number): number {
+    if (!(dt > 0)) return value
     const k1 = z / (PI * f)
     const k2 = Math.max((TAU * f) ** -2, (dt * dt) / 2 + (dt * k1) / 2, dt * k1)
     const k3 = (r * z) / (TAU * f)

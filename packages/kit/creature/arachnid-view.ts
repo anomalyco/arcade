@@ -9,7 +9,7 @@
 import { FrameParts } from "../gpu/frame-parts"
 import { MAT, Mesh, type Rgb } from "../gpu/mesh"
 import type { Batch, Renderer } from "../gpu/renderer"
-import { aimFrame, cross, emit, limb, norm, sub, type Frame, type V3 } from "../rig"
+import { aimFrame, cross, emit, len, limb, norm, sub, type Frame, type V3 } from "../rig"
 import { ARACHNID_FOOT, arachnidLocal, legLengths, type ArachnidPose } from "./arachnid-legs"
 
 export type ArachnidLook = {
@@ -58,6 +58,8 @@ function ellipsoid(m: Mesh, cx: number, rx: number, ry: number, rz: number, colo
     m.vert(a, na, color, MAT.lit); m.vert(c, nc, color, MAT.lit); m.vert(d, nd, color, MAT.lit)
   }
 }
+
+const unit = (v: V3, fallback: V3): V3 => (len(v) > 1e-6 ? norm(v) : fallback)
 
 export class ArachnidView {
   private fp = new FrameParts()
@@ -115,8 +117,8 @@ export class ArachnidView {
 
   private pose(p: ArachnidPose, tint: Rgb): void {
     const push = this.fp.push
-    const forward = sub(arachnidLocal(p, [1, 0, 0]), p.body)
-    const up = sub(arachnidLocal(p, [0, 1, 0]), p.body)
+    const forward = unit(sub(arachnidLocal(p, [1, 0, 0]), p.body), [1, 0, 0])
+    const up = unit(sub(arachnidLocal(p, [0, 1, 0]), p.body), [0, 1, 0])
     const body: Frame = aimFrame(p.body, forward, up)
     emit(push, this.head, body, tint, 0)
     const waist = arachnidLocal(p, [-0.03 * p.hips, 0.005 * p.hips, 0])
@@ -130,7 +132,8 @@ export class ArachnidView {
       const plane = cross(sub(j[2], j[0]), sub(j[1], j[0]))
       for (let seg = 0; seg < 3; seg++) {
         const dir = sub(j[seg + 1]!, j[seg]!)
-        emit(push, this.segments[pair * 3 + seg]!, limb(j[seg]!, j[seg + 1]!, cross(plane, dir), [0, 1, 0]), tint, 0)
+        // limb() expects a unit reference (it drops one shorter than 0.25); raw, this cross scales with size³.
+        emit(push, this.segments[pair * 3 + seg]!, limb(j[seg]!, j[seg + 1]!, unit(cross(plane, dir), [0, 1, 0]), [0, 1, 0]), tint, 0)
       }
       emit(push, this.knuckles[0]!, { p: j[1], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }, tint, 0)
       emit(push, this.knuckles[1]!, { p: j[2], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }, tint, 0)
