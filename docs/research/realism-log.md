@@ -26,6 +26,16 @@ and what Kit decided; this page keeps the evidence. Headings follow the playbook
 
 ## Lights
 
+- **Moonlight through the canopy** (BARBARA, PR #488). Moon sky: Krisciunas & Schaefer 1991 (PASP 103, 1033),
+  Rayleigh (1.06 + cos²ρ) plus aerosol 10^(0.79 − ρ/40°) per lux, × (1 − 10^(−0.4·k·X)); a full moon at 34° (0.195 lx
+  after extinction) puts the sky 60° away at ~0.0044 cd/m² and the dome's ground illuminance at ~11% of the moon's.
+  Shafts march the bank's mean density 6–8 steps within 36 m (the billow noise cost more and the shadow gives them their
+  shape). Stills (`games/barbara/scripts/moonlight-proof.ts`, 1600×900 High, torch off): near-black pixels ~75% → 31–48%,
+  median luma 3 → 6–8 /255 across dense canopy, gap, clearing and lake; torch-on median 6 → 7. Paired GPU on the mini
+  at the gap 10.47 → 11.18 ms with the earlier, heavier shaft march (upper bound). Clear-air shafts (`moonAir` 0.25–0.5)
+  changed the gap's mean by under 0.2/255. Dark adaptation rarely acts under a full moon (the moonlit scene keeps the
+  camera below its lift); moonless at the dense spot it lifts exposure ×1.74 → ×3.5. Gallery
+  `barbara-moonlight-2026-10-22/`.
 - **Night sky.** Initial sky-only mini Metal proof, 1920×1080 MSAA4: +0.204 ms median (MAD 0.028 ms), before the lunar
   occultation and mip-filtering follow-up; no whole-game cost claim. Integrated star energy varies 0.035% across 32
   subpixel positions; translation-free sky TAA drifts 0.031 px after 64 m camera travel in the isolated

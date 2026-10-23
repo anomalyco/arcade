@@ -73,30 +73,20 @@ units per cd/m² and owns exposure. `moonLight()` supplies lux and direction for
   to make stars visible. Moon mips filter in linear light, and the unlit disk also occludes stars.
 
 **Moonlight through the canopy.** With the torch off the woods read the way they do after your eyes adjust: the
-physical moon lands in pools through the canopy's own cut-out shadow map, it lights the sky dome (Krisciunas &
-Schaefer 1991: Rayleigh plus aerosol per lux, × the share the view path scatters; a full moon puts the sky at ~0.003–0.005
-cd/m², about 20× a moonless night), so trunks silhouette against it and clearings and the lake open up, the crowns
-pass a little down as diffuse light (`canopyScatter` 3%), and the mist bank scatters the moon where its shadow map lets
-it through (`moonMist`: a 6–8 step march of the bank's mean density within 36 m, so shafts appear only where a gap and
-the mist line up). Dark adaptation (`darkAdapt`, `darkAdaptTime`) adds up to N stops over ~60 s once the scene alone
-holds the camera at `adaptLift` with your torch off; your torch resets it in about a second and the noise gain stops
-at the camera's own lift. No ambient floor was raised: what is in shadow stays black.
-- Where: `packages/kit/sky/model.ts` (`moonSkyLuminance`, `moonSkyIlluminance`), `sky/shaders.ts`;
-  `packages/kit/forest/shaders.ts` (`forestMoonDirect`, `forestMoonAmbient`), `forest/view.ts` (`woodsMoonShafts` via
-  the fog volume's new `extraScatter` hook), `forest/exposure.ts` (`stepDarkAdaptation`). Barbara turns them on with
-  `skyMoon: "full"` and `darkAdapt: 1` (`games/barbara/src/world-view.ts`). Kit defaults stay moonless with no
-  adaptation, and the kit's Today sky is unchanged.
-- Cost: about +0.7 ms on the mini (Metal, High, 1600×900, paired, with an earlier and heavier shaft march, so an upper
-  bound). Most of it is the 9-tap moon shadow lookup per surface pixel. The moon map renders again only when you cross
-  an 8 m snap.
-- Proof: `games/barbara/scripts/moonlight-proof.ts` (dense canopy, gap, clearing and lake edge, torch on, dark
-  adaptation). Gallery `barbara-moonlight-2026-10-22/`.
+physical moon lands in pools through the canopy's own cut-out shadow map, it lights the sky dome (Krisciunas–Schaefer)
+so trunks silhouette against it and clearings and the lake open up, the crowns pass a little down (`canopyScatter`),
+and the mist bank scatters it only where the moon's shadow map lets it through (`moonMist`). Dark adaptation
+(`darkAdapt`, `darkAdaptTime`) adds up to N stops over ~60 s once the scene alone holds the camera at `adaptLift`
+with your torch off; the torch resets it, lightning doesn't. No ambient floor: what is in shadow stays black.
+- Where: `kit/sky/model.ts` (`moonSkyLuminance`), `kit/forest/shaders.ts` (`forestMoonDirect`, `forestMoonAmbient`),
+  `forest/view.ts` (`woodsMoonShafts` through the fog volume's `extraScatter` hook), `forest/exposure.ts`
+  (`stepDarkAdaptation`). BARBARA: `skyMoon: "full"`, `darkAdapt: 1` in `src/world-view.ts`; kit defaults stay moonless.
+  To fade the moon (Looks, weather blends) fade `skyMoonLux`, not the `skyMoon` phase string.
+- Cost: about +0.7 ms (mini, High); the moon map re-renders only when you cross an 8 m snap.
 - Kit: asked for it ("Without the flashlight on, it's really hard to see anything. Shouldn't we have some moon
-  beams?"). Decision on the new Barbara default is pending; moonless is `skyMoon: "none"`.
-- Pitfalls: clear-air shafts (`moonAir` 0.25–0.5) barely changed the stills and cost the same, so they are off by
-  default. Shafts stay sparse where the bank is thin. Don't raise `moonMist` to make them show: that is the milky wash
-  Kit rejects. Dark adaptation rarely acts under a full moon, because the moonlit scene keeps the camera below its
-  lift. It mostly matters moonless and in deep shade.
+  beams?"). The BARBARA default is pending his look; moonless is `skyMoon: "none"`.
+- Pitfalls: don't raise `moonMist` to make shafts show (the milky wash Kit rejects); clear-air shafts (`moonAir`) add
+  nothing visible and stay off.
 
 **Physical lights and surfaces.** GGX with height-correlated Smith, Karis sphere-light widening so a fixture
 mirrors as a patch, geometric specular AA, and a split-sum sky reflection with a fitted env BRDF. Reads as wet

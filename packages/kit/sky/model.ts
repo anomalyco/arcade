@@ -26,17 +26,20 @@ export function moonLight(s: SkySettings): MoonLight {
 
 /** cd/m² per lux of moonlight in Krisciunas & Schaefer's scattering function (10^5.36 nL at their full-moon I*). */
 export const MOON_SKY_GAIN = 0.0848
+/** The moonlit sky fades out below this sine of altitude (~5°): that band is distant hills, trees and haze. */
+export const MOON_SKY_HORIZON = 0.09
 
 /**
  * Moonlit sky luminance (cd/m²), Krisciunas & Schaefer 1991 (PASP 103, 1033): Rayleigh (1.06 + cos²ρ) plus aerosol
  * 10^(0.79 − ρ/40°) per lux reaching the ground, times the share of light the view path scatters, 1 − 10^(−0.4·k·X).
  * `lux` is the moon's illuminance after extinction, `rho` the angle from the moon, `altitude` the view's (radians).
- * The shader's dome evaluates the same expression.
+ * The lowest ~5° fade out (`MOON_SKY_HORIZON`). The shader's dome evaluates the same expression.
  */
 export function moonSkyLuminance(lux: number, rho: number, altitude: number, extinctionMag: number): number {
   if (lux <= 0) return 0
   const c = Math.cos(rho)
-  return lux * MOON_SKY_GAIN * (1.06 + c * c + 10 ** (0.79 - rho / DEG / 40)) * (1 - 10 ** (-0.4 * extinctionMag * airMass(Math.max(altitude, 0))))
+  const h = Math.max(0, Math.min(1, Math.sin(altitude) / MOON_SKY_HORIZON)), horizon = h * h * (3 - 2 * h)
+  return lux * MOON_SKY_GAIN * (1.06 + c * c + 10 ** (0.79 - rho / DEG / 40)) * (1 - 10 ** (-0.4 * extinctionMag * airMass(Math.max(altitude, 0)))) * horizon
 }
 
 const moonSkyCache = new Map<string, number>()

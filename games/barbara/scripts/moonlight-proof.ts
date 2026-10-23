@@ -2,7 +2,7 @@
 // same four spots (dense canopy, a canopy gap, a clearing, the lake edge) plus the gap with your torch on, each before
 // (main's Today: the catalogue sky with no moon) and after (the physical moon, its shafts, the moonlit dome), fresh and
 // after the eye has dark-adapted, plus a few variants at the gap and the clearing. Then paired GPU time at the gap.
-//   ARCADE_BROWSER_BUDGET_S=300 bun scripts/moonlight-proof.ts [--out <dir>] [--size 1600x900] [--moon key=value,...]
+//   ARCADE_BROWSER_BUDGET_S=300 bun scripts/moonlight-proof.ts [--out <dir>] [--size 1600x900] [--moon key=value,...] [--shots spot-variant,...]
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { browserBudget } from "../../../scripts/browser-budget"
@@ -11,6 +11,9 @@ const arg = (name: string, fallback: string) => { const i = process.argv.indexOf
 const out = resolve(arg("--out", "../../captures/barbara-moonlight"))
 const [W, H] = arg("--size", "1600x900").split("x").map(Number) as [number, number]
 const parse = (s: string) => Object.fromEntries(s.split(",").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k!, v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v] }))
+/** `--debug fern=false,...` turns off forest draw kinds (`forest.debug`); `--tag` suffixes the file names. */
+const debugs = parse(arg("--debug", ""))
+const tag = arg("--tag", "")
 mkdirSync(out, { recursive: true })
 
 type Look = Record<string, number | string | boolean>
@@ -106,6 +109,7 @@ const poses = await page.evaluate(() => {
   }
 })
 console.log("poses", JSON.stringify(poses))
+await page.evaluate((d) => { Object.assign((woods.view.forest as unknown as { debug: object }).debug, d) }, debugs)
 
 const shoot = async (spot: keyof typeof poses, v: Variant) => {
   const pose = poses[spot]
@@ -128,13 +132,24 @@ const shoot = async (spot: keyof typeof poses, v: Variant) => {
     return { exposure: s.exposure, dark: +woods.view.forest.camera.dark.toFixed(3) }
   }, { pose, v })
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-  await page.screenshot({ path: `${out}/${spot}-${v.name}.png` })
+  await page.screenshot({ path: `${out}/${spot}-${v.name}${tag}.png` })
   console.log(spot, v.name, JSON.stringify(state))
   return state
 }
 
 const report: Record<string, unknown> = { poses, after: AFTER, shots: {} as Record<string, unknown> }
-for (const { spot, variants } of spots) for (const v of variants) (report.shots as Record<string, unknown>)[`${spot}-${v.name}`] = await shoot(spot as keyof typeof poses, v)
+// `--shots lake-after,gap-adapted` re-takes only those stills and skips the timings.
+const only = arg("--shots", "").split(",").filter(Boolean)
+for (const { spot, variants } of spots) for (const v of variants) {
+  if (only.length && !only.includes(`${spot}-${v.name}`)) continue
+  ;(report.shots as Record<string, unknown>)[`${spot}-${v.name}`] = await shoot(spot as keyof typeof poses, v)
+}
+if (only.length) {
+  writeFileSync(`${out}/moonlight-retake.json`, JSON.stringify({ ...report, errors }, null, 2))
+  if (errors.length) console.log("browser messages:", errors.slice(0, 10))
+  server.stop(true)
+  await budget.exit(0)
+}
 
 // Paired GPU time at the gap, torch off: before, after and after without shafts alternate, each the median of 12 frames.
 const gpu: Record<"before" | "after" | "noshafts", number[]> = { before: [], after: [], noshafts: [] }

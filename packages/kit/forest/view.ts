@@ -403,11 +403,13 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const metered = renderer.sceneMeter
     // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
     const fallback = spot + 0.004 * s.sky + 0.0005, offset = s.clearAir && !smoke && local ? -0.25 * (1 - Math.min(1, Math.max(0, s.nearScatter))) : 0
-    // Dark adaptation lifts the cap only once the scene alone already holds the camera at its lift.
-    cam.dark = stepDarkAdaptation(cam.dark, f.dt, !!local, forestExposureTarget(metered, fallback, s, offset) >= s.adaptLift - 0.05, s)
-    const targetStops = forestExposureTarget(metered, fallback, s, offset, s.darkAdapt * cam.dark)
-    // While a lightning flash is in the meter the storm's eye adaptation answers it; this clock waits.
-    if (!st?.holdExposure) stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
+    // While a lightning flash is in the meter the storm's eye adaptation answers it; this clock, and the slow dark
+    // adaptation (which would read the flash as a bright scene and decay), both wait.
+    if (!st?.holdExposure) {
+      // Dark adaptation lifts the cap only once the scene alone already holds the camera at its lift.
+      cam.dark = stepDarkAdaptation(cam.dark, f.dt, !!local, forestExposureTarget(metered, fallback, s, offset) >= s.adaptLift - 0.05, s)
+      stepForestExposure(cam, renderer.sceneMeterStatus, forestExposureTarget(metered, fallback, s, offset, s.darkAdapt * cam.dark), f.dt, s)
+    }
     cam.exposure = Math.pow(2, cam.stops)
     const eye = st ? st.exposure : 1
     // Reuse the forest's existing bounded eye state; there is no second adaptation clock.

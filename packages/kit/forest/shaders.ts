@@ -41,6 +41,8 @@ export const WOODS_STORM = 80
 export const WOODS_MOONLIT = 88
 export const WOODS_GROUND_AT = 96
 export const WOODS_GROUND = 100
+/** Where the moon's canopy map gives way to the sky openness (m from the eye, in plan): inside its ~100 m reach. */
+export const MOON_MAP_FADE = [70, 95] as const
 /** Spot-shadow ids of the moon's canopy shadow map and the lightning's. */
 export const MOON_SHADOW_ID = 65000
 export const FLASH_SHADOW_ID = 65001
@@ -133,7 +135,7 @@ fn woodsSkyRadiance(dir: vec3f, pix: f32) -> vec3f {
       let alt = asin(clamp(dir.y, 0.0, 1.0));
       let mass = 1.0 / (sin(alt) + 0.50572 * pow(alt * 57.29578 + 6.07995, -1.6364));
       let rho = acos(clamp(m, -1.0, 1.0));
-      c += vec3f(0.9, 1.0, 1.2) * N.moon.w * N.moonlit2.z * 0.0848 * (1.06 + m * m + pow(10.0, 0.79 - rho * 1.4323945)) * (1.0 - exp2(-1.32877124 * N.moonlit2.w * mass)) * smoothstep(-0.02, 0.02, dir.y);
+      c += vec3f(0.9, 1.0, 1.2) * N.moon.w * N.moonlit2.z * 0.0848 * (1.06 + m * m + pow(10.0, 0.79 - rho * 1.4323945)) * (1.0 - exp2(-1.32877124 * N.moonlit2.w * mass)) * smoothstep(0.0, 0.09, dir.y);
     }
   }
   return c;
@@ -469,9 +471,16 @@ fn forestCloudLight(n: vec3f) -> vec3f {
  * through the canopy's openness plus what the crowns scatter down through the leaves.
  */
 const forestMoonWgsl = /* wgsl */ `
-fn forestMoonDirect(world: vec3f, n: vec3f) -> vec3f {
-  if (N.misc.w < 0.5) { return vec3f(0.0); }
-  return vec3f(N.moon.w * max(dot(n, N.moon.xyz), 0.0) / 3.14159265) * spotShadowVis(${MOON_SHADOW_ID}u, world, n);
+fn forestMoonDirect(world: vec3f, n: vec3f, open: f32) -> vec3f {
+  let ndl = dot(n, N.moon.xyz);
+  // No moon, or facing away from it: skip the shadow map's slot search and its nine taps.
+  if (N.misc.w < 0.5 || N.moon.w <= 0.0 || ndl <= 0.0) { return vec3f(0.0); }
+  // The moon's map covers ~100 m round the eye and reads as lit beyond it: past ${MOON_MAP_FADE[0]} m fade to the canopy's
+  // openness instead, so the far forest isn't a lit band behind the shadowed near one.
+  let far = smoothstep(${MOON_MAP_FADE[0]}.0, ${MOON_MAP_FADE[1]}.0, distance(world.xz, F.cam.xz));
+  var vis = open;
+  if (far < 1.0) { vis = mix(spotShadowVis(${MOON_SHADOW_ID}u, world, n), open, far); }
+  return vec3f(N.moon.w * ndl / 3.14159265) * vis;
 }
 fn forestMoonAmbient(n: vec3f, open: f32) -> vec3f {
   return vec3f((N.moonlit.x * mix(0.12, 1.0, open) + N.moonlit.y * (1.0 - open)) * (0.5 + 0.5 * n.y) / 3.14159265);
@@ -484,7 +493,7 @@ const sceneHooks: SceneHooks = {
   declarations: woodsUniformWgsl + fogSceneWgsl + textures + woodsSkyWgsl + woodsEnvWgsl + windWgsl + forestMoonWgsl + /* wgsl */ `
 fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
   if (N.misc.w < 0.5) { return vec3f(0.55, 0.66, 0.95) * N.moon.w * max(dot(n, N.moon.xyz), 0.0) * open * open * 0.35; }
-  return forestMoonDirect(world, n);
+  return forestMoonDirect(world, n, open);
 }
 ${forestFlashWgsl}
 `,
@@ -852,7 +861,7 @@ ${forestMoonWgsl}`,
   diffuseTerm: "let diffuse = (max(ndl, 0.0) + max(-ndl, 0.0) * batchThin) / PI;",
   bounce: "vec3f(0.0)",
   ambient: "(fogAmbient(n) * N.sky.z + forestCloudLight(n)) * 0.5 + forestMoonAmbient(n, 0.5)",
-  directional: "forestFlash(o.world, n, 1.0) + forestMoonDirect(o.world, n)",
+  directional: "forestFlash(o.world, n, 1.0) + forestMoonDirect(o.world, n, 0.5)",
   lightLeak: "0.0",
   wallDirectScale: "1.0",
   surface: "if (mat == 5) { col = tapeFluoresce(col, o.color); } col = fogApply(col, F.cam.xyz, o.world);",

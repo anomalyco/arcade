@@ -53,3 +53,9 @@ test("the moonlit dome follows Krisciunas–Schaefer: a full moon lights the sky
   expect(moonSkyIlluminance({ ...s, skyMoonScatter: 0 })).toBe(0)
   expect(moonSkyIlluminance({ ...s, skyMoon: "none" })).toBe(0)
 })
+
+test("a moon faded to zero light adds nothing, whatever its phase", () => {
+  const s = createSkySettings({ skyMode: "physical", skyMoon: "full", skyMoonLux: 0 })
+  expect(moonLight(s).illuminanceLux).toBe(0)
+  expect(moonSkyIlluminance(s)).toBe(0)
+})

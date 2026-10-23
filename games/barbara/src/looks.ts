@@ -25,7 +25,8 @@ export type Look = {
 }
 
 /** An overcast sky: no stars, no Milky Way, a little airglow through the cloud. */
-const OVERCAST: Partial<ForestLookSettings> = { skyMode: "physical", skyMoon: "none", skyStars: 0, skyMilkyWay: 0, skyZodiacal: 0, skyAirglow: 0.35, stars: 0 }
+// The moon goes by its light (`skyMoonLux` 0), never its phase string, so a blend fades it instead of snapping at half.
+const OVERCAST: Partial<ForestLookSettings> = { skyMode: "physical", skyMoonLux: 0, skyStars: 0, skyMilkyWay: 0, skyZodiacal: 0, skyAirglow: 0.35, stars: 0 }
 
 export const LOOKS: Record<LookId, Look> = {
   today: {
@@ -46,7 +47,7 @@ export const LOOKS: Record<LookId, Look> = {
     // About 1.4 stops under Today and the eye can't open past its base (adaptLift 0); the stars and Milky Way are
     // pushed up past that, so the sky through the gaps is the brightest thing that isn't a torch.
     forest: {
-      skyMode: "physical", skyMoon: "none", skyStars: 3, skyMilkyWay: 2.6, skyAirglow: 0.1, skyZodiacal: 0, skyExtinction: 0.06, skyScintillation: 0.06,
+      skyMode: "physical", skyMoonLux: 0, darkAdapt: 0, skyStars: 3, skyMilkyWay: 2.6, skyAirglow: 0.1, skyZodiacal: 0, skyExtinction: 0.06, skyScintillation: 0.06,
       sky: 0.08, skylight: 0, windows: 0, stringLights: 0, exposure: 0.6, adaptLift: 0, fogBrightness: 0, mistDensity: 0.015, depthDensity: 0.012, noise: 0.6,
     },
     storm: {},

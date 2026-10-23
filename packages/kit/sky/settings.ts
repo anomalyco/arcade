@@ -57,7 +57,7 @@ export function skyControls(): LabControl[] {
     { key: "skyMoon", label: "Moon", group: "Sky", type: "select", options: ["none", "crescent", "half", "full"].map(value => ({ value, label: value[0]!.toUpperCase() + value.slice(1) })) },
     range("skyMoonAzimuth", "Moon azimuth", 0, 360, 1, "°"),
     range("skyMoonAltitude", "Moon altitude", -10, 90, 1, "°"),
-    range("skyMoonLux", "Full moon illuminance", 0.1, 0.35, 0.01, "lx"),
+    range("skyMoonLux", "Full moon illuminance", 0, 0.35, 0.01, "lx"),
     range("skyMoonEarthshine", "Earthshine", 0, 0.001, 0.00005, "×"),
     range("skyMoonScatter", "Moonlit sky", 0, 3, 0.05, "×"),
   ]

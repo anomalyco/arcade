@@ -87,7 +87,7 @@ export class SkyPass implements ScenePass {
     const phase = moon.phaseAngle
     const norm = phaseNormalization(phase)
     const solidAngle = 2*Math.PI*(1-Math.cos(moon.angularRadius))
-    u.set([phase,s.skyMoonLux*norm/(solidAngle*0.319),s.skyMoonEarthshine,s.skyMoon === "none" ? 0 : 1],36)
+    u.set([phase,s.skyMoonLux*norm/(solidAngle*0.319),s.skyMoonEarthshine,s.skyMoon === "none" || s.skyMoonLux <= 0 ? 0 : 1],36)
     u.set(frame.skyFlashRadiance ?? [0,0,0],40); u[43] = this.ctx.depthClearValue ?? 1
     u[44] = s.skyMoonScatter
     this.ctx.device.queue.writeBuffer(this.uniform,0,u)
