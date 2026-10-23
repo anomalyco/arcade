@@ -94,6 +94,11 @@ export type ForestLookSettings = SkySettings & {
   windows: number
   stringLights: number
   water: number
+  lakeLook: "today" | "moonlit"
+  lakeRipples: number
+  lakeRain: number
+  lakeScatter: number
+  lakeMist: number
   // Camera
   exposure: number
   autoExposure: boolean
@@ -143,6 +148,7 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1, smoothTrunks: true,
   windows: 1, stringLights: 1, water: 1, campDetail: false,
+  lakeLook: "today", lakeRipples: 1, lakeRain: 0, lakeScatter: 0.12, lakeMist: 0.6,
   exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 8, adaptRange: 1.5,
   exposureModel: "robust", nightKey: 0.003, nightStops: 0.8, nightStrength: 0.85, adaptLift: 0.8,
   noise: 1, chromaNoise: 0.35, vignette: 0.4, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
@@ -235,6 +241,11 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     toggle("campDetail", "Camp detail (reload)", W, "Camp"),
     range("stringLights", "String lights", W, 0, 3, 0.05, "×", "Camp"),
     range("water", "Lake reflections", W, 0, 2, 0.05, "×", "Camp"),
+    select("lakeLook", "Water look", "Water", [{ value: "today", label: "Today" }, { value: "moonlit", label: "Moonlit" }]),
+    range("lakeRipples", "Ripple slopes", "Water", 0, 4, 0.05, "×"),
+    range("lakeRain", "Rain rings", "Water", 0, 1, 0.05, "×"),
+    range("lakeScatter", "Shallow scattering", "Water", 0, 3, 0.05, "×"),
+    range("lakeMist", "Surface mist", "Water", 0, 2, 0.05, "×"),
     range("exposure", "Exposure", C, 0.2, 6, 0.05, "×"),
     toggle("autoExposure", "Auto exposure", C),
     toggle("highlightShoulder", "Preserve highlight colour", C),

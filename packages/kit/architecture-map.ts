@@ -332,7 +332,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   },
   {
     area: "`water/*`",
-    description: "Opt-in continuous water normals, optics and typed controls; Carrier adapter",
+    description: "Opt-in continuous water normals, optics and typed controls; Carrier ocean and BARBARA lake adapters",
     match: (s) => s.startsWith("@arcade/kit/water/"),
   },
   {

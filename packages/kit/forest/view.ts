@@ -31,6 +31,9 @@ import { appendForestLights } from "./lights"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
 import type { LabControl } from "../lab-navigation"
+import { LakeSky } from "../water/lake-sky"
+import { lakeTime } from "../water/lake"
+import { lakeHorizon } from "../water/lake-horizon"
 
 export type ForestTorch = {
   /** Stable per player. */
@@ -89,6 +92,8 @@ export type ForestView = {
   readonly sky: ReturnType<typeof attachSky>
   readonly renderer: Renderer
   readonly settings: ForestLookSettings
+  readonly waterProbe: { x: number; z: number; active: boolean; at: number }
+  readonly lakeSky: LakeSky
   readonly build: ForestBuild
   /** Rebuilds the static forest for a new world (same textures and models). */
   setWorld(world: ForestWorld): void
@@ -163,6 +168,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const smoke = !!opts.smoke
   let quality = FOREST_QUALITY[opts.quality ?? "balanced"]
   const settings = createForestLookSettings(opts.settings)
+  const waterProbe = { x: world.lake?.x ?? 0, z: world.lake?.z ?? 0, active: false, at: -100 }
   const lakeOf = (w: ForestWorld) => w.lake ?? { x: 0, z: 0, rx: 1, rz: 1, level: -100 }
   const fogBaseOf = (w: ForestWorld) => Math.min(lakeOf(w).level, ...[0, 1, 2, 3].map(i => w.height(Math.cos(i) * 10, Math.sin(i) * 10) - 2))
   let lake = lakeOf(world), fogBase = fogBaseOf(world)
@@ -208,7 +214,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const loadMs = performance.now() - t0
   mark("assets")
 
-  let pass = new ForestPass(renderer.passContext, build, textures, world)
+  const lakeSky = new LakeSky(renderer.passContext, settings)
+  let pass = new ForestPass(renderer.passContext, build, textures, world, lakeSky.texture)
   const sky = attachSky(renderer, settings, new SkyPass(renderer.passContext))
   renderer.addPass("opaque", pass)
   const motes = new MotePass(renderer.passContext)
@@ -317,6 +324,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // Reuse the forest's existing bounded eye state; there is no second adaptation clock.
     const darkAdaptation = Math.max(0, Math.min(1, (cam.stops + s.adaptRange) / Math.max(0.01, s.adaptRange + s.adaptLift)))
     sky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation })
+    lakeSky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation }, s.lakeLook === "moonlit")
     const lunar = moonLight(s)
     const physicalMoon = sky.active && !smoke && lunar.illuminanceLux > 0
 
@@ -341,6 +349,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     if (physicalMoon) candidates.push({ id: moonShadowId, pos: [Math.round(f.eye[0] / 8) * 8 + lunar.direction[0] * 512, f.eye[1] + lunar.direction[1] * 512, Math.round(f.eye[2] / 8) * 8 + lunar.direction[2] * 512], axis: [-lunar.direction[0], -lunar.direction[1], -lunar.direction[2]], cosOuter: 0.98, range: 650, intensity: 1e8 })
     pass.update(f.eye, f.viewProj, quality, s)
     const enc = device.createCommandEncoder()
+    lakeSky.prepare(enc)
     const casters = spots.settings.count > 0 && (local || physicalMoon) ? pass.casters(physicalMoon ? f.eye : local!.pos, physicalMoon ? 140 : s.torchReach, physicalMoon ? 100 : quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
     if (casters.length && f.casters?.length) { casters.push(...f.casters); spots.invalidate() }
     if (spots.update(enc, candidates, f.eye, f.dt, id => id === moonShadowId ? moonShadowId : lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
@@ -439,6 +448,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set(unjitteredInv, 56)
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), sky.active ? 1 : 0], 72)
     custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, s.nearScatter], 76)
+    custom.set([s.lakeLook === "moonlit" ? 1 : 0, s.lakeRipples, s.lakeRain, s.lakeScatter], 84 + GROUND_CELLS * GROUND_CELLS)
+    custom.set([s.lakeMist, lakeTime(f.time), Number(sky.active && lakeSky.active), sky.active ? lunar.illuminanceLux : s.moon], 88 + GROUND_CELLS * GROUND_CELLS)
+    custom.set([waterProbe.x, waterProbe.z, Number(waterProbe.active), Math.min(100, Math.max(0, f.time - waterProbe.at))], 92 + GROUND_CELLS * GROUND_CELLS)
     renderer.setCustomUniforms(custom)
 
     packSceneFrame(frameData, { viewProj: f.viewProj, eye: f.eye, time: f.time, width: f.width, height: f.height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [1, 1], ao: 0 })
@@ -457,7 +469,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   }
 
   return {
-    renderer, settings, sky,
+    renderer, settings, waterProbe, sky, lakeSky,
     get build() { return build },
     setWorld(next: ForestWorld) {
       const t = performance.now()
@@ -465,7 +477,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       buildMs = performance.now() - t
       const old = pass
       renderer.removePass(old)
-      pass = new ForestPass(renderer.passContext, build, textures, next)
+      pass = new ForestPass(renderer.passContext, build, textures, next, lakeSky.texture)
       Object.assign(pass.debug, old.debug)
       debug = pass.debug as Record<string, boolean>
       renderer.addPass("opaque", pass)
@@ -569,6 +581,7 @@ class ForestPass implements ScenePass {
   private water: GpuMesh
   private instanceBuf: GPUBuffer
   private field: GPUTexture
+  private canopy: GPUBuffer
   private instanceData = new Float32Array(INSTANCE_FLOATS * 4096)
   private draws: { mesh: NonNullable<GpuMesh>; masked: boolean; first: number; count: number; hidden: number; prefix: { d: number; end: number }[]; template: number; near: boolean; kind: string }[] = []
   private statics: { mesh: NonNullable<GpuMesh>; masked: boolean; near: boolean; chunk: number; d: number; inView: boolean }[] = []
@@ -577,7 +590,7 @@ class ForestPass implements ScenePass {
   /** Profiling switches (automation only): draw statics, and each template kind. */
   readonly debug = { statics: true, tree: true, fern: true, rock: true, floor: true, prepass: true, indexed: true }
 
-  constructor(private ctx: PassContext, private build: ForestBuild, textures: ForestTextures, private world: ForestWorld) {
+  constructor(private ctx: PassContext, private build: ForestBuild, textures: ForestTextures, private world: ForestWorld, skyTexture: GPUTexture) {
     const d = ctx.device
     const code = makeSceneShader(forestHooks) + treeVertexWgsl + cutoutDepthWgsl
     const module = compileShaderModuleWithLog(d, code, "forest scene")
@@ -588,6 +601,8 @@ class ForestPass implements ScenePass {
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
+      { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
     ] })
     const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] })
     // Cut-outs draw twice: a depth prepass with their coverage, then shading at depth "equal" (no overdraw shading).
@@ -607,6 +622,9 @@ class ForestPass implements ScenePass {
     }
     const field = this.field = d.createTexture({ size: [build.fieldSize, build.fieldSize], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     d.queue.writeTexture({ texture: field }, build.field as Uint8Array<ArrayBuffer>, { bytesPerRow: build.fieldSize * 4 }, [build.fieldSize, build.fieldSize])
+    const canopy = lakeHorizon(world)
+    this.canopy = d.createBuffer({ label: "Lake canopy", size: canopy.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+    d.queue.writeBuffer(this.canopy, 0, canopy)
     this.group = d.createBindGroup({ layout, entries: [
       { binding: 0, resource: textures.base.createView({ dimension: "2d-array" }) },
       { binding: 1, resource: textures.normal.createView({ dimension: "2d-array" }) },
@@ -614,6 +632,8 @@ class ForestPass implements ScenePass {
       { binding: 3, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", maxAnisotropy: 8 }) },
       { binding: 4, resource: field.createView() },
       { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }) },
+      { binding: 6, resource: skyTexture.createView({ dimension: "cube" }) },
+      { binding: 7, resource: { buffer: this.canopy } },
     ] })
     const pair = (m: { opaque: ArrayBuffer; masked: ArrayBuffer }, indexed = false) => ({ opaque: gpuMesh(d, m.opaque, indexed), masked: gpuMesh(d, m.masked, indexed) })
     this.templates = build.templates.map(t => ({ near: pair(t.near, true), far: t.far ? pair(t.far, true) : null, nearDist: t.nearDist, maxDist: t.maxDist, kind: t.kind }))
@@ -631,6 +651,7 @@ class ForestPass implements ScenePass {
   private cell(x: number, z: number) { return (Math.floor(x / 4) + 1000) * 4096 + Math.floor(z / 4) + 1000 }
 
   dispose() {
+    this.canopy.destroy()
     this.instanceBuf.destroy()
     this.field.destroy()
     const meshes = [this.water, ...this.templates.flatMap(t => [t.near.opaque, t.near.masked, t.far?.opaque ?? null, t.far?.masked ?? null]), ...this.chunks.flatMap(c => [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked])]

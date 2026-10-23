@@ -101,7 +101,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `client/{input,camera,side-camera,smooth}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), rig-agnostic `TraumaShake`, side-view `SideCamera`, and orbit/pan/zoom gestures | — | Yes | Yes | Yes | Yes | Yes | Yes |
 | `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `sky/*` | Lazy catalogue stars, HDR night sky, textured Moon, astronomical clock and lunar illuminance | — | — | Yes | — | Yes | — | — |
-| `water/*` | Opt-in continuous water normals, optics and typed controls; Carrier adapter | — | — | — | Yes | — | — | — |
+| `water/*` | Opt-in continuous water normals, optics and typed controls; Carrier ocean and BARBARA lake adapters | — | — | — | Yes | — | — | — |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — | — |
 | `shell` | The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md)) | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |

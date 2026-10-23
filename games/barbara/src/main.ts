@@ -25,6 +25,8 @@ import { PaperMap } from "./map"
 import { OnlineSession, SoloSession, type Session } from "./session"
 import { StoryHud } from "./story"
 import { WorldView } from "./world-view"
+import { createLakeEditor } from "@arcade/kit/water/lake-editor"
+import { MOONLIT_LAKE } from "@arcade/kit/water/lake-preset"
 
 /** Reduce camera motion is the shell's Settings row (one choice across games); `main` copies it in. */
 const WALK = { cameraMotion: 1, reduceMotion: false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9 }
@@ -48,6 +50,7 @@ async function main() {
   const smoke = params.has("smoke")
   const roomCode = (params.get("room") ?? "").toLowerCase()
   const online = ROOM_CODE.test(roomCode)
+  const lakeLab = params.get("lab") === "water" && !online
   const audio = new WoodsAudio()
   const story = new StoryHud(audio)
   // Filled in once they exist; the shell reads them from its first frame.
@@ -131,14 +134,30 @@ async function main() {
   // woods hands input back and locks.
   const locked = () => document.pointerLockElement === canvas
   const active = () => forcePlay || (locked() && !document.hidden)
-  const camera = new WoodsCamera(canvas, () => false, settings, active)
+  let lakeEditor: ReturnType<typeof createLakeEditor> | undefined
+  const camera = new WoodsCamera(canvas, () => lakeEditor?.state.mode === "edit", settings, active)
   camera.fov = 70; camera.near = 0.08; camera.far = 300; camera.flashlight = true
   const spawn = world.camp.spawn
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
-  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Flashlight"], onToggle: () => syncOverlays() })
+  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: [lakeLab ? "Water" : "Flashlight"], onToggle: () => syncOverlays() })
   live.panel = panel
   panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
+  if (lakeLab) {
+    Object.assign(view.forest.settings, MOONLIT_LAKE)
+    if (params.get("waterLook") === "today") view.forest.settings.lakeLook = "today"
+    const dock = world.buildings.find(b => b.kind === "dock")
+    const start = dock ? { x: (dock.rect[0] + dock.rect[2]) / 2, z: dock.rect[3] - 2 }
+      : { x: world.lake.x, z: world.lake.z - world.lake.rz - 1 }
+    lakeEditor = createLakeEditor(canvas, view.forest, camera, world.lake, start)
+    if (session instanceof SoloSession) session.teleport(start.x, start.z)
+    camera.yaw = Math.PI; camera.pitch = -0.18
+    forcePlay = true
+    panel.addControls(lakeEditor.state, [
+      { key: "lakeInteraction", field: "mode", label: "Log", group: "Water", type: "select", options: [{ value: "edit", label: "Edit" }, { value: "play", label: "Play" }], change: () => { lakeEditor?.stop(); keys.clear(); camera.release() } },
+      { key: "lakeTorch", field: "torch", label: "Torch", group: "Water", type: "toggle" },
+    ])
+  }
   panel.addControls(friends as unknown as Record<string, boolean>, [
     { key: "woods.realisticPeople", field: "realistic", label: "Realistic people", group: "Friends", subsection: "Drawing", type: "toggle" },
     { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Friends", subsection: "Drawing", type: "toggle" },
@@ -152,7 +171,7 @@ async function main() {
   audio.bindControls(panel)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()
-  panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices"] })
+  panel.setView({ order: ["Water", "Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices"] })
   attachLabPanelControl(panel)
   shell.settings.subscribe(() => { syncSound(); settings.reduceMotion = shell.settings.reduceMotion; panel.sync() })
   let regenAt = 0, worldKey = `${settings.trunkDensity}`
@@ -182,8 +201,9 @@ async function main() {
     release()
     syncOverlays()
   })
-  canvas.addEventListener("click", () => audio.begin())
+  canvas.addEventListener("click", () => { if (!lakeLab) audio.begin() })
   syncOverlays()
+  if (lakeLab && !panel.visible) panel.toggle()
 
   const controlsHud = () => { hud.innerHTML = `${controlsHtml()} ${keyPromptHtml("Backquote", "Knobs")}` }
   controlsHud()
@@ -220,6 +240,7 @@ async function main() {
 
   /** This tick's controls: WASD relative to where you look, the light, the held tie and map keys. */
   function intent(): PlayerInput {
+    if (lakeEditor?.state.mode === "edit") return { yaw: camera.yaw, pitch: camera.pitch, light: lakeEditor.state.torch, tie: false, map: false, mx: 0, mz: 0, sprint: false }
     const k = (...c: string[]) => (c.some((x) => keys.has(x)) ? 1 : 0)
     const f = k("KeyW", "ArrowUp") - k("KeyS", "ArrowDown"), r = k("KeyD", "ArrowRight") - k("KeyA", "ArrowLeft")
     const sy = Math.sin(camera.yaw), cy = Math.cos(camera.yaw)
@@ -429,6 +450,7 @@ async function main() {
     }
 
     fp.begin()
+    lakeEditor?.draw(fp, state.t)
     view.draw(fp, world, state, state.t, camera.eye, settings)
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
     const beams = friends.frame(fp, world, state, meId, dt, (q) => beamLevel(q, time, settings), (q) => {
@@ -485,7 +507,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures,
+      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
