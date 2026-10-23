@@ -410,8 +410,8 @@ function compareMaps(state: WoodsState, a: Player, b: Player) {
 
 /** Moves a player through the forest (the shared `stepBody`, trunks and rocks as solids, deep water refused). */
 export function movePlayer(world: WoodsWorld, p: Player, mx: number, mz: number, speed: number, dt: number, players: readonly Player[] = []) {
-  const body = { x: p.x, y: p.z, vx: p.vx, vy: p.vz }
-  const circles = players.filter((q) => q.id !== p.id).map((q) => ({ x: q.x, y: q.z, radius: PLAYER_RADIUS }))
+  const body = { id: p.id, x: p.x, y: p.z, vx: p.vx, vy: p.vz }
+  const circles = players.filter((q) => q.id !== p.id).map((q) => ({ id: q.id, x: q.x, y: q.z, radius: PLAYER_RADIUS }))
   stepBody(body, mx, mz, speed, solidsNear(world, p.x, p.z, 3), dt, PLAYER_RADIUS, PLAYER_ACCEL, circles)
   if (isDeepWater(world, body.x, body.y)) { body.x = p.x; body.y = p.z; body.vx = body.vy = 0 }
   p.x = body.x; p.z = body.y; p.vx = body.vx; p.vz = body.vy

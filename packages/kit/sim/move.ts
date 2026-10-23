@@ -1,7 +1,7 @@
 import { type Rect, pushOut } from "./geom"
 
-export type Body = { x: number; y: number; vx: number; vy: number }
-export type CircleSolid = { x: number; y: number; radius: number }
+export type Body = { x: number; y: number; vx: number; vy: number; id?: number }
+export type CircleSolid = { x: number; y: number; radius: number; id?: number }
 
 /**
  * One tick of top-down movement toward (mx, my) at up to `speed`: velocity eases toward the target at `accel` per
@@ -34,7 +34,15 @@ export function stepBody(b: Body, mx: number, my: number, speed: number, solids:
         let dx = b.x - c.x, dy = b.y - c.y
         const r = radius + c.radius, d2 = dx * dx + dy * dy
         if (d2 >= r * r) continue
-        if (d2 < 1e-12) { dx = x - c.x; dy = y - c.y; if (dx * dx + dy * dy < 1e-12) dx = 1 }
+        if (d2 < 1e-12) {
+          dx = x - c.x; dy = y - c.y
+          if (dx * dx + dy * dy < 1e-12) {
+            // A stable, opposite direction for each walker breaks coincident spawns, even beside a wall.
+            const a = b.id ?? 0, other = c.id ?? 1, sign = a < other ? -1 : 1
+            const hash = Math.imul(Math.min(a, other) + 1, 73856093) ^ Math.imul(Math.max(a, other) + 1, 19349663)
+            dx = sign * (1 + (hash & 1023)); dy = sign * (((hash >>> 10) & 2047) - 1023)
+          }
+        }
         const d = Math.sqrt(dx * dx + dy * dy), nx = dx / d, ny = dy / d
         b.x = c.x + nx * r; b.y = c.y + ny * r
         const inward = b.vx * nx + b.vy * ny

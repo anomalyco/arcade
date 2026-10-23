@@ -17,6 +17,7 @@ const HOLD_TICKS = 9
 /** Private, versioned server checkpoint. No client can seed or overwrite it. */
 export type NightCheckpoint = {
   version: 1
+  build: string
   code: string
   world: WoodsWorld["params"]
   state: WoodsState
@@ -84,14 +85,22 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   readonly bytes = new Map<string, number>()
   onCheckpoint?: (night: NightCheckpoint) => void
   private savedAt = -Infinity
+  private retryAt = 0
+  private saveFailures = 0
   private dirty = false
 
   checkpoint(): NightCheckpoint {
-    return { version: 1, code: this.code, world: this.world.params, state: { ...this.state, events: [] }, seats: this.checkpointSeats(), pids: [...this.pids], names: [...this.names] }
+    // Pencil marks already travel at centimetre precision. Keep that precision on disk too, including all copies.
+    const players = this.state.players.map((p) => ({ ...p, map: {
+      ...p.map, trail: roundTrail(p.map.trail), heard: p.map.heard.map((h) => ({ ...h, trail: roundTrail(h.trail) })),
+    } }))
+    return { version: 1, build: BUILD, code: this.code, world: this.world.params, state: { ...this.state, players, events: [] }, seats: this.checkpointSeats(), pids: [...this.pids], names: [...this.names] }
   }
 
   static restore(night: NightCheckpoint, clock: () => number = Date.now, build = BUILD): WoodsRoomCore {
-    if (night.version !== 1) throw new Error("Unsupported night checkpoint")
+    // BUILD hashes shared state definitions and makeWorld, so neither can silently change beneath a saved night.
+    if (night.version !== 1 || night.build !== BUILD) throw new Error("Incompatible night checkpoint")
+    if (!night.state || !Array.isArray(night.state.players) || night.state.players.some((p) => !p.air || !p.map)) throw new Error("Incomplete night checkpoint")
     const core = new WoodsRoomCore(night.code, clock, makeWorld(night.world), build)
     Object.assign(core.state, night.state, { events: [] })
     for (const [id, pid] of night.pids) { core.pids.set(id, pid); core.away.add(pid) }
@@ -103,10 +112,19 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   }
 
   private save(): void {
-    if (!this.onCheckpoint) return
-    this.onCheckpoint(this.checkpoint())
-    this.savedAt = this.clock()
-    this.dirty = false
+    const now = this.clock()
+    if (!this.onCheckpoint || now < this.retryAt) return
+    try {
+      this.onCheckpoint(this.checkpoint())
+      this.savedAt = now
+      this.dirty = false
+      this.saveFailures = 0
+      this.retryAt = 0
+    } catch {
+      this.retryAt = now + Math.min(60_000, 2000 * 2 ** Math.min(this.saveFailures++, 5))
+      // Never log the snapshot or an exception that could quote its private seat credentials.
+      console.warn("BARBARA checkpoint write failed; retry delayed", { retryAt: this.retryAt })
+    }
   }
 
   override message(conn: Conn, raw: unknown): void {

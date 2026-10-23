@@ -68,9 +68,22 @@ await using budget = browserBudget()
 try {
   await start()
   const browser = await budget.chromium.launch({ headless: true, args: ["--mute-audio"] })
-  const pages = await Promise.all([1, 2].map(async () => { const c = await browser.newContext(); const p = await c.newPage(); await p.goto(url); await ready(p); return p }))
-  await Promise.all(pages.map((p, k) => p.evaluate((k) => { Object.assign(probe.input, { mx: k ? 1 : -1, yaw: k ? -0.7 : 0.8, pitch: k ? -0.2 : 0.25 }) }, k)))
-  await Promise.all(pages.map((p) => p.waitForFunction(() => probe.session.self.map.trail.length >= 4)))
+  const pages = await Promise.all([1, 2].map(async () => {
+    const c = await browser.newContext(), p = await c.newPage()
+    p.on("pageerror", (e) => console.error("restart client:", e.message))
+    await p.goto(url); await ready(p)
+    return p
+  }))
+  console.log("Both clients joined; walking until each records a path sample")
+  // Concurrent pages can join in either order. Walk away from each other using seat order, not page order.
+  await Promise.all(pages.map((p) => p.evaluate(() => {
+    const right = probe.session.me === 2
+    Object.assign(probe.input, { mx: right ? 1 : -1, yaw: right ? -0.7 : 0.8, pitch: right ? -0.2 : 0.25 })
+  })))
+  await Promise.all(pages.map(async (p) => {
+    try { await p.waitForFunction(() => probe.session.self.map.trail.length >= 4) }
+    catch (error) { console.error("walk stalled:", await read(p)); throw error }
+  }))
   await Promise.all(pages.map((p) => p.evaluate(() => { probe.input.mx = 0 })))
   // Wait by the production room clock: movement settled and at least one periodic SQLite checkpoint committed.
   const t = (await read(pages[0]!)).t
@@ -91,10 +104,14 @@ try {
   await buildClient()
   await Promise.all(pages.map((p) => p.waitForFunction(() => typeof probe !== "undefined" && probe.build === "restart-new" && probe.session.me > 0 && !probe.session.status(), null, { timeout: 30_000 })))
   const deployed = await Promise.all(pages.map(read))
-  // Rollout time pauses the room only until its first reconnect; poses/maps must still match.
-  deployed.forEach((a, i) => check(beforeDeploy[i]!, a))
+  // BUILD hashes shared simulation/world code. Incompatible saves are discarded rather than misread.
+  deployed.forEach((a, i) => {
+    assert.notDeepEqual(a.map, beforeDeploy[i]!.map, "incompatible saved map discarded")
+    assert.ok(a.map.trail.length <= 2, "new night starts with a fresh map")
+    assert.ok(a.t < 5, "incompatible build starts a fresh night")
+  })
   assert.ok(pages.every((p) => p.url() === url), "reload keeps the room URL")
-  console.log("PASS two clients automatically reload through stale assets into the new build and reclaim their saved night")
+  console.log("PASS two clients reload through stale assets; incompatible shared build starts a fresh night")
   const out = resolve(root, "../../captures/barbara-restart")
   await mkdir(out, { recursive: true })
   await writeFile(join(out, "restart.json"), JSON.stringify({ before, resumed, deployed }, null, 2))

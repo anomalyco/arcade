@@ -16,7 +16,7 @@ export type RoomSocketOptions<Hello> = {
   pong?: (t: number) => void
   encode: (msg: unknown) => string
   decode: (raw: string) => { type: string } | null
-  /** Keep retrying a rolling deployment without requiring a manual reload. */
+  /** Retry a rolling deployment up to five times with exponential backoff. */
   automaticReload?: boolean
 }
 
@@ -53,7 +53,7 @@ export class RoomSocket<Hello> {
     this.open()
   }
 
-  private key(what: "id" | "token") {
+  private key(what: "id" | "token" | "reloadAttempts" | "reloadAt") {
     return `${this.o.game}.${what}.${this.o.room}`
   }
 
@@ -96,6 +96,8 @@ export class RoomSocket<Hello> {
     const m = msg as RoomFrame<unknown, unknown>
     switch (m.type) {
       case "welcome":
+        sessionStorage.removeItem(this.key("reloadAttempts"))
+        sessionStorage.removeItem(this.key("reloadAt"))
         this.id = m.id
         this.token = m.token
         sessionStorage.setItem(this.key("id"), m.id)
@@ -107,18 +109,22 @@ export class RoomSocket<Hello> {
         this.o.fatal(m.message)
         return
       case "reload": {
+        if (this.closed) return
         this.closed = true
         // Reload once into the same room (the page rejoins on its own); a second mismatch within a minute means the
         // new build isn't being served yet, so say so instead of looping.
-        const key = `${this.o.game}.reloadAt`
+        const key = this.o.automaticReload ? this.key("reloadAt") : `${this.o.game}.reloadAt`
         const last = Number(sessionStorage.getItem(key) ?? 0)
+        const attempts = Math.max(0, Number(sessionStorage.getItem(this.key("reloadAttempts"))) || 0)
+        if (this.o.automaticReload && attempts >= 5) return this.o.fatal("A new version is available. Reload the page to continue.")
         if (!this.o.automaticReload && Date.now() - last < 60_000) return this.o.fatal("A new version is rolling out. Reload the page in a moment.")
         const reload = () => {
+          if (this.o.automaticReload) sessionStorage.setItem(this.key("reloadAttempts"), String(attempts + 1))
           sessionStorage.setItem(key, String(Date.now()))
           sessionStorage.setItem(rejoinKey(this.o.game), this.o.room)
           location.reload()
         }
-        const delay = this.o.automaticReload ? Math.max(0, 5000 - (Date.now() - last)) : 0
+        const delay = this.o.automaticReload && attempts > 0 ? Math.max(0, 5000 * 2 ** (attempts - 1) - (Date.now() - last)) : 0
         this.problem = "Reconnecting…"
         if (delay) this.reloadTimer = setTimeout(reload, delay)
         else reload()

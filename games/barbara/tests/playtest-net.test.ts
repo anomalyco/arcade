@@ -1,10 +1,11 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import { stepBody } from "@arcade/kit/sim/move"
 import { JitterBuffer } from "@arcade/kit/net/jitter-buffer"
 import { WoodsRoomCore, type NightCheckpoint } from "../server/room-core"
+import { loadNight } from "../server/checkpoint"
 import { BUILD } from "../shared/build.gen"
-import { GRACE_MS, intentOps, packIntent, quantizeInput, type ServerMsg, type Snapshot } from "../shared/protocol"
-import { createWoods, FEEL, newPlayer, PLAYER_RADIUS, stepMotion, stepWoods, type PlayerInput } from "../shared/sim"
+import { GRACE_MS, intentOps, packIntent, quantizeInput, roundTrail, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { createWoods, FEEL, MAX_TAPES, newPlayer, PLAYER_RADIUS, stepMotion, stepWoods, TRAIL_MAX, type PlayerInput } from "../shared/sim"
 import { makeWorld } from "../shared/world"
 
 const world = makeWorld(), dt = 1 / 30
@@ -57,7 +58,8 @@ test("a cold room restores two private seats, poses, tapes, finds, maps and the 
   }
   expect(restarted.state.voices).toEqual(s.voices)
   expect(restarted.state.rng).toEqual(s.rng)
-  expect(restarted.state.players[0]!.map).toEqual(s.players[0]!.map)
+  const map = s.players[0]!.map
+  expect(restarted.state.players[0]!.map).toEqual({ ...map, trail: roundTrail(map.trail), heard: map.heard.map((h) => ({ ...h, trail: roundTrail(h.trail) })) })
   expect(restarted.state.brains).toEqual(s.brains)
   // Public seat ids cannot steal a saved player; connected tokens still get a separate seat.
   const publicId = again[0]!.frames.find((m) => m.type === "welcome")!
@@ -83,6 +85,89 @@ test("checkpoints run every two seconds and on seat changes, and grace never ren
   expect(restored.humans).toBe(0)
   expect(restored.state.players.every((p) => p.bot)).toBe(true)
 })
+
+test("bad JSON, unsupported schemas, changed shared builds and broken state are discarded and the room can reopen", () => {
+  const room = new WoodsRoomCore("proof", () => 100_000, world)
+  join(room)
+  const night = room.checkpoint()
+  const bad = ["{secret seat token", "null", JSON.stringify({ ...night, version: 2 }),
+    JSON.stringify({ ...night, build: "old-state-or-world-generator" }), JSON.stringify({ ...night, state: null })]
+  const warn = spyOn(console, "warn").mockImplementation(() => {})
+  try {
+    for (const data of bad) {
+      let stored: string | undefined = data, deletes = 0
+      const load = () => loadNight("proof", stored, () => { stored = undefined; deletes++ }, () => 100_000)
+      const fresh = load()
+      expect(deletes).toBe(1)
+      expect(fresh.state.t).toBe(0)
+      expect(join(fresh).first!.me).toBe(1)
+      expect(join(load()).first!.me).toBe(1)
+      expect(deletes).toBe(1)
+    }
+    expect(warn).toHaveBeenCalledTimes(bad.length)
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("secret seat token")
+    const valid = loadNight("proof", JSON.stringify(night), () => { throw new Error("valid snapshot discarded") }, () => 100_000)
+    expect(valid.humans).toBe(1)
+  } finally { warn.mockRestore() }
+})
+
+test("failed checkpoint writes back off across ticks and seat changes, then resume saving the latest state", () => {
+  let now = 100_000, writes = 0, failing = true, saved: NightCheckpoint | undefined
+  const room = new WoodsRoomCore("proof", () => now, world)
+  room.onCheckpoint = (night) => { writes++; if (failing) throw new Error("storage full"); saved = night }
+  const warn = spyOn(console, "warn").mockImplementation(() => {})
+  try {
+    const a = join(room)
+    expect(writes).toBe(1)
+    room.close(a.conn)
+    for (let i = 0; i < 59; i++) { now += 1000 / 30; room.step() }
+    expect(writes).toBe(1)
+    now = 102_000; room.step()
+    expect(writes).toBe(2)
+    now = 105_999; room.step()
+    expect(writes).toBe(2)
+    failing = false; now = 106_000; room.step()
+    expect(writes).toBe(3)
+    expect(saved!.state.t).toBe(room.state.t)
+    now = 108_000; room.step()
+    expect(writes).toBe(4)
+    expect(warn).toHaveBeenCalledTimes(2)
+  } finally { warn.mockRestore() }
+})
+
+test("a six-walker hour and fully saturated copied maps stay below 1.2 MB without rounding live paths", () => {
+  const room = new WoodsRoomCore("hour", () => 100_000, world)
+  for (let i = 0; i < 6; i++) join(room)
+  const inputs = new Map(room.state.players.map((p) => [p.id, input({ map: true })]))
+  // Fast-forward an hour of map sharing along a moving survey loop, without socket encoding overhead.
+  for (let second = 0; second < 3600; second++) {
+    for (const [i, p] of room.state.players.entries()) {
+      p.x = Math.cos(second / 20) * 140 + i * 0.6; p.z = Math.sin(second / 20) * 140
+    }
+    stepWoods(room.state, world, inputs, 1)
+  }
+  expect(room.state.t).toBe(3600)
+  const bytes = () => new TextEncoder().encode(JSON.stringify(room.checkpoint())).length
+  expect(bytes()).toBeLessThan(1_200_000)
+  // Go beyond the hour: every path at its hard cap, every walker holding every other path, all tapes present.
+  for (const p of room.state.players) p.map.trail = Array.from({ length: TRAIL_MAX * 2 }, (_, i) => 199 * Math.sin(i + p.id * 0.7))
+  for (const p of room.state.players) {
+    p.map.heard = room.state.players.filter((q) => q !== p).map((q) => ({ from: q.id, serial: q.serial, trail: q.map.trail.slice() }))
+    p.map.tapes = Array.from({ length: MAX_TAPES }, (_, i) => i)
+  }
+  room.state.tapes = Array.from({ length: MAX_TAPES }, (_, i) => {
+    const tree = world.trees[i]!
+    return { id: i, tree: tree.id, x: tree.x, y: tree.y, z: tree.z, yaw: 0.1, by: 1, at: i }
+  })
+  const original = structuredClone(room.state.players[0]!.map), night = room.checkpoint()
+  const size = bytes()
+  console.log(`six-walker saturated checkpoint: ${size} bytes`)
+  expect(size).toBeLessThan(1_200_000)
+  expect(room.state.players[0]!.map).toEqual(original)
+  const restored = WoodsRoomCore.restore(JSON.parse(JSON.stringify(night)), () => 100_000)
+  expect(restored.state.players[0]!.map.trail).toEqual(roundTrail(original.trail))
+  expect(restored.state.players[0]!.map.heard).toEqual(night.state.players[0]!.map.heard)
+}, 20_000)
 
 test("friends and bots stop a walker at two body radii, slide, and are never pushed", () => {
   for (const bot of [false, true]) {
@@ -125,6 +210,27 @@ test("a body cannot tunnel through another or squeeze it through a wall", () => 
   for (let i = 0; i < 60; i++) stepBody(pinned, 1, 1, 3, [[-1, 0.3, 2, 1]], dt, 0.28, 18, [{ x: 0.56, y: 0, radius: 0.28 }])
   expect(pinned.y).toBeLessThanOrEqual(0.02 + 1e-8)
   expect(Math.hypot(pinned.x - 0.56, pinned.y)).toBeGreaterThanOrEqual(0.56 - 1e-8)
+})
+
+test("coincident walkers choose opposite id-derived exits instead of both freezing against a tree", () => {
+  const run = (order: number[]) => {
+    const bodies = [1, 2].map((id) => ({ id, x: 0, y: 0, vx: 0, vy: 0, radius: 0.28 }))
+    for (let tick = 0; tick < 5; tick++) for (const i of order) {
+      stepBody(bodies[i]!, 0, 0, 0, [[0.3, -1, 1, 2]], dt, 0.28, 18, [bodies[1 - i]!])
+    }
+    expect(Math.hypot(bodies[0]!.x - bodies[1]!.x, bodies[0]!.y - bodies[1]!.y)).toBeGreaterThanOrEqual(0.56 - 1e-8)
+    expect(bodies.every((b) => b.x <= 0.02 + 1e-8)).toBe(true)
+    return bodies
+  }
+  expect(run([0, 1])).toEqual(run([0, 1]))
+  run([1, 0])
+  const exits = [1, 2].map((id) => {
+    const b = { id, x: 0, y: 0, vx: 0, vy: 0 }
+    stepBody(b, 0, 0, 0, [], dt, 0.28, 18, [{ id: 3 - id, x: 0, y: 0, radius: 0.28 }])
+    return b
+  })
+  expect(exits[0]!.x).toBe(-exits[1]!.x)
+  expect(exits[0]!.y).toBe(-exits[1]!.y)
 })
 
 test("jump is a half-second 0.3 m hop with no air jump, identically quantized and edge-carried", () => {
