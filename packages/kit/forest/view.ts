@@ -325,6 +325,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       if (!t.on) continue
       frameLights.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[2], h: t.pos[1], r: s.torchReach, color: torchColor, power: torchPower * (t.level ?? 1), size: 0.02, unshadowed: true, beam: { axis: t.dir, halfAngle } })
     }
+    // Gameplay lights retain their slots when optional camp dressing fills the budget.
+    for (const l of f.lights ?? []) frameLights.push(l)
     if (local && bounce.power > 0.01) frameLights.push({ id: 2000, x: bounce.x, y: bounce.z, h: bounce.y, r: 9, color: bounce.color, power: bounce.power, size: 0.6, unshadowed: true })
     for (const [i, l] of build.campLights.entries()) {
       const k = l.kind === "bulb" ? s.stringLights : s.windows
@@ -332,7 +334,6 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       frameLights.push({ id: 3000 + i, x: l.x, y: l.z, h: l.y, r: l.range, color: l.color, power: l.power * k, size: l.kind === "window" ? 0.5 : 0.05, unshadowed: true,
         ...(l.cosOuter > 0 ? { spot: { axis: l.axis, cosOuter: l.cosOuter, cosInner: Math.min(0.999, l.cosOuter + 0.35) } } : {}) })
     }
-    for (const l of f.lights ?? []) frameLights.push(l)
     lights.update(frameLights, [])
 
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).
@@ -436,7 +437,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set(local ? [local.pos[0], local.pos[1], local.pos[2], 1] : [0, -1000, 0, 0], 28)
     custom.set(local ? [local.dir[0], local.dir[1], local.dir[2], halfAngle] : [0, -1, 0, halfAngle], 32)
     custom.set([torchColor[0] * torchPower * 5, torchColor[1] * torchPower * 5, torchColor[2] * torchPower * 5, s.torchReach], 36)
-    custom.set([smoke ? 0 : s.motes, (2 * Math.tan(f.fovY / 2)) / f.height, local && spots.settings.count > 0 ? lights.indexOf(1000 + local.id) : -1, 0], 40)
+    custom.set([smoke ? 0 : s.motes, (2 * Math.tan(f.fovY / 2)) / f.height, local && spots.settings.count > 0 ? lights.indexOf(1000 + local.id) : -1, Number(s.highlightShoulder)], 40)
     custom.set([1, 1, 1, profile.spill], 44)
     packBeamProfile(profile, custom, 48)
     invert(f.viewProj, unjitteredInv)

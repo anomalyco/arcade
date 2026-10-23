@@ -114,7 +114,8 @@ export class WorldView {
 
   /** Loads the forest's scanned assets and builds `world`. */
   static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, world: WoodsWorld, opts: { smoke?: boolean; quality?: QualityTier } = {}): Promise<WorldView> {
-    const forest = await createForestView(gpu, forestWorld(world), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings: { highlightShoulder: true } })
+    const settings = { highlightShoulder: true, campDetail: false }
+    const forest = await createForestView(gpu, forestWorld(world, settings.campDetail), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings })
     const view = new WorldView(forest)
     view.models(world)
     return view

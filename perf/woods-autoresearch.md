@@ -352,3 +352,57 @@ The sky-base run repeats typecheck/build and the affected captures, including th
 it does not repeat tests or timing. The 5322 preview was refreshed from the approved `f71a6250` integration head.
 
 Evidence: [round-6 triptychs, held map and ledger](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/round6/review.html).
+
+## Round 7: source-filtered bloom and camp delta (2026-10-22)
+
+Review rejected round 6's `min(bloom, hdr * .05)`: it removes halos wherever they fall on dark air. That cap is
+removed. The forest scene writes negative HDR alpha for roughness >= .4 non-emissive opaque surfaces within 6 m,
+at full strength through 3 m. The first bloom level limits each tagged tap's RGB peak to .2 before averaging the
+13 taps. Emissive bulbs/windows, glossy materials, masked foliage, game batches and the held overlay keep their
+ordinary alpha. Subsequent pyramid levels and final bloom composition are uncapped. The generic `bloomSource`
+hook is opt-in; existing default shader hashes pass. Woods keeps the shoulder on; the kit keeps it off.
+
+This reuses surface metadata in alpha, adding no render pass or texture. Both forest reflection paths cut off at
+roughness .4, so fully tagged pixels were already non-reflective. MSAA/TAA and bilinear source sampling mix tags at
+edges: a partly covered surface can leak a small fringe, and a subpixel emitter over a tagged surface can be
+partly attenuated. The filter fades with negative-alpha magnitude rather than treating a mixed tap as fully
+tagged. It does not provide per-sample emission separation or establish temporal behaviour while walking.
+
+The corrected `glare` staging points the friend's torch at the camera instead of leaving its pitch downward.
+Mini/Metal, High, 1600×900, seed 1987, time 12, 240 settled frames. All three variants share that corrected pose.
+Today = shoulder off / camp off; candidate = shoulder on / camp on; no-bloom = candidate with bloom and halation 0.
+
+| Fixed native-pixel ROI, mean display luminance | Today | Candidate | No bloom/halation |
+| --- | ---: | ---: | ---: |
+| Trunk right edge, x 1000:1056 / y 450:650 | .263515 | .126842 | .119030 |
+| Camp bulb annulus, centre (1407,250), radii 18–60 | .223345 | .202884 | .015374 |
+| Head-on torch annulus, centre (822,522), radii 18–65 | .604677 | .598772 | .571450 |
+
+Trunk excess above the no-bloom reference falls 94.6%. A small edge fringe remains. The bulb and torch annuli
+retain positive bloom/halation contributions of .187510 and .027323. These are display-space differences, not
+isolated HDR emission energy; camp geometry and the highlight curve also differ between Today and candidate.
+Close-bark clipping falls 9.5238% → 0%, hotspot high-pass detail .00176226 → .00989952. Exposure stays .354 there.
+
+Game-supplied lights now precede all camp lights (which are unshadowed) in the stable packing order. The initial
+world descriptor and renderer settings share `campDetail`. Camp's optional geometry adds full-depth horizontal
+treads with closed risers and lowered stringers, a deck riser, lower landing pad, ground-following path strips
+with smoother dark centres and lighter rough edges, curled-leaf piles, longer roots and larger terrain-following
+ring stones. **Camp remains opt-in.** Steps and illuminated paths read more clearly, but paint-over distance
+worsens slightly for camp (.052303 → .054930) and the wide ring (.082677 → .083258). Ground dressing is still
+short of the target, and the paths read quite glossy in the wide view.
+
+Four-light dark coverage is 69.1334% → 69.1292%. The signal passes with 56/53 depth-visible samples,
+delta .058931/.059601 and contrast 5.5345/5.5974. Five ordinary wide-view p5 guards pass; the corrected head-on
+torch pose fails with p5 .1966/.1969, including .1966 when bloom is off. The broad veil therefore predates the
+filter and remains a separate look issue. No new timing or 0/1/2/4-light sequence was run.
+
+Woods typecheck, production build and **19 targeted tests** pass (forest build/exposure and GPU look,
+`--max-concurrency 4 --timeout 30000`). The build test checks worker/page geometry parity with camp detail;
+the GPU look test checks default shader hashes. All 21 captures and the production held-map still report zero
+browser errors. All 14 manifest source hashes match the retained source. The held map is readable with shoulder
+on and camp off; it is a compatibility still, not a paired halo measurement.
+
+Evidence: [requested halo comparisons, camp triptychs and held map](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/round7/review.html).
+That directory holds `checks.log`, `measure.py`, `measurements.json`, and `source-bloom/{capture,score}.json`.
+HiveMind job `job-1792715137-11521` exited 0; skulk watch `wk_uYHz2ufM` is done. Awaiting delta review before
+integration and the 5322 refresh.

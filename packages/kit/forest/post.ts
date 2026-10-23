@@ -14,7 +14,18 @@ import { customPostGradeWgsl } from "../gpu/post-uniform"
  * Uniforms: frame (time, noise /255, vignette, exposure), look (acuity loss, aberration px, halation, bloom), custom
  * (colour noise, glare level, gain, night-perception flags).
  */
-export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, grain: 0, vignette: 0.35, composite: /* wgsl */ `
+export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, grain: 0, vignette: 0.35,
+  bloomSource: /* wgsl */ `
+    // Negative alpha identifies a nearby rough, non-emissive forest surface.
+    // Suppress its reflected hotspot at the SOURCE, before spatial spreading.
+    // Emitters, friends' lenses, sky and the held overlay keep their ordinary alpha
+    // and therefore feed the full pyramid, even where their halo lands on black air.
+    if (P.z > 0.5 && (u32(grade.custom.w) & 4u) != 0u && c.a < 0.0) {
+      let peak = max(max(c.r, c.g), max(c.b, 1e-5));
+      return c.rgb * mix(1.0, min(1.0, 0.2 / peak), clamp(-c.a, 0.0, 1.0));
+    }
+    return c.rgb;
+  `, composite: /* wgsl */ `
   let uv = o.uv;
   let fromC = uv - 0.5;
   let size = vec2f(textureDimensions(src));
@@ -45,11 +56,7 @@ export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, 
     hdr *= mix(1.0, min(1.0, scotopic / max(photo, 1e-6)), rod);
   }
   if ((nightFlags & 1u) != 0u) { hdr = mix(hdr, vec3f(dot(hdr, vec3f(0.2126, 0.7152, 0.0722))), rod * 0.8); }
-  var bloom = textureSample(bloomTex, samp, uv).rgb;
-  // The Eyes shoulder keeps reflected hotspots on their surfaces. Bound the
-  // lens contribution by local scene radiance so a bright trunk cannot paint
-  // a pink disc over dark air. This is radiance gating, not a depth mask.
-  if ((nightFlags & 4u) != 0u) { bloom = min(bloom, max(hdr, vec3f(0.0)) * 0.05); }
+  let bloom = textureSample(bloomTex, samp, uv).rgb;
   hdr += bloom * (grade.look.w + vec3f(1.0, 0.3, 0.1) * grade.look.z);
   hdr += vec3f(1.0, 0.97, 0.94) * grade.custom.y;
   var x = max(hdr * grade.frame.w, vec3f(0.0));

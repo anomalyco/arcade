@@ -18,7 +18,7 @@ import { deriveDeadfall, mulberry, segDist, smoothNoise } from "../sim/forest-de
 import { LAYER, type ForestModels, type ModelPart } from "./assets"
 import { VertexWriter, readVertex, type RGBA } from "./mesh"
 
-export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51, cable: 52, concrete: 53 } as const
+export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51, cable: 52, concrete: 53, path: 54 } as const
 
 export const CHUNK = 16
 /** How far past the level's edge the backdrop forest goes (m). */
@@ -933,20 +933,21 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
         const edge = b.d / 2 + pd, width = b.w * 0.26 - 0.14
         const landing = L(0, 0, edge + 0.9), grade = H(landing[0], landing[2])
         const rises = Math.max(2, Math.min(6, Math.ceil((floor - grade) / 0.17))), rise = (floor - grade) / rises
-        // Treads overlap the deck edge; the clear width matches the two inner posts.
+        // Full-depth horizontal treads meet closed risers, from the landing up
+        // to the deck. No diagonal support projects above the walking surface.
         for (let i = 0; i < rises - 1; i++) {
-          const top = floor - (i + 1) * rise, z = edge + 0.07 + i * 0.29
-          const p = L(0, top - 0.022, z)
-          box(w, ...p, b.yaw, width, 0.044, 0.34, MAT.wood, LAYER.planks, 0.7)
-          // Recessed riser leaves a bright tread nose and a narrow shadow line.
-          box(w, ...L(0, top - rise / 2 - 0.03, z + 0.12), b.yaw, width - 0.08, rise - 0.02, 0.025, MAT.wood, LAYER.planks, 0.7)
+          const top = floor - (i + 1) * rise, z = edge + 0.14 + i * 0.3
+          box(w, ...L(0, top - 0.025, z), b.yaw, width, 0.05, 0.34, MAT.wood, LAYER.planks, 0.7)
+          box(w, ...L(0, top - 0.025 - rise / 2, z + 0.13), b.yaw, width - 0.04, rise - 0.05, 0.07, MAT.wood, LAYER.planks, 0.7)
         }
+        // The deck itself is the last tread, with a riser down to the top step.
+        box(w, ...L(0, floor - rise / 2, edge - 0.035), b.yaw, width, rise, 0.07, MAT.wood, LAYER.planks, 0.7)
         for (const side of [-1, 1]) {
-          const x = side * (width / 2 - 0.08), end = edge + 0.07 + (rises - 2) * 0.29
-          timber(w, L(x, floor - 0.18, edge - 0.16), L(x, grade + 0.02, end + 0.15), 0.075, 0.18)
+          const x = side * (width / 2 - 0.07), end = edge + (rises - 1) * 0.3
+          timber(w, L(x, floor - rise - 0.14, edge - 0.02), L(x, grade - 0.08, end), 0.1, 0.18)
         }
-        const pad = L(0, 0, edge + 0.07 + (rises - 2) * 0.29 + 0.2), padY = H(pad[0], pad[2])
-        box(w, pad[0], padY + 0.015, pad[2], b.yaw, width + 0.18, 0.09, 0.4, MAT.concrete, 0)
+        const pad = L(0, 0, edge + (rises - 1) * 0.3 + 0.12), padY = H(pad[0], pad[2])
+        box(w, pad[0], padY - 0.025, pad[2], b.yaw, width + 0.18, 0.07, 0.4, MAT.concrete, 0)
         // Fascia and rear supports make the dark space beneath read as a crawlspace.
         box(w, ...L(0, floor - 0.17, edge - 0.06), b.yaw, b.w * 0.8, 0.18, 0.12, MAT.wood, LAYER.planks, 1)
         for (const x of [-0.4, 0.4]) porchPost(w, L(x * b.w, floor - 0.16, b.d / 2 + 0.1), floor - 0.16, b.yaw, H)
@@ -1052,6 +1053,32 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       const reach = b.d / 2 + 3.8, start: Vec2 = [b.x - Math.sin(b.yaw) * reach, b.z + Math.cos(b.yaw) * reach]
       const end: Vec2 = fire ? [fire.x, fire.z] : [start[0] - Math.sin(b.yaw) * 5, start[1] + Math.cos(b.yaw) * 5]
       const dx = end[0] - start[0], dz = end[1] - start[1], len = Math.hypot(dx, dz) || 1
+      if (fire) {
+        // A narrow, ground-following surface keeps the worn path readable even
+        // when the terrain's coarse vertex weights miss it between grid points.
+        const n = Math.ceil(len / 0.3)
+        const at = (i: number, side: number): Vec3 => {
+          const t = i / n, width = 0.65 + 0.08 * Math.sin(t * 13 + b.x)
+          const x = start[0] + dx * t + dz / len * side * width, z = start[1] + dz * t - dx / len * side * width
+          return [x, H(x, z) + 0.018, z]
+        }
+        for (let i = 0; i < n; i++) {
+          const a = at(i, -1), bb = at(i, 1), c = at(i + 1, 1), d = at(i + 1, -1)
+          const normal = norm(cross(d.map((v, j) => v - a[j]!), bb.map((v, j) => v - a[j]!)))
+          quad(chunks.at((a[0] + c[0]) / 2, (a[2] + c[2]) / 2).near[0], a, d, c, bb, normal, MAT.path, LAYER["ground-trail"], [[-1, i * len / n], [-1, (i + 1) * len / n], [1, (i + 1) * len / n], [1, i * len / n]])
+        }
+      }
+      // Curled leaves collect outside the trodden strip, as small raised piles.
+      for (let pile = 0; pile < 8; pile++) {
+        const t = 0.02 + dressing() * 0.6, side = pile % 2 ? -1 : 1
+        const x = start[0] + dx * t + dz / len * side * (0.85 + dressing() * 0.4)
+        const z = start[1] + dz * t - dx / len * side * (0.85 + dressing() * 0.4)
+        for (let leaf = 0; leaf < 22; leaf++) {
+          const angle = dressing() * TAU, radius = Math.sqrt(dressing()) * 0.38
+          const lx = x + Math.cos(angle) * radius, lz = z + Math.sin(angle) * radius
+          leafMesh(chunks.at(lx, lz).near[0], lx, H(lx, lz) + 0.015 + (1 - radius / 0.38) * 0.045, lz, dressing() * TAU, 0.08 + dressing() * 0.09, dressing())
+        }
+      }
       for (let i = 0; i < 3; i++) {
         const t = 0.08 + dressing() * 0.65, side = i % 2 ? -1 : 1
         const x = start[0] + dx * t + dz / len * side * 1.05, z = start[1] + dz * t - dx / len * side * 1.05
@@ -1065,7 +1092,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       // Narrow roots emerge from real trunks, following terrain rather than
       // scattering detached scans through the clearing.
       for (let i = 0; i < 3; i++) {
-        const angle = hash01(tree.seed + i * 17) * TAU, length = 0.7 + tree.r * 2
+        const angle = hash01(tree.seed + i * 17) * TAU, length = 1.3 + tree.r * 3
         let last: Vec3 = [tree.x + Math.cos(angle) * tree.r * 0.7, H(tree.x, tree.z) + 0.1, tree.z + Math.sin(angle) * tree.r * 0.7]
         for (let j = 1; j <= 4; j++) {
           const f = j / 4, a = angle + Math.sin(f * 3) * 0.15
@@ -1086,8 +1113,9 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * TAU, part = stones[i % stones.length]!
         const ext = Math.max(part.max[0]! - part.min[0]!, part.max[2]! - part.min[2]!)
-        const sc = 0.32 / ext
-        placeModel(ch.near[0], part, p.x + Math.cos(a) * 0.75, y - part.min[1]! * sc - 0.05, p.z + Math.sin(a) * 0.75, a, [sc, sc, sc], MAT.prop, LAYER["rocks-b"], () => [0.1, 0, 0, 0])
+        const sc = (detail ? 0.43 : 0.32) / ext
+        const x = p.x + Math.cos(a) * 0.75, z = p.z + Math.sin(a) * 0.75
+        placeModel(ch.near[0], part, x, (detail ? H(x, z) : y) - part.min[1]! * sc - (detail ? 0.02 : 0.05), z, a, [sc, sc, sc], MAT.prop, LAYER["rocks-b"], () => [0.1, 0, 0, 0])
       }
       for (let i = 0; i < 4; i++) {
         const a = rand() * TAU
@@ -1117,6 +1145,18 @@ function roofSlab(w: VertexWriter, mid: readonly number[], yaw: number, width: n
   for (const flip of [false, true]) {
     const order = flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]
     for (const idx of order) { const v = q[idx]!; const nn = flip ? nUp.map(x => -x) : nUp; w.vert(v[0]!, v[1]! - (flip ? 0.08 : 0), v[2]!, nn[0]!, nn[1]!, nn[2]!, [0, 0, 0, 0], MAT.wood, flip ? LAYER.planks : LAYER.roof, uv[idx]![0]!, uv[idx]![1]!) }
+  }
+}
+
+function leafMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number, size: number, shade: number) {
+  const c = Math.cos(yaw), s = Math.sin(yaw)
+  const points = [[-1, 0, 0], [-0.3, 0.01, 0.45], [0.65, 0.025, 0.3], [1, 0.04, 0], [0.5, 0.01, -0.35], [-0.35, 0, -0.4]]
+    .map(([u, h, v]) => [x + (u! * c - v! * s) * size, y + h!, z + (u! * s + v! * c) * size])
+  const centre = [x, y + 0.035, z], color: RGBA = [0.13 + shade * 0.13, 0.055 + shade * 0.055, 0.018 + shade * 0.025, 0]
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!, b = points[(i + 1) % points.length]!
+    const n = norm(cross(a.map((v, j) => v - centre[j]!), b.map((v, j) => v - centre[j]!)))
+    for (const p of [centre, a, b]) w.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, color, MAT.paint, 0, 0, 0)
   }
 }
 

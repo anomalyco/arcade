@@ -14,12 +14,15 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
-- **Bound bloom by local radiance after a removal probe (Woods, round 6 candidate).** The close-trunk halo survived
-  disabling air scatter but vanished without bloom/halation. `forest/post.ts` caps bloom to 5% of local HDR only
-  when the highlight shoulder is enabled. Right-edge ROI luminance .263855 → .119581, close to the no-bloom
-  reference .119031; fixed bark clipping stays at zero. This is a radiance gate, not silhouette/depth rejection,
-  and it reduces other source halos too. Six wide-view p5 guards and the 60 m signal pass. The held-map proof
-  must wait for its asynchronous print before stepping the final frames. See `perf/woods-autoresearch.md`.
+- **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
+  halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
+  non-emissive surfaces in HDR alpha; `forest/post.ts` limits those source taps before the bloom downsample.
+  Right-edge trunk luminance is .126842 versus .119030 without bloom/halation (Today .263515). Candidate-minus-off
+  halo luminance remains .187510 around a camp bulb and .027323 around a head-on torch. MSAA/TAA and bilinear
+  sampling soften the tag at boundaries; this is not a separate per-sample emission buffer. Bark clipping stays
+  zero and the 60 m signal passes. Head-on torch haze fails the darkness guard even without bloom, so the new
+  capture does not pass all p5 guards. The held-map proof waits for its asynchronous print before stepping the
+  final frames. See `perf/woods-autoresearch.md` for the fixed ROIs and remaining limits.
 
 - **Separate highlight clipping from bloom, and foliage geometry from shadow motion (Woods, round 5 candidate).**
   The opt-in log shoulder in `forest/post.ts` bounds the peak while preserving RGB ratios: fixed close-bark clipping

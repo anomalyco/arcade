@@ -99,7 +99,7 @@ try {
     woods.__putTime = t => { fixedTime = t; woods.state.t = t }
     forest.update = f => { woods.__input = { ...f, time: fixedTime }; update(woods.__input) }
   })
-  const sources = Object.fromEntries(await Promise.all(["games/woods/src/world-view.ts", "games/woods/src/held-map/index.ts", "games/woods/scripts/autoresearch.ts", "packages/kit/gpu/fog-scatter.ts", "packages/kit/gpu/lights/beam.ts", "packages/kit/forest/build.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts", "packages/kit/forest/shaders.ts", "packages/kit/forest/index-mesh.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(resolve(repo, p)).text()).digest("hex")])))
+  const sources = Object.fromEntries(await Promise.all(["games/woods/src/world-view.ts", "games/woods/src/held-map/index.ts", "games/woods/scripts/autoresearch.ts", "packages/kit/gpu/shaders.ts", "packages/kit/gpu/look-shaders.ts", "packages/kit/gpu/fog-scatter.ts", "packages/kit/gpu/lights/beam.ts", "packages/kit/forest/build.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts", "packages/kit/forest/shaders.ts", "packages/kit/forest/index-mesh.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(resolve(repo, p)).text()).digest("hex")])))
   const report: any = { version: 3, host: hostname(), sources, zeroConeDisabled, signalX, settleFrames, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
   if (process.env.AUTORESEARCH_RESET === "1") report.reset = await page.evaluate(resetProbe)
   for (const variant of variants) {
@@ -139,6 +139,11 @@ try {
           // Exactly 60 m in plan; depth checks which shaft points are clear. Its off frame is the background.
           p.x = x + signalX; p.z = z - Math.sqrt(60 * 60 - signalX * signalX); p.yaw = 0; p.pitch = 1.3
           woods.debug.dark = woods.state.players.filter((q: any) => q.id !== p.id || name.endsWith("off")).map((q: any) => q.id)
+        }
+        if (name === "glare") {
+          const p = woods.state.players[1], self = woods.state.players[0]
+          p.yaw = Math.atan2(p.x - self.x, p.z - self.z)
+          p.pitch = 0.02
         }
         woods.state.players[0].light = woods.camera.flashlight
         woods.state.players[0].yaw = woods.camera.yaw; woods.state.players[0].pitch = woods.camera.pitch

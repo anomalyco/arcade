@@ -32,6 +32,8 @@ export type PostFinishOptions = {
   /** Scene-linear bloom prefilter. Zero threshold/knee includes the dark image for diffusion. */
   bloomThreshold?: number
   bloomKnee?: number
+  /** Optional WGSL body for a bloom source tap (`c: vec4f`). Runs before the 13 taps are averaged; return RGB. */
+  bloomSource?: string
 }
 
 export type LookVariantMode = "noir" | "painterly" | "generic"

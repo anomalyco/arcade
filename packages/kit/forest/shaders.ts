@@ -330,6 +330,13 @@ const material = /* wgsl */ `
     n = nn;
     woodsAo = mix(0.5, 1.0, wts.r);
     pbrRough = 0.62;
+  } else if (mat == ${MAT.path}) {
+    let t = woodsTex(layer, o.world.xz / 2.7, wDpx.xz / 2.7, wDpy.xz / 2.7);
+    let edge = smoothstep(0.65, 0.96, abs(o.uv.x));
+    albedo = t.base.rgb * mix(vec3f(0.48, 0.46, 0.43), vec3f(1.12, 1.04, 0.88), edge);
+    n = normalize(mix(geo, woodsPerturb(t.n, geo, wDpx, wDpy, wDpx.xz / 2.7, wDpy.xz / 2.7, 1.0), mix(0.12, 0.5, edge)));
+    woodsAo = mix(0.92, t.orm.r, edge);
+    pbrRough = mix(0.38, 0.78, edge);
   } else if (mat == ${MAT.cable}) {
     albedo = vec3f(0.012, 0.014, 0.013);
     pbrRough = 0.24;
@@ -398,6 +405,13 @@ fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
   fragmentReturn: /* wgsl */ `{
     if (woodsMasked) { return vec4f(col, a); }
     let reflectRough = clamp(select(1.0, pbrRough, pbrRough >= 0.0), 0.0, 1.0);
+    // Alpha already carries surface metadata. Negative values reserve a bloom
+    // source mask for nearby rough surfaces, which are outside SSR's .4 cutoff.
+    // Emissive materials and glossy surfaces keep the existing roughness tag.
+    let near = 1.0 - smoothstep(3.0, 6.0, distance(F.cam.xyz, o.world));
+    if (N.motes.w > 0.5 && near > 0.0 && reflectRough >= 0.4 && mat != ${MAT.glow} && mat != ${MAT.bulb}) {
+      return vec4f(col, -near);
+    }
     return vec4f(col, 2.0 - reflectRough);
   }`,
 }
