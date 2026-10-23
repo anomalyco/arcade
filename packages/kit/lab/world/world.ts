@@ -66,6 +66,8 @@ export type WorldState = {
    * sets 0 so unlit corners read black instead of a milky navy.
    */
   shadowLift: number
+  /** The lens bloom's strength, × (Physical only). The screen bench turns it down so a bright picture glows round its glass, not across the room. */
+  lensBloom: number
   /** The screen bench inside the house (`gpu/screen/`): a CRT on a workbench, its picture lighting the room. */
   screen: boolean
   /** What the screen bench's television shows. */
@@ -104,6 +106,7 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   skyLight: 1,
   exposureEV: 0,
   shadowLift: 1,
+  lensBloom: 1,
   screen: false,
   programme: "show",
   tube: false,
@@ -480,7 +483,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
           : null,
         grade: [time, 0, sim.state.flash * 0.4, clock.exposure * exposureMultiplier * 2 ** state.exposureEV],
         look: look.preset === "current" ? null : look,
-        ...(state.shadowLift !== 1 ? { postCustom: [1, Math.max(0, state.shadowLift), 0, 0] as const } : {}),
+        ...(state.shadowLift !== 1 || state.lensBloom !== 1 ? { postCustom: [1, Math.max(0, state.shadowLift), Math.max(0, state.lensBloom), 0] as const } : {}),
       }
       r.drawTo(input, outputView)
       return measure ? r.measure(input) : null
@@ -495,17 +498,20 @@ export function createDebugWorld(context: LabContext): DebugWorld {
 }
 
 const LIFT = "vec3f(0.006, 0.011, 0.028) * (1.0 - smoothstep(0.0, 0.25, l))"
+const BLOOM = "hdr = hdr + bloom * 0.32;"
 /**
- * The kit's default composite with its shadow lift scalable per frame (`FrameInput.postCustom`: x > 0.5 overrides, y the
- * scale). Without the override it picks the same constant, so every other preset draws as before.
+ * The kit's default composite with its shadow lift and bloom strength scalable per frame (`FrameInput.postCustom`: x > 0.5
+ * overrides, y the lift, z the bloom). Without the override it picks the same constants, so every other preset draws as
+ * before.
  */
 export const WORLD_POST = (() => {
   const base = postShader(false)
-  if (!base.includes(LIFT)) throw new Error("postShader's shadow lift moved; update WORLD_POST")
+  if (!base.includes(LIFT) || !base.includes(BLOOM)) throw new Error("postShader's shadow lift or bloom moved; update WORLD_POST")
   return base
     .replace("@group(0) @binding(4) var<uniform> G: vec4f;", customPostGradeWgsl)
     .replace(/\bG\./g, "grade.frame.")
     .replace(LIFT, "select(vec3f(0.006, 0.011, 0.028), vec3f(0.006, 0.011, 0.028) * grade.custom.y, grade.custom.x > 0.5) * (1.0 - smoothstep(0.0, 0.25, l))")
+    .replace(BLOOM, "hdr = hdr + bloom * (0.32 * select(1.0, grade.custom.z, grade.custom.x > 0.5));")
 })()
 
 /** The world's three practical lamps under the shared flicker: a dying sodium streetlamp, a porch tube, a bulb inside. */

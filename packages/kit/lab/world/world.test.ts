@@ -3,7 +3,7 @@ import { cloneFoliageParams } from "../../gpu/foliage"
 import type { LabContext } from "../types"
 import { WORLD_PRESETS } from "./presets"
 import { writeOrbitCamera } from "../stage"
-import { CHARACTER_AT, SCREEN_AT, SCREEN_CAMERA, SCREEN_CHAIR, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from "./scene"
+import { CHARACTER_AT, INTERIOR_LIGHT, SCREEN_AT, SCREEN_CAMERA, SCREEN_CHAIR, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from "./scene"
 import { WORLD_TABS, createWorldSection } from "./section"
 import { postShader } from "../../gpu/shaders"
 import { validateWgsl } from "../../gpu/test-naga"
@@ -84,7 +84,7 @@ describe("the Look and world lab", () => {
     expect(targets.length).toBe(2)
   })
 
-  test("the screen bench frames the set on the right third and the chair's lit front three-quarter on", () => {
+  test("the screen bench frames the set on the right third, the chair's lit front three-quarter on and the lamp out of shot", () => {
     const vp = new Float32Array(16), eye = new Float32Array(3)
     const c = SCREEN_CAMERA
     writeOrbitCamera(708, 564, vp, new Float32Array(16), eye, c.target, c.yaw, c.pitch, c.dist)
@@ -100,6 +100,12 @@ describe("the Look and world lab", () => {
     const [chairX] = ndc(SCREEN_CHAIR.x - ox, 0.7, SCREEN_CHAIR.z - oz)
     expect(chairX).toBeLessThan(-0.3)
     expect(chairX).toBeGreaterThan(-0.75)
+    // The table lamp's shade (0.28 m round, 1.2–1.5 m up) stays out of frame: it glows faintly even when off.
+    const [lx, lz] = INTERIOR_LIGHT
+    for (let k = 0; k < 8; k++) for (const h of [1.2, 1.5]) {
+      const [sx] = ndc(lx - ox + 0.3 * Math.cos(k * Math.PI / 4), h, lz - oz + 0.3 * Math.sin(k * Math.PI / 4))
+      expect(sx).toBeLessThan(-1)
+    }
     // The chair faces the glass less its turn; the camera sits 30–60° off that front.
     const face = Math.atan2(SCREEN_AT.center[2] + oz - SCREEN_CHAIR.z, SCREEN_AT.center[0] + ox - SCREEN_CHAIR.x) + SCREEN_CHAIR.turn
     const toEye = Math.atan2(eye[2]! + oz - SCREEN_CHAIR.z, eye[0]! + ox - SCREEN_CHAIR.x)
@@ -112,14 +118,19 @@ describe("the Look and world lab", () => {
     validateWgsl(WORLD_POST)
     const base = postShader(false)
     expect(WORLD_POST).not.toMatch(/\bG\./)
-    // Only the uniform's name, its declaration and the lift line differ from the kit's composite.
+    // Only the uniform's name, its declaration, the lift line and the bloom line differ from the kit's composite.
     const strip = (code: string) => code.replace(/grade\.frame\./g, "G.").split("\n").filter(l => !/binding\(4\)|struct Grade|frame:vec4f|look:vec4f|reservedLook|custom:vec4f|^\}$/.test(l))
     const a = strip(base), b = strip(WORLD_POST)
     expect(b.length).toBe(a.length)
-    expect(b.filter((l, i) => l !== a[i])).toEqual([expect.stringContaining("select(vec3f(0.006, 0.011, 0.028), vec3f(0.006, 0.011, 0.028) * grade.custom.y, grade.custom.x > 0.5)")])
+    expect(b.filter((l, i) => l !== a[i])).toEqual([
+      expect.stringContaining("hdr = hdr + bloom * (0.32 * select(1.0, grade.custom.z, grade.custom.x > 0.5));"),
+      expect.stringContaining("select(vec3f(0.006, 0.011, 0.028), vec3f(0.006, 0.011, 0.028) * grade.custom.y, grade.custom.x > 0.5)"),
+    ])
     expect(WORLD_DEFAULTS.shadowLift).toBe(1)
     expect(WORLD_PRESETS.find(p => p.id === "screen-bench")!.values.shadowLift).toBe(0)
     expect(WORLD_PRESETS.filter(p => "shadowLift" in p.values).map(p => p.id)).toEqual(["screen-bench"])
+    expect(WORLD_DEFAULTS.lensBloom).toBe(1)
+    expect(WORLD_PRESETS.filter(p => "lensBloom" in p.values).map(p => p.id)).toEqual(["screen-bench"])
   })
 
   test("export and import round-trip a versioned preset, and a bad file changes nothing", () => {
