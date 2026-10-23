@@ -11,17 +11,17 @@ import { SHIP, makeShip, shipStep } from "../shared/ship"
 const pct = (v: number) => (v / FLEET.hp) * 100
 
 describe("ship damage values", () => {
-  test("guns chip, a missile ~5%, a direct bomb ~17.5%, four bombs ~70%, a crash ~5%, near misses less", () => {
+  test("aircraft are a nuisance: guns chip, a missile ~2.5%, a direct bomb ~8%, four bombs ~32%, a crash 3%", () => {
     // A full gun overheat run: 3.2 s at 50 rps.
-    expect(pct(shipDamage("gun") * 160)).toBeGreaterThanOrEqual(3)
-    expect(pct(shipDamage("gun") * 160)).toBeLessThanOrEqual(5)
-    expect(pct(shipDamage("missile"))).toBeGreaterThanOrEqual(4)
-    expect(pct(shipDamage("missile"))).toBeLessThanOrEqual(6)
-    expect(pct(shipDamage("bomb"))).toBeGreaterThanOrEqual(15)
-    expect(pct(shipDamage("bomb"))).toBeLessThanOrEqual(20)
-    expect(pct(shipDamage("bomb") * 4)).toBeGreaterThanOrEqual(60)
-    expect(pct(shipDamage("bomb") * 4)).toBeLessThanOrEqual(80)
-    expect(pct(shipDamage("crash"))).toBe(5)
+    expect(pct(shipDamage("gun") * 160)).toBeGreaterThanOrEqual(1.5)
+    expect(pct(shipDamage("gun") * 160)).toBeLessThanOrEqual(2.5)
+    expect(pct(shipDamage("missile"))).toBeGreaterThanOrEqual(2)
+    expect(pct(shipDamage("missile"))).toBeLessThanOrEqual(3)
+    expect(pct(shipDamage("bomb"))).toBeGreaterThanOrEqual(7)
+    expect(pct(shipDamage("bomb"))).toBeLessThanOrEqual(9)
+    expect(pct(shipDamage("bomb") * 4)).toBeGreaterThanOrEqual(28)
+    expect(pct(shipDamage("bomb") * 4)).toBeLessThanOrEqual(36)
+    expect(pct(shipDamage("crash"))).toBe(3)
     expect(shipDamage("bomb", 1)).toBeLessThan(shipDamage("bomb"))
     expect(shipDamage("bomb", 20)).toBeLessThan(shipDamage("bomb", 5))
     expect(shipDamage("bomb", FLEET.near + 1)).toBe(0)
@@ -76,7 +76,8 @@ describe("ship damage values", () => {
   test("a ship at zero health sinks, then goes under after sinkTime", () => {
     const f = new Fleet()
     f.add(3, 1)
-    for (let i = 0; i < 5; i++) f.hit({ ship: 3, by: 7, team: 0, w: "bomb", x: 0, y: DECK_Y, z: 0, near: 0 }, i)
+    const n = Math.ceil(FLEET.hp / shipDamage("bomb")) - 1
+    for (let i = 0; i < n; i++) f.hit({ ship: 3, by: 7, team: 0, w: "bomb", x: 0, y: DECK_Y, z: 0, near: 0 }, i * 0.01)
     expect(f.hit({ ship: 3, by: 8, team: 0, w: "bomb", x: 0, y: DECK_Y, z: 0, near: 0 }, 5)).toBeGreaterThan(0)
     expect(f.events.filter((e) => e.k === "sinking")).toEqual([{ k: "sinking", ship: 3, by: 8 }])
     expect(hullLimits(f.hulls.get(3)).speed).toBe(0)

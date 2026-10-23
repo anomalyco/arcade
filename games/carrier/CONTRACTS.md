@@ -747,12 +747,13 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   It steps with the ships and broadcasts every hull as `hulls` (`HullTuple[]`, `packHull`), at most every 100 ms when one
   changes, and to joiners. Clients keep `net.hulls`, unpacked at their sea time (`unpackHull`).
 - Health is 1,000. Damage (`shipDamage`):
-  - Gun: 0.25 per round, so a 160-round overheat run takes ~4%.
-  - Missile: 50 (5%).
-  - Direct bomb hit: 175 (17.5%), so an F-35C's four bombs take ~70%.
-  - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 70 at the hull, falling to 15 at
+  - Aircraft are a nuisance more than a death sentence, so ships live long enough to fight over the zones:
+  - Gun: 0.12 per round, so a 160-round overheat run takes ~2%.
+  - Missile: 25 (2.5%).
+  - Direct bomb hit: 80 (8%), so an F-35C's four bombs take ~32%.
+  - Bomb bursting in the water within 25 m of the waterline (`waterlineDistance`): 35 at the hull, falling to 8 at
     25 m.
-  - Enemy jet crashing into the ship: 50.
+  - Enemy jet crashing into the ship: 30.
   - Ramming (`"ram"`, see "Carrier collisions" below): 6 · (closing speed − 1.5 m/s)^1.5, at most 650; the hull that
     brought the speed takes up to 40% less. A 15 m/s T-bone: ~300 to the rammed side, ~180 to the rammer.
   - Friendly fire is off: `Fleet.hit` refuses the ship's own team (its own crew; every other carrier is an enemy).
