@@ -801,6 +801,40 @@ the shared-body tapes did not rise. No animation changes accompany this checker.
 Report, exact joint windows, highlighted strips and ¼-speed clips:
 `~/code/home/artifacts/motion-invariants-2026-10-22/`.
 
+## Arachnid gait (spider, Oct 22)
+
+Lamplight's arachnid, ported by hand once (`~/code/open-source/lamplight/src/arachnid/`); the TypeScript is the source
+now. The root is shared and deterministic, the legs are presentation:
+
+| Module | Owns |
+| --- | --- |
+| `sim/creature-motion` | Pure root: planar momentum and facing, Travel → Braking → Planting → Pivoting, `SecondOrder` springs, Froude scaling (`unitSurface`, `unitDt`) |
+| `creature/arachnid-legs` | Eight world-space feet in two groups, ring-search footholds, swing clearance, femur/tibia IK with a steep tarsus, body springs, touchdown `contacts` |
+| `creature/arachnid-view` | Matte tapered tubes and ellipsoid body (no GGX), outward winding |
+| `creature/arachnid-settings` | Typed Lab settings: body scale, leg length, height, step time and softness, leg thickness, pace |
+
+- **Units.** Everything runs at lamplight's scale (a leg about one unit). A creature `S` m per unit is the same motion
+  Froude-scaled: lengths × S, times × √S, speeds × √S. `S = body scale × leg length`; the body and hip ring shrink by
+  1/leg length (`hips`), so long legs carry a small body.
+- **The pivot gate is a timer.** Lamplight waited on planted and aligned feet. The room has no legs, so the root waits
+  one swing (0.15 creature-s) in Planting and once settled in Pivoting; server and client agree.
+- **Measured (unit scale, level ground):** duty 0.646 walking, 0.500 running (lamplight 0.656, 0.514); swing 0.150 s.
+  Planted feet never move (exact equality), at least four are down through walk, run, reversal and stop, segment
+  error under 0.025 units, swings clear the terrain, replay is byte-identical (`packages/kit/creature/arachnid-legs.test.ts`).
+- **Two changes for giant scale.** Raw, the support set and the root's bang-bang acceleration fed impulses into the
+  anticipating springs: 94 m/s² body pops at 8.75 m per unit. A 0.05 creature-s low-pass on the spring targets (and on
+  the anticipation switch itself) took the worst body acceleration on a 40 s route to 15 m/s². Reach for a new
+  foothold is now checked from the braking-aware touchdown hip, not the full-speed one; that removed tibia stretch
+  (0.28 m → 0) and the landing snaps (foot 1055 → 173 m/s², the rest at startup).
+- **Step shape is a setting.** `lift` 0.8 is lamplight's snap up and slam down; the harvestman default 1.6 sets each
+  foot down softly, with `swing` 1.5 for a slower, deliberate step (`HARVESTMAN_SHAPE`).
+- **Motion check.** `hivemind run --kind cargo -- bun scripts/arachnid-motion-check.ts` walks 40 s through trunks on
+  rolling ground and runs `measureBodyMotion` on the displayed joints: no bad numbers, zero foot slip, soles within
+  0.5% of S of the ground, rigid segments; it reports the worst velocity, acceleration and jerk per joint class.
+- **Not ported yet:** jumping, the stalk crouch and pounce, lamplight's whole-limb terrain sweep (`terrain.rs`) and
+  trunk climbing. Legs can pass through trunks (only feet and the body avoid them).
+- Lab: the Spider gait station (`games/lab/spider.html`).
+
 ## Known gaps
 
 - **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,

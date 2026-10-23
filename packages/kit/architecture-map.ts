@@ -207,6 +207,16 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/gpu/look-shaders",
   },
   {
+    area: "`sim/creature-motion`",
+    description: "Lamplight's creature root: deterministic planar momentum, brake/plant/pivot phases, `SecondOrder` springs, Froude scaling",
+    match: (s) => s === "@arcade/kit/sim/creature-motion",
+  },
+  {
+    area: "`creature/*`",
+    description: "Arachnid legs (world-space feet, footholds, swing clearance, IK, body springs, contacts), matte tube view and Lab settings",
+    match: (s) => s.startsWith("@arcade/kit/creature/"),
+  },
+  {
     area: "`gpu/post/camcorder`",
     description: "Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass`",
     match: (s) => s === "@arcade/kit/gpu/post/camcorder",
