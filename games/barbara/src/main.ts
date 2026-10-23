@@ -11,6 +11,8 @@ import type { ForestTorch, ForestGlow } from "@arcade/kit/forest/view"
 import type { Particles } from "@arcade/kit/fx/particles"
 import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { createGameShell, createShellQuality } from "@arcade/kit/shell"
+import { voicePrompts } from "@arcade/kit/voice/controls"
+import { bindVoiceLab } from "@arcade/kit/voice/lab"
 import { hasSpider, planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { answerCall, DISTANT_SOUNDS, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
 import { placeSpiderSigns, type SpiderSigns } from "../shared/spider-signs"
@@ -47,6 +49,7 @@ import { StoryHud } from "./story"
 import { WorldView } from "./world-view"
 import { createLakeEditor } from "@arcade/kit/water/lake-editor"
 import { MOONLIT_LAKE } from "@arcade/kit/water/lake-preset"
+import { WoodsVoice } from "./voice-chat"
 
 /** Reduce camera motion is the shell's Settings row (one choice across games); `main` copies it in. */
 const WALK = { cameraMotion: 1, reduceMotion: false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9, landDip: 0.035 }
@@ -107,7 +110,11 @@ async function main() {
   const audio = new WoodsAudio()
   const story = new StoryHud(audio)
   // Filled in once they exist; the shell reads them from its first frame.
-  const live: { panel: LabPanel | null; cameraLook: CameraLook | null; session: Session | null; qualityChanged: () => void; editing: () => boolean; endCard: () => boolean } = { panel: null, cameraLook: null, session: null, qualityChanged: () => {}, editing: () => false, endCard: () => false }
+  const live: { panel: LabPanel | null; cameraLook: CameraLook | null; session: Session | null; qualityChanged: () => void; editing: () => boolean; endCard: () => boolean; verdict: () => boolean } = { panel: null, cameraLook: null, session: null, qualityChanged: () => {}, editing: () => false, endCard: () => false, verdict: () => false }
+  let forcePlay = false, controlsKey = ""
+  const voiceBlocked = (): boolean => live.editing() || live.endCard() || live.verdict() || !!live.panel?.hasFocus() || (!forcePlay && shell.flow.overlay !== null)
+  const voice = online ? new WoodsVoice(audio, voiceBlocked) : null
+  const controls = () => `${shellControlsHtml()}${voice ? ` ${voicePrompts(voice.chat)}` : ""}`
   // Auto starts at High and steps down on slow frames only (frame time alone: the renderer's GPU reading counts CPU
   // encoding and queue waits, which demoted capable GPUs). Saved per game; `?quality=` pins a mode for automation.
   const quality = createShellQuality({ game: "barbara", tiers: FOREST_QUALITY, params, onChange: () => live.qualityChanged() })
@@ -118,7 +125,7 @@ async function main() {
     // The viewfinder says PAUSE, so the line under the wordmark keeps the tagline.
     pausedLabel: "",
     decor: (phase) => `<div class="osd osd-tl">${OSD_MODE[phase]}</div><div class="osd osd-tr"><div data-osd-counter>${tapeCounter(live.session?.view.t ?? 0)}</div><div>${OSD_DATE}</div></div>`,
-    channels: ["master", "effects", "ambience", "voice"], quality,
+    channels: ["master", "effects", "ambience", "voice"], quality, voice: voice?.chat,
     sections: [
       { id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] },
       // The playable camera looks one click from the Escape menu; the Lab keeps their knobs and the Lab-only ones.
@@ -127,7 +134,7 @@ async function main() {
     ],
     // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
     pointerLock: canvas, blocked: () => (live.panel?.visible ?? false) || live.editing() || live.endCard(), keysBlocked: () => live.panel?.hasFocus() ?? false,
-    loading: smoke ? false : { gpu: 1, world: 4, people: 1, frame: 1 }, controls: shellControlsHtml,
+    loading: smoke ? false : { gpu: 1, world: 4, people: 1, frame: 1 }, controls,
     lobby: {
       friends: true,
       // Solo plays the session that's already running; a room is its own page (`?room=`), so joining loads it.
@@ -197,7 +204,8 @@ async function main() {
   // `night` counts from 0.
   const pinned = params.get("night")
   let night = pinned !== null && Number.isFinite(Number(pinned)) ? Math.max(1, Math.floor(Number(pinned))) - 1 : Number(localStorage.getItem(NIGHT_KEY)) || 0
-  let session: Session = online ? new OnlineSession(world, roomCode, shell.lobby!.playName) : new SoloSession(world, settings, nightSeed(world.params.seed, night))
+  let session: Session = online ? new OnlineSession(world, roomCode, shell.lobby!.playName, voice?.chat) : new SoloSession(world, settings, nightSeed(world.params.seed, night))
+  window.addEventListener("pagehide", () => { session.close(); voice?.dispose() }, { once: true })
   live.session = session
   const useWorld = (w: WoodsWorld, rebuild = true) => {
     world = w
@@ -210,7 +218,6 @@ async function main() {
   useWorld(world, false)
   performance.mark("woods:world")
 
-  let forcePlay = false
   // The Lab panel stays open while you play (capture "focus"): it takes keys only while it has focus, and a click on the
   // woods hands input back and locks.
   const locked = () => document.pointerLockElement === canvas
@@ -279,6 +286,7 @@ async function main() {
   cameraLook.onClick = () => audio.foley("ir.click")
   panel.addControls(feel.settings as unknown as Record<string, number | boolean>, CAMERA_FEEL_CONTROLS)
   audio.bindControls(panel)
+  if (voice) bindVoiceLab(panel, voice.chat.spatial)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()
   // Looks: curated bundles of sky, fog, light, weather and exposure (`src/looks.ts`); Today is the game as shipped.
@@ -336,6 +344,7 @@ async function main() {
   // (the menu) are the shell's.
   const keys = new Set<string>()
   const verdictCard = new VerdictCard()
+  live.verdict = () => verdictCard.visible
   let jumpPressed = false, poseVersion = 0
   const release = () => { keys.clear(); jumpPressed = false }
   window.addEventListener("keydown", (e) => {
@@ -377,7 +386,10 @@ async function main() {
   syncOverlays()
   if (lakeLab && !panel.visible) panel.toggle()
 
-  function controlsHud() { hud.innerHTML = `${controlsHtml()} ${keyPromptHtml("Backquote", "Knobs")}${panel.quickSwitchArmed ? ` <span class="akp">${keyCapHtml("BracketLeft")}${keyCapHtml("BracketRight")}<span class="akp-label">Presets</span></span>` : ""}` }
+  function controlsHud() {
+    const html = `${controlsHtml()}${voice ? ` ${voicePrompts(voice.chat)}` : ""} ${keyPromptHtml("Backquote", "Knobs")}${panel.quickSwitchArmed ? ` <span class="akp">${keyCapHtml("BracketLeft")}${keyCapHtml("BracketRight")}<span class="akp-label">Presets</span></span>` : ""}`
+    if (html !== controlsKey) { controlsKey = html; hud.innerHTML = html }
+  }
   controlsHud()
   onKeyLayoutChange(controlsHud)
 
@@ -491,7 +503,7 @@ async function main() {
     const key = JSON.stringify([rows, status])
     if (key === rosterKey) return
     rosterKey = key
-    shell.lobby!.setPlayers(rows.map((r) => ({ id: String(r.pid), name: r.name, you: r.pid === session.me, away: !r.connected })))
+    shell.lobby!.setPlayers(rows.map((r) => ({ id: r.id, name: r.name, you: r.pid === session.me, away: !r.connected })))
     shell.lobby!.setSocketStatus(status)
     roomHud.innerHTML = [`Room <b>${roomCode}</b>${status ? ` · ${esc(status)}` : ""}`, ...rows.map((r) => `<div class="${r.connected ? "" : "away"}">${esc(r.name)}${r.pid === session.me ? " (you)" : ""}${r.connected ? "" : " · dropped"}</div>`)].join("")
     const here = new Set(rows.filter((r) => r.connected).map((r) => r.pid))
@@ -888,6 +900,8 @@ async function main() {
     audio.flareBurn = settings.flareBurn
     audio.spider(session.spider, spider.steps)
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
+    voice?.frame(session, world, friends, camera.eye, camera.yaw, vp, playing, shell.settings.gain("master"), voiceBlocked())
+    if (voice) controlsHud()
 
     frames++
     if (frames <= 2) performance.mark(`woods:frame${frames}`)
@@ -897,7 +911,7 @@ async function main() {
 
   const woods = {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, feel, juice, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm,
+      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, feel, juice, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm, voice: voice?.chat,
       /** Automation: name what took her, as if at the radio (`verdict.ts`). */
       vote: (s: (typeof SUSPECTS)[number]) => session.vote(s),
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */

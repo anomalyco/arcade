@@ -1,4 +1,5 @@
 import { RoomObject } from "@arcade/kit/server/room-object"
+import { voiceIce } from "@arcade/kit/server/voice-turn"
 import { TICK_HZ } from "../shared/protocol"
 import { type Env, lobbyOf } from "./env"
 import type { RoomReport } from "./lobby"
@@ -14,7 +15,7 @@ export class WoodsRoom extends RoomObject<Env, WoodsRoomCore, RoomReport> {
     const sql = this.ctx.storage.sql
     sql.exec("CREATE TABLE IF NOT EXISTS night (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)")
     const row = sql.exec<{ data: string }>("SELECT data FROM night WHERE id = 1").toArray()[0]
-    const core = loadNight(code, row?.data, () => { sql.exec("DELETE FROM night WHERE id = 1") })
+    const core = loadNight(code, row?.data, () => { sql.exec("DELETE FROM night WHERE id = 1") }, undefined, () => voiceIce(this.env))
     core.onCheckpoint = (night) => {
       if (!core.humans) sql.exec("DELETE FROM night WHERE id = 1")
       else sql.exec("INSERT OR REPLACE INTO night (id, data) VALUES (1, ?)", JSON.stringify(night))
