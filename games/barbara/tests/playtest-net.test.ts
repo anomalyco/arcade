@@ -214,7 +214,7 @@ test("a body cannot tunnel through another or squeeze it through a wall", () => 
 
 test("coincident walkers choose opposite id-derived exits instead of both freezing against a tree", () => {
   const run = (order: number[]) => {
-    const bodies = [1, 2].map((id) => ({ id, x: 0, y: 0, vx: 0, vy: 0, radius: 0.28 }))
+    const bodies = [1, 2].map((id) => ({ collisionId: id, x: 0, y: 0, vx: 0, vy: 0, radius: 0.28 }))
     for (let tick = 0; tick < 5; tick++) for (const i of order) {
       stepBody(bodies[i]!, 0, 0, 0, [[0.3, -1, 1, 2]], dt, 0.28, 18, [bodies[1 - i]!])
     }
@@ -225,8 +225,8 @@ test("coincident walkers choose opposite id-derived exits instead of both freezi
   expect(run([0, 1])).toEqual(run([0, 1]))
   run([1, 0])
   const exits = [1, 2].map((id) => {
-    const b = { id, x: 0, y: 0, vx: 0, vy: 0 }
-    stepBody(b, 0, 0, 0, [], dt, 0.28, 18, [{ id: 3 - id, x: 0, y: 0, radius: 0.28 }])
+    const b = { collisionId: id, x: 0, y: 0, vx: 0, vy: 0 }
+    stepBody(b, 0, 0, 0, [], dt, 0.28, 18, [{ collisionId: 3 - id, x: 0, y: 0, radius: 0.28 }])
     return b
   })
   expect(exits[0]!.x).toBe(-exits[1]!.x)
