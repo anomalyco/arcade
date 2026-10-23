@@ -18,6 +18,7 @@ const HOLD_TICKS = 9
 export type NightCheckpoint = {
   version: 1
   build: string
+  nights: number
   code: string
   world: WoodsWorld["params"]
   state: WoodsState
@@ -94,7 +95,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     const players = this.state.players.map((p) => ({ ...p, map: {
       ...p.map, trail: roundTrail(p.map.trail), heard: p.map.heard.map((h) => ({ ...h, trail: roundTrail(h.trail) })),
     } }))
-    return { version: 1, build: BUILD, code: this.code, world: this.world.params, state: { ...this.state, players, events: [] }, seats: this.checkpointSeats(), pids: [...this.pids], names: [...this.names] }
+    return { version: 1, build: BUILD, nights: this.nights, code: this.code, world: this.world.params, state: { ...this.state, players, events: [] }, seats: this.checkpointSeats(), pids: [...this.pids], names: [...this.names] }
   }
 
   static restore(night: NightCheckpoint, clock: () => number = Date.now, build = BUILD): WoodsRoomCore {
@@ -102,6 +103,8 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     if (night.version !== 1 || night.build !== BUILD) throw new Error("Incompatible night checkpoint")
     if (!night.state || !Array.isArray(night.state.players) || night.state.players.some((p) => !p.air || !p.map)) throw new Error("Incomplete night checkpoint")
     const core = new WoodsRoomCore(night.code, clock, makeWorld(night.world), build)
+    if (!Number.isSafeInteger(night.nights) || night.nights < 0) throw new Error("Invalid night count")
+    core.nights = night.nights
     Object.assign(core.state, night.state, { events: [] })
     for (const [id, pid] of night.pids) { core.pids.set(id, pid); core.away.add(pid) }
     for (const [pid, name] of night.names) core.names.set(pid, name)
@@ -224,6 +227,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     for (const [, pid] of [...this.pids].sort((a, b) => a[1] - b[1])) addHuman(this.state, this.world, pid, this.names.get(pid) ?? `Hiker ${pid}`)
     this.fillBots()
     this.last.clear()
+    this.dirty = true
   }
   protected handle(id: string, msg: ClientMsg) {
     if (msg.type === "again") { if (this.pids.has(id)) this.again(); return }

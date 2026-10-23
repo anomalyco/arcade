@@ -56,12 +56,13 @@ async function start() {
   })
 }
 const ready = (p: Page, version = 1) => p.waitForFunction((v) => typeof probe !== "undefined" && probe.session.me > 0 && probe.session.poseVersion >= v && !probe.session.status(), version, { timeout: 30_000 })
-const read = (p: Page) => p.evaluate(() => ({ me: probe.session.me, x: probe.session.self.x, z: probe.session.self.z, yaw: probe.session.self.yaw, pitch: probe.session.self.pitch, map: probe.session.self.map, t: probe.session.view.t, loads: probe.loads, build: probe.build }))
+const read = (p: Page) => p.evaluate(() => ({ me: probe.session.me, x: probe.session.self.x, z: probe.session.self.z, yaw: probe.session.self.yaw, pitch: probe.session.self.pitch, map: probe.session.self.map, t: probe.session.view.t, night: probe.session.view.night.seed, loads: probe.loads, build: probe.build }))
 const check = (before: Awaited<ReturnType<typeof read>>, after: Awaited<ReturnType<typeof read>>) => {
   assert.equal(after.me, before.me)
   assert.ok(Math.hypot(after.x - before.x, after.z - before.z) < 0.08, "position restored")
   assert.ok(Math.abs(after.yaw - before.yaw) < 0.001 && Math.abs(after.pitch - before.pitch) < 0.001, "facing restored")
   assert.deepEqual(after.map, before.map)
+  assert.equal(after.night, before.night, "night layout restored")
   assert.ok(after.t >= before.t - 2.1 && after.t < before.t + 10, "night clock continued")
 }
 await using budget = browserBudget()
@@ -74,6 +75,12 @@ try {
     await p.goto(url); await ready(p)
     return p
   }))
+  const jumper = (await read(pages[0]!)).me
+  await pages[1]!.waitForFunction((id) => probe.session.view.players.some((p) => p.id === id && p.air.y === 0 && p.charge > 0.9), jumper)
+  await pages[0]!.evaluate(() => { probe.input.jump = true })
+  await pages[1]!.waitForFunction((id) => probe.session.view.players.some((p) => p.id === id && p.air.y > 0.1 && p.charge > 0.9), jumper)
+  await pages[1]!.waitForFunction((id) => probe.session.view.players.some((p) => p.id === id && p.air.y === 0), jumper)
+  console.log("PASS remote hop height and torch charge decode independently")
   console.log("Both clients joined; walking until each records a path sample")
   // Concurrent pages can join in either order. Walk away from each other using seat order, not page order.
   await Promise.all(pages.map((p) => p.evaluate(() => {

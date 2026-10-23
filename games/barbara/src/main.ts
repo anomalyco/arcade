@@ -559,7 +559,12 @@ async function main() {
     map.frame(state, meId, held.held ? 0 : p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
     if (state.night.seed !== storySeed) {
-      if (!Number.isNaN(storySeed)) { story.again(); camera.yaw = world.camp.spawn.yaw; camera.pitch = -0.05; camera.resetWalk(); shell.flow.changed() }
+      if (!Number.isNaN(storySeed)) {
+        story.again()
+        // Online joins and new nights already restored the authoritative facing through poseVersion above.
+        if (!online) { camera.yaw = world.camp.spawn.yaw; camera.pitch = -0.05; camera.resetWalk() }
+        shell.flow.changed()
+      }
       storySeed = state.night.seed
     }
     // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.

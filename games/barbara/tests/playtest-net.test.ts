@@ -4,7 +4,7 @@ import { JitterBuffer } from "@arcade/kit/net/jitter-buffer"
 import { WoodsRoomCore, type NightCheckpoint } from "../server/room-core"
 import { loadNight } from "../server/checkpoint"
 import { BUILD } from "../shared/build.gen"
-import { GRACE_MS, intentOps, packIntent, quantizeInput, roundTrail, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { GRACE_MS, intentOps, packIntent, playerRow, quantizeInput, roundTrail, type ServerMsg, type Snapshot } from "../shared/protocol"
 import { createWoods, FEEL, MAX_TAPES, newPlayer, PLAYER_RADIUS, stepMotion, stepWoods, TRAIL_MAX, type PlayerInput } from "../shared/sim"
 import { makeWorld } from "../shared/world"
 
@@ -57,6 +57,7 @@ test("a cold room restores two private seats, poses, tapes, finds, maps and the 
     expect(c.first!.distant).toEqual(s.distant)
   }
   expect(restarted.state.voices).toEqual(s.voices)
+  expect(restarted.state.night).toEqual(s.night)
   expect(restarted.state.rng).toEqual(s.rng)
   const map = s.players[0]!.map
   expect(restarted.state.players[0]!.map).toEqual({ ...map, trail: roundTrail(map.trail), heard: map.heard.map((h) => ({ ...h, trail: roundTrail(h.trail) })) })
@@ -84,6 +85,44 @@ test("checkpoints run every two seconds and on seat changes, and grace never ren
   const restored = WoodsRoomCore.restore(night, () => now)
   expect(restored.humans).toBe(0)
   expect(restored.state.players.every((p) => p.bot)).toBe(true)
+})
+
+test("recovery preserves clue knowledge, batteries and the next-night sequence", () => {
+  const room = new WoodsRoomCore("proof", () => 100_000, world), a = join(room)
+  room.state.night.phase = "lost"
+  let saved: NightCheckpoint | undefined
+  room.onCheckpoint = (night) => { saved = night }
+  room.message(a.conn, JSON.stringify({ type: "again" }))
+  expect(saved!.nights).toBe(1)
+  const secondSeed = room.state.night.seed, p = room.state.players.find((p) => p.id === a.first!.me)!
+  p.map.clues = [0, 1]; p.charge = 0.37; p.spare = true
+  room.state.night.finds = [{ clue: 0, by: p.id, at: 10 }]
+  const restored = WoodsRoomCore.restore(JSON.parse(JSON.stringify(room.checkpoint())), () => 100_000)
+  const again = join(restored, a.token)
+  expect(again.first!.night!.seed).toBe(secondSeed)
+  expect(again.first!.map!.clues).toEqual([0, 1])
+  expect(restored.state.players.find((q) => q.id === p.id)!.charge).toBe(0.37)
+  expect(restored.state.night.finds).toEqual(room.state.night.finds)
+  room.state.night.phase = restored.state.night.phase = "lost"
+  room.message(a.conn, JSON.stringify({ type: "again" }))
+  restored.message(again.conn, JSON.stringify({ type: "again" }))
+  expect(restored.state.night.seed).toBe(room.state.night.seed)
+  expect(restored.state.night.seed).not.toBe(secondSeed)
+})
+
+test("battery and hop occupy distinct wire fields, and captured walkers cannot start a jump", () => {
+  const p = newPlayer(1, false, "A", world.camp.spawn.x, world.camp.spawn.z, 0)
+  p.charge = 0.37
+  stepMotion(world, p, input({ jump: true }), FEEL, dt)
+  const row = playerRow(p, false)
+  expect(row[10]).toBe(37)
+  expect(row[11]).toBe(Math.round(p.air.y * 1000))
+  expect(row[12]).toBe(Math.round(p.air.v * 1000))
+  const captured = newPlayer(2, false, "B", p.x + 2, p.z, 0)
+  captured.capture = { by: 1, left: 4 }
+  stepMotion(world, captured, input({ jump: true, mx: 1 }), FEEL, dt)
+  expect(captured.air.airborne).toBe(false)
+  expect(captured.x).toBe(p.x + 2)
 })
 
 test("bad JSON, unsupported schemas, changed shared builds and broken state are discarded and the room can reopen", () => {
