@@ -1,5 +1,19 @@
 # Shared water, 2026-10-22
 
+## Shipping review fixes
+
+- Added distance-faded ocean slopes, roughness and glint attenuation. Candidate 7's
+  panorama was inspected: the distant surface blends smoothly into the sky/haze.
+- Play pointerup/blur no longer resets boat speed; only an active Edit drag owns it.
+- Both Today and continuous ocean shaders pass Naga 30.0.1. Targeted checks: 56 passed;
+  the unchanged storm case exceeded 5 s under load, then passed alone with a 30 s limit.
+- Carrier and root-script typechecks, production build and Lab station tests passed
+  after rebasing onto the shared game-shell changes. Today shader tokens and authoritative
+  sea still match the original experiment base; inherited source pins use the current
+  main ancestor.
+- The single Water station exposes ocean variants only; Lake stays hidden until Woods ships.
+- Fresh editor/wake and lake proofs are tracked below; earlier captures predate these fixes.
+
 Current direction: judge the images; Kit will judge performance on his computer.
 No further paired timing or quiet-mini wait. Earlier timing experiments below are
 historical, not release gates. Shader errors, Today parity and unchanged authoritative

@@ -27,7 +27,18 @@ try {
   page.on("console", m => { if (m.type() === "error" && /gpu|wgsl|shader|validation/i.test(m.text())) errors.push(m.text()) })
   await page.addInitScript(installPage)
   await page.goto(`http://127.0.0.1:${address.port}/water.html?seed=7&waterLook=continuous`)
-  await page.getByRole("radio", { name: "Play", exact: true }).waitFor()
+  await page.waitForFunction(() => !!(globalThis as unknown as Debug).carrier, null, { timeout: 90000 })
+  // The shared panel now starts secondary groups folded.
+  const interaction = page.getByRole("button", { name: "Interaction", exact: true })
+  if (await interaction.isVisible()) await interaction.click()
+  const choose = async (label: string, option: string) => {
+    const radio = page.getByRole("radio", { name: option, exact: true })
+    if (await radio.isVisible()) await radio.click()
+    else {
+      await page.getByRole("button", { name: label, exact: true }).click()
+      await page.getByRole("menuitemradio", { name: option, exact: true }).click()
+    }
+  }
   const frames = (n: number) => page.evaluate(async n => {
     const w = globalThis as unknown as Debug
     w.__vc.depth = 1
@@ -59,7 +70,7 @@ try {
   await page.keyboard.up("w")
   if (distance(dragged, await position()) > 0.001) throw Error("Edit mode accepted gameplay movement")
   await page.screenshot({ path: `${out}/edit.png` })
-  await page.getByRole("radio", { name: "Play", exact: true }).click()
+  await choose("Boat", "Play")
   // Give the canvas keyboard ownership without taking pointer lock.
   await page.locator("canvas#view").click({ position: { x: 720, y: 600 } })
   await page.keyboard.down("w")
@@ -73,7 +84,7 @@ try {
   if (await page.evaluate(() => (globalThis as unknown as Debug).carrier.driver.boat.u) !== speed) throw Error("Play click/blur reset boat speed")
   if (distance(dragged, played) < 1) throw Error("Play mode did not drive the boat")
   if (await page.evaluate(() => !!document.pointerLockElement)) throw Error("Water Lab stole pointer lock")
-  await page.getByRole("radio", { name: "Today", exact: true }).click()
+  await choose("Water", "Today")
   await frames(3)
   if (await page.evaluate(() => (globalThis as unknown as Debug).carrier.ocean.water.mode) !== "today") throw Error("Today control did not restore baseline")
   await page.screenshot({ path: `${out}/today.png` })
