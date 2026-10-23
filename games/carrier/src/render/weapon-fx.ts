@@ -868,6 +868,60 @@ export class WeaponFx implements ScenePass {
     this.trail(key, tx, ty, tz, burning ? 7 : 22, burning ? 0.95 : 0.55, burning ? 0.92 : 0.6, burning ? 0.62 : 0.3, burning ? 4.2 : 2.5, 1.1, burning ? 7 : 4)
   }
 
+  /**
+   * A ship's SAM in flight (key = a unique id): bigger than an AIM-9, with a long white-hot motor plume and a thick
+   * smoke trail that hangs for seconds while the motor burns, then a thin wisp as it coasts.
+   */
+  samMissile(key: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, burning: boolean): void {
+    const s = Math.hypot(vx, vy, vz) || 1
+    const dx = vx / s
+    const dy = vy / s
+    const dz = vz / s
+    this.rock(1, x, y, z, dx, dy, dz, 2.1, 2.1, 2.1, 0, 1, 1, 1, 0, 1)
+    const tx = x - dx * 3.4
+    const ty = y - dy * 3.4
+    const tz = z - dz * 3.4
+    if (burning) {
+      // Dimmer right by the lens (the launch, seen from the sight behind the box), full strength from 70 m.
+      const near = Math.min(1, Math.max(0.3, (Math.hypot(tx - this.eye[0], ty - this.eye[1], tz - this.eye[2]) - 10) / 60))
+      const f = (0.8 + 0.2 * Math.random()) * near
+      this.glowAt(tx, ty, tz, 2.6 * f, 14, 9.5, 5, 1)
+      this.glowAt(tx, ty, tz, 7 * f, 1.6, 0.8, 0.28, 0.55)
+      const L = 11 * (0.85 + 0.15 * Math.random())
+      this.beam(tx, ty, tz, tx - dx * L, ty - dy * L, tz - dz * L, 0.9 * near, 0.2, 12, 6.5, 2, 1)
+      this.trail(key, tx, ty, tz, 5, 0.96, 0.94, 0.72, 8, 1.6, 11)
+    } else this.trail(key, tx, ty, tz, 18, 0.62, 0.64, 0.3, 3.5, 1.2, 5)
+  }
+
+  /**
+   * A SAM's proximity fuse firing in the air: a white-hot flash, a sphere of fragments streaking out, the kit's
+   * `proximity` burst, and a dark puff that hangs where it burst (unlike the 5-inch's small flak pop).
+   */
+  samBurst(x: number, y: number, z: number): void {
+    const px = this.pixel(x, y, z)
+    this.puff(0, x, y, z, 0, 0, 0, 0.08, Math.max(9, px * 30), Math.max(16, px * 50), 16, 14, 11, 1)
+    this.puff(0, x, y, z, 0, 0, 0, 0.35, 6, 26, 3, 1.6, 0.6, 0.8, 0, 0)
+    for (let i = 0; i < 30; i++) {
+      // Fragments on a sphere (golden-angle spiral, jittered).
+      const k = (i + 0.5) / 30
+      const el = Math.acos(1 - 2 * k)
+      const az = i * 2.39996 + rnd(-0.3, 0.3)
+      const sp = rnd(170, 260)
+      const fx = Math.sin(el) * Math.cos(az) * sp
+      const fy = Math.cos(el) * sp
+      const fz = Math.sin(el) * Math.sin(az) * sp
+      this.spawn(0, x, y, z, x + fx * 0.03, y + fy * 0.03, z + fz * 0.03, fx, fy, fz, rnd(0.22, 0.42), 0.16, 0.06, 11, 6.5, 2.2, 1, 2.6, -9.81)
+    }
+    this.explosion(x, y, z, 0, 0, 0, 0.75, false, "proximity")
+    // The puff that hangs: dark, slow to spread, barely rising, drifting on the breeze.
+    for (let i = 0; i < 7; i++) {
+      const ox = rnd(-1, 1) * 4
+      const oy = rnd(-1, 1) * 3
+      const oz = rnd(-1, 1) * 4
+      this.puff(1, x + ox, y + oy, z + oz, ox * 0.9 + 1.5, oy * 0.6, oz * 0.9 + 0.6, rnd(10, 14), rnd(4, 6), rnd(20, 27), 0.085, 0.08, 0.078, 0.78, 1.1, 0.06)
+    }
+  }
+
   /** A flare (key = unique id) burning at (x, y, z), `age` seconds old: a white-magnesium star and a smoke trail. */
   flare(key: number, x: number, y: number, z: number, age: number, life: number): void {
     const u = age / life
@@ -983,7 +1037,7 @@ export class WeaponFx implements ScenePass {
       preset ?? (water ? "barrel" : s >= 1.2 && y < 45 ? "ship" : s <= 0.6 ? "pop" : "missile")
     const baseSettings = EXPLOSION_PRESETS[chosen].settings
     const settings = { ...baseSettings, fireballTemp: baseSettings.fireballTemp * (chosen === "ship" ? 0.72 : 0.88) }
-    const airburst = !water && (chosen === "missile" || y > 32)
+    const airburst = !water && (chosen === "missile" || chosen === "proximity" || y > 32)
     const worldScale = s * (chosen === "ship" ? 2.8 : 4.2)
     spawnExplosion(this.fxParticles, null, x, y, z, settings, Math.random, worldScale, 1, {
       vx: vx * 0.45,

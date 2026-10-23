@@ -170,6 +170,9 @@ async function main() {
     else if (e.k === "intercept" && e.store === 0) flight.weapons.world.intercept(e.owner, e.seq)
   }
   gunnery.teamOf = (id) => (net.crew ? (playerOf(net.crew, id)?.team ?? -1) : -1)
+  flight.weapons.onKill = (w) => {
+    if (w === "ciws" || w === "sam" || w === "shell") gunnery.confirmKill()
+  }
   game.setGunnery(gunnery)
   // The boat (DEPLOY → LAUNCH BOAT): a driver's boat on the shared camera and mouse, everyone's boats; health,
   // the kill feed and being a target for the jets' guns go through the jets' weapons.

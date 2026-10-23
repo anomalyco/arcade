@@ -43,8 +43,8 @@ test("explosionSettings clamps numeric ranges and preserves scorch toggle", () =
   }
 })
 
-test("all seven typed explosion presets are within valid bounds and resolve macro parameters", () => {
-  expect(EXPLOSION_PRESET_IDS).toEqual(["grenade", "propane", "car", "barrel", "missile", "ship", "pop"])
+test("all eight typed explosion presets are within valid bounds and resolve macro parameters", () => {
+  expect(EXPLOSION_PRESET_IDS).toEqual(["grenade", "propane", "car", "barrel", "missile", "ship", "pop", "proximity"])
   for (const id of EXPLOSION_PRESET_IDS) {
     const preset = EXPLOSION_PRESETS[id]
     expect(preset.id).toBe(id)
@@ -58,6 +58,10 @@ test("all seven typed explosion presets are within valid bounds and resolve macr
   expect(EXPLOSION_PRESETS.car.settings.fireballSize).toBeGreaterThan(EXPLOSION_PRESETS.grenade.settings.fireballSize)
   expect(EXPLOSION_PRESETS.ship.settings.smokeAmount).toBeGreaterThan(EXPLOSION_PRESETS.propane.settings.smokeAmount)
   expect(EXPLOSION_PRESETS.pop.settings.fireballSize).toBeLessThan(EXPLOSION_PRESETS.grenade.settings.fireballSize)
+  // A proximity burst flashes briefly and leaves a dark puff that hangs rather than rising.
+  expect(EXPLOSION_PRESETS.proximity.settings.fireballDuration).toBeLessThan(EXPLOSION_PRESETS.missile.settings.fireballDuration)
+  expect(EXPLOSION_PRESETS.proximity.settings.smokeLinger).toBeGreaterThan(EXPLOSION_PRESETS.missile.settings.smokeLinger)
+  expect(EXPLOSION_PRESETS.proximity.settings.smokeRise).toBeLessThan(EXPLOSION_PRESETS.pop.settings.smokeRise)
 
   const custom = resolveExplosionSettings({
     preset: "propane",

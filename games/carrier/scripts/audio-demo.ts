@@ -16,6 +16,8 @@ import { WeaponAudio } from "../src/audio/weapon-audio"
 import { WeatherAudio } from "../src/audio/weather-audio"
 import { JetSfx } from "../src/audio/jet-sfx"
 import { UiAudio } from "../src/audio/ui-audio"
+import { TurretAudio } from "../src/audio/turret-audio"
+import { GUNNERY } from "../shared/gunnery"
 import type { PlaneDrawPose } from "../src/render/plane-pass"
 
 const RATE = 48000
@@ -473,6 +475,66 @@ function explosions(): Scene {
 }
 
 /**
+ * The SAM from the gunner's seat (src/audio/turret-audio.ts): the seeker tracking (beeps quickening and rising) for
+ * `lockTime`, the lock chirp and solid tone, the launch, the motor climbing away (placed and Doppler-shifted), and its
+ * proximity burst 1.3 km out, heard after the sound's travel time. `pass`: instead, another ship's SAM crossing 40 m
+ * in front of the listener at full speed (the motor's Doppler drop), then bursting far off.
+ */
+function sam(pass = false): Scene {
+  let ta: TurretAudio | null = null
+  const p = { x: 0, y: 20, z: 0, vx: 0, vy: 0, vz: 0, speed: 0, age: -1, live: false, burst: false }
+  const LAUNCH = pass ? 0.5 : 0.3 + GUNNERY.sam.lockTime + 0.5
+  // Out along -z (ahead of the listener) and climbing; the pass flies along +x 40 m ahead.
+  const dir = pass ? [1, 0.03, 0] : [0.2, 0.35, -0.92]
+  return {
+    dur: pass ? 9 : LAUNCH + 9,
+    setup: (s) => {
+      s.eye = [0, 20, 0]
+      s.fwd = [0, 0.2, -1]
+      ta = new TurretAudio()
+    },
+    step: (_s, t, dt) => {
+      const a = ta!
+      const progress = pass ? 0 : Math.max(0, Math.min(1, (t - 0.3) / GUNNERY.sam.lockTime))
+      const seek: 0 | 1 | 2 = pass || t < 0.3 || t > LAUNCH + 0.3 ? 0 : progress >= 1 ? 2 : 1
+      a.update(dt, false, 0, seek, progress)
+      if (!p.live && !p.burst && t >= LAUNCH) {
+        p.live = true
+        p.age = 0
+        if (pass) {
+          p.x = -900
+          p.z = -40
+          p.speed = GUNNERY.sam.topSpeed
+        } else {
+          p.x = 3
+          p.y = 18
+          p.z = -6
+          p.speed = GUNNERY.sam.eject
+          a.samLaunch(Math.hypot(p.x, p.y - 20, p.z))
+        }
+      }
+      if (p.live) {
+        p.age += dt
+        if (!pass && p.age < GUNNERY.sam.burn) p.speed = Math.min(GUNNERY.sam.topSpeed, p.speed + GUNNERY.sam.accel * dt)
+        p.vx = dir[0]! * p.speed
+        p.vy = dir[1]! * p.speed
+        p.vz = dir[2]! * p.speed
+        p.x += p.vx * dt
+        p.y += p.vy * dt
+        p.z += p.vz * dt
+        const d = Math.hypot(p.x, p.y - 20, p.z)
+        if (d > (pass ? 2500 : 1300)) {
+          p.live = false
+          p.burst = true
+          a.burstAt(d, "sam", "air")
+        }
+      }
+      a.samMotors(p.live ? [{ key: 1, x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, burning: pass || p.age < GUNNERY.sam.burn }] : [])
+    },
+  }
+}
+
+/**
  * The 60 s montage: the deck at dawn over a calm sea → your catapult shot → the climb to military and afterburner → a
  * head-on pass with a crack → gun bursts → a missile → the kill → the weather turns to a storm with thunder → the trap.
  * Each segment is one of the scenes above (re-set at its start); the weapons and weather persist across them.
@@ -757,6 +819,8 @@ const SCENES: Record<string, () => Scene> = {
   "weather-heavy": () => weather("heavy"),
   "mix-chase": mixChase,
   explosions,
+  sam: () => sam(),
+  "sam-pass": () => sam(true),
 }
 
 /** What fired, when (audio time, s): every bank slot played and every jet one-shot, for the before/after lists. */

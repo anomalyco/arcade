@@ -25,8 +25,8 @@ export type TurretHudView = {
   arcPitch: number
   limitYaw: number
   limitPitch: number
-  /** SAM seeker box. */
-  lock: (Pt & { progress: number; locked: boolean }) | null
+  /** SAM seeker box: lock progress 0..1, locked, armed (a launch waiting for the lock), and the lock flash 1 → 0. */
+  lock: (Pt & { progress: number; locked: boolean; armed: boolean; flash: number }) | null
   /** Lead pip on the target nearest the aim, and its range (m). */
   lead: (Pt & { range: number }) | null
   /** The gun's predicted impact on the water and its range (m) and time of flight (s). */
@@ -56,6 +56,12 @@ const CSS = `
 #tg .bore.on { opacity: 0.35; }
 #tg .lock { width: 64px; height: 64px; margin: -32px 0 0 -32px; border: 1.5px dashed rgba(255, 200, 97, 0.9); }
 #tg .lock.locked { border: 2px solid #ff5a3a; box-shadow: 0 0 10px rgba(255, 70, 40, 0.6); }
+#tg .lki { width: 0; height: 0; }
+#tg .lki span { position: absolute; left: -22px; top: 30px; width: 44px; height: 3px; border: 1px solid rgba(255, 200, 97, 0.8); }
+#tg .lki span i { position: absolute; left: 0; top: 0; bottom: 0; background: #ffc861; }
+#tg .lki b { position: absolute; left: -40px; top: 38px; width: 80px; text-align: center; font-weight: 400; font-size: 10px; letter-spacing: 0.3em; margin-left: 0.15em; color: #ffc861; }
+#tg .lki.locked span { display: none; }
+#tg .lki.locked b { top: 30px; color: #ff5a3a; font-size: 11px; }
 #tg .lead { width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 1px solid rgba(255, 200, 97, 0.95); transform-origin: 6px 6px; }
 #tg .lead b, #tg .imp b { position: absolute; left: 18px; top: -3px; font-weight: 300; font-size: 10px; letter-spacing: 0.2em; white-space: nowrap; color: rgba(255, 220, 160, 0.95); }
 #tg .imp { width: 26px; height: 10px; margin: -5px 0 0 -13px; border: 1px solid rgba(255, 200, 97, 0.95); border-radius: 50%; }
@@ -114,7 +120,7 @@ export class TurretHud {
     const root = document.createElement("div")
     root.id = "tg"
     root.hidden = true
-    root.innerHTML = `<div class="mark aim"><i></i><i></i><i></i><i></i></div><div class="mark bore"></div><div class="mark lock" hidden></div>
+    root.innerHTML = `<div class="mark aim"><i></i><i></i><i></i><i></i></div><div class="mark bore"></div><div class="mark lock" hidden></div><div class="mark lki" hidden><span><i></i></span><b></b></div>
 <div class="mark lead" hidden><b></b></div><div class="mark imp" hidden><b></b></div><div class="arc"><i></i></div><div class="el"><i></i></div>
 <div class="edge l"></div><div class="edge r"></div><div class="edge u"></div><div class="edge d"></div><div class="arm"></div>`
     parent.append(root)
@@ -140,11 +146,22 @@ export class TurretHud {
     place(bore, v.bore)
     if (v.bore) bore.classList.toggle("on", Math.hypot(v.bore.x - innerWidth / 2, v.bore.y - innerHeight / 2) < 4)
     const lock = q(".lock")
+    const lki = q(".lki")
     if (v.lock) {
-      const s = v.lock.locked ? 0.62 : 0.62 + (1 - v.lock.progress) * 0.8
+      // The box closes on the jet as the lock builds, then bumps and goes solid red on lock.
+      const s = v.lock.locked ? 0.62 * (1 + 0.35 * v.lock.flash) : 0.62 + (1 - v.lock.progress) * 0.8
       place(lock, v.lock, ` scale(${s.toFixed(3)})`)
       lock.classList.toggle("locked", v.lock.locked)
-    } else lock.hidden = true
+      place(lki, v.lock)
+      lki.classList.toggle("locked", v.lock.locked)
+      lki.querySelector("i")!.style.width = `${(v.lock.progress * 100).toFixed(1)}%`
+      const label = v.lock.locked ? "LOCK" : v.lock.armed ? "ARMED" : ""
+      const b = lki.querySelector("b")!
+      if (b.textContent !== label) b.textContent = label
+    } else {
+      lock.hidden = true
+      lki.hidden = true
+    }
     const lead = q(".lead")
     place(lead, v.lead, " rotate(45deg)")
     if (v.lead) lead.querySelector("b")!.textContent = ""

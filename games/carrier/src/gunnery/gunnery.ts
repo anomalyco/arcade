@@ -28,6 +28,7 @@ import {
   predictImpact,
   restAngles,
   samLockStep,
+  samTrigger,
   shipPointVel,
   slewTurret,
   takeSam,
@@ -40,7 +41,9 @@ import {
 } from "../../shared/gunnery"
 import { PLANE, type Vec3, worldToShip } from "../../shared/plane"
 import { type Target, clearLock } from "../../shared/weapons"
-import { TurretAudio } from "../audio/turret-audio"
+import { HitStop } from "@arcade/kit/client/camera"
+import { type SamSound, TurretAudio } from "../audio/turret-audio"
+import { FEEDBACK } from "../feedback/settings"
 import type { Renderer } from "../render/renderer"
 import { WeaponFx } from "../render/weapon-fx"
 import { TURRET_CAM, TurretCam } from "./camera"
@@ -152,6 +155,12 @@ export class Gunnery {
   /** The parked jet (slot) at a ship-local point of carrier `ship`, or -1; the host wires it (shared/deck-jets.ts parkedAt). */
   deckJet: ((ship: number, x: number, y: number, z: number) => number) | null = null
   private hitIn = 0
+  /** Presentation-only hit-stop: slows the effects for a beat (never the sea clock or the world). */
+  private stop = new HitStop()
+  private punch = -1
+  /** When our SAM seeker last locked (s, `time`): the HUD's lock flash. */
+  private lockedAt = -9
+  private samSounds: SamSound[] = []
   private claimed = new Map<number, number>()
   private boomed: string[] = []
   private press = { yaw: 0, pitch: 0 }
@@ -258,7 +267,17 @@ export class Gunnery {
         this.boomed.push(key)
         if (this.boomed.length > 48) this.boomed.shift()
         const fx = this.fx
-        if (e.kind === "sam") fx.explosion(e.x, e.y, e.z, 0, 0, 0, 1, e.surface === "sea", "missile")
+        const d = this.dist(e.x, e.y, e.z)
+        if (e.kind === "sam") {
+          if (e.surface === "air") fx.samBurst(e.x, e.y, e.z)
+          else fx.explosion(e.x, e.y, e.z, 0, 0, 0, 1, e.surface === "sea", "missile")
+          // Felt at the sight: a close burst shakes it; our own SAM connecting holds the moment for a beat.
+          if (this.seat) this.cam.shake.add(0.35 * Math.max(0, 1 - d / 900), 0.5)
+          if (e.owner === this.id && e.on >= 0) {
+            this.cam.shake.add(0.15, 0.6)
+            this.stop.trigger(0.07, 0.1)
+          }
+        }
         else if (e.surface === "sea") {
           fx.splash(e.x, e.y, e.z, 0.85)
           fx.glowAt(e.x, e.y + 1, e.z, 4, 6, 3, 1, 1)
@@ -267,7 +286,7 @@ export class Gunnery {
           fx.explosion(e.x, e.y + 1, e.z, 0, 0, 0, 0.8, false, e.surface === "ship" ? "ship" : "barrel")
           fx.impact(e.surface === "land" ? "land" : "ship", e.x, e.y, e.z)
         }
-        this.audio.burstAt(this.dist(e.x, e.y, e.z), e.kind, e.surface)
+        this.audio.burstAt(d, e.kind, e.surface)
         if (e.owner === this.id && e.on >= 0) {
           this.hud.hit()
         }
@@ -291,9 +310,26 @@ export class Gunnery {
     }
   }
 
-  /** A kill credited to us (from the jets' feed): the HUD's kill marker. */
+  /** A kill credited to us (from the jets' feed): the HUD's kill marker, and at the sight the pilot's kill moment (a
+   *  punch-in of the view, `FEEDBACK`) with a short hit-stop of the effects. */
   confirmKill(): void {
     this.hud.hit(true)
+    if (!this.seat) return
+    this.punch = 0
+    this.stop.trigger(0.1, 0.05)
+  }
+
+  /** The kill punch-in: the sight's fov scale this frame (1 at rest), the same curve as the pilot's (src/feedback). */
+  private punchScale(dt: number): number {
+    if (this.punch < 0) return 1
+    this.punch += dt
+    const u = this.punch / FEEDBACK.punchTime
+    if (u >= 1) {
+      this.punch = -1
+      return 1
+    }
+    const e = u < 0.12 ? u / 0.12 : u < 0.4 ? 1 : 1 - ((u - 0.4) / 0.6) ** 2 * (3 - 2 * ((u - 0.4) / 0.6))
+    return 1 - FEEDBACK.punchZoom * e
   }
 
   // ---- our turret --------------------------------------------------------------------------------------------------------
@@ -370,7 +406,7 @@ export class Gunnery {
     lv[1] = 1
     lv[2] = 0
     toWorld(ship, lv, true, up)
-    const zoom = this.input.scope ? (TURRET_CAM.scope[mount.kind] ?? TURRET_CAM.fov) : TURRET_CAM.fov
+    const zoom = (this.input.scope ? (TURRET_CAM.scope[mount.kind] ?? TURRET_CAM.fov) : TURRET_CAM.fov) * this.punchScale(dt)
     this.cam.place(dt, wv, aimDir, up, zoom, aspect)
     return true
   }
@@ -402,9 +438,11 @@ export class Gunnery {
         this.cam.shake.add(0.05, 0.45)
       }
     } else if (st.kind === "sam") {
+      const wasLocked = st.lock.locked
       if (st.cells > 0 && armed) samLockStep(st.lock, dt, mp[0], mp[1], mp[2], md[0], md[1], md[2], this.team, this.subJets, (id) => this.combat?.blind(id) ?? false)
       else clearLock(st.lock)
-      if (pressed) {
+      if (st.lock.locked && !wasLocked) this.lockedAt = this.time
+      if (samTrigger(st, pressed)) {
         const cell = takeSam(st)
         if (cell >= 0) {
           muzzleWorld(ship, seat.mount, this.turret.yaw, this.turret.pitch, mp, md, cell)
@@ -604,7 +642,7 @@ export class Gunnery {
 
     // Effects.
     const fx = this.fx
-    fx.begin(v.eye, v.t, v.dt, v.fov, innerHeight)
+    fx.begin(v.eye, v.t, this.stop.step(v.dt), v.fov, innerHeight)
     this.drawRounds(this.rounds)
     this.drawRounds(this.others)
     const seat = this.seat
@@ -622,20 +660,36 @@ export class Gunnery {
       fx.muzzle(mp[0], mp[1], mp[2], md[0], md[1], md[2])
       farCiws = Math.max(farCiws, 1 / (1 + this.dist(mp[0], mp[1], mp[2]) / 300))
     }
+    let sams = 0
     for (const p of this.world.projectiles) {
       if (!p.alive) continue
-      if (p.kind === "sam") fx.missile(0x400000 + ((p.owner * 64 + p.seq) & 0xfffff), p.x, p.y, p.z, p.vx, p.vy, p.vz, p.age < GUNNERY.sam.burn)
+      if (p.kind === "sam") {
+        const key = 0x400000 + ((p.owner * 64 + p.seq) & 0xfffff)
+        const burning = p.age < GUNNERY.sam.burn
+        fx.samMissile(key, p.x, p.y, p.z, p.vx, p.vy, p.vz, burning)
+        const s = (this.samSounds[sams++] ??= { key: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, burning: false })
+        s.key = key
+        s.x = p.x
+        s.y = p.y
+        s.z = p.z
+        s.vx = p.vx
+        s.vy = p.vy
+        s.vz = p.vz
+        s.burning = burning
+      }
       else {
         const k = 0.014
         fx.beam(p.x - p.vx * k, p.y - p.vy * k, p.z - p.vz * k, p.x, p.y, p.z, 0.18, 0.32, 9, 5, 1.8, 1)
       }
     }
     fx.upload()
+    this.samSounds.length = sams
+    this.audio.samMotors(this.samSounds)
 
     // Sound and the HUD.
     const st = this.state
     const seek: 0 | 1 | 2 = st && st.kind === "sam" && st.lock.target >= 0 ? (st.lock.locked ? 2 : 1) : 0
-    this.audio.update(v.dt, this.firingNow(), farCiws, seek)
+    this.audio.update(v.dt, this.firingNow(), farCiws, seek, st ? Math.min(1, st.lock.time / GUNNERY.sam.lockTime) : 0)
     const on = seek && st ? st.lock.target : -1
     const lk = on < 0 ? -2 : on * 2 + (seek === 2 ? 1 : 0)
     if (lk !== this.sentLock) {
@@ -672,7 +726,7 @@ export class Gunnery {
     if (m.kind === "sam" && st.lock.target >= 0) {
       const j = v.jets.find((j) => j.id === st.lock.target)
       const p = j && project(j.x, j.y, j.z)
-      if (p) h.lock = { x: p.x, y: p.y, progress: Math.min(1, st.lock.time / GUNNERY.sam.lockTime), locked: st.lock.locked }
+      if (p) h.lock = { x: p.x, y: p.y, progress: Math.min(1, st.lock.time / GUNNERY.sam.lockTime), locked: st.lock.locked, armed: st.armed, flash: st.lock.locked ? Math.max(0, 1 - (this.time - this.lockedAt) / 0.35) : 0 }
     }
     // Lead pip: the enemy jet nearest the aim within range.
     h.lead = null

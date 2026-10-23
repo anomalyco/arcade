@@ -154,6 +154,7 @@ async function main() {
 
   const gunnery = new Gunnery(renderer, canvas, ground)
   gunnery.input.grab = true
+  weapons.onKill = () => gunnery.confirmKill()
   gunnery.setPlayer(ME, 0)
   gunnery.man(own.draw.id, startMount)
   /** Damage to the enemy carrier as the fleet would take it (harness tally). */

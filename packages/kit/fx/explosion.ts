@@ -50,7 +50,7 @@ export const explosionRanges: Record<
   secondaryPops: [0, 6, 1, "· retrigger", "Blast & Debris", "Secondary pops"],
 }
 
-export const EXPLOSION_PRESET_IDS = ["grenade", "propane", "car", "barrel", "missile", "ship", "pop"] as const
+export const EXPLOSION_PRESET_IDS = ["grenade", "propane", "car", "barrel", "missile", "ship", "pop", "proximity"] as const
 export type ExplosionPresetId = (typeof EXPLOSION_PRESET_IDS)[number]
 
 /** High-level physical recipe axes mapped onto `ExplosionSettings`. */
@@ -229,6 +229,31 @@ export const EXPLOSION_PRESETS: Readonly<
       flashIntensity: 4.2,
       shockRing: 0.68,
       scorch: true,
+    }),
+  },
+  /** A proximity-fuzed warhead (a SAM or flak shell bursting near its target): a short white-hot flash, a sphere of
+   *  fragments and little fire, then a dark, slow puff that hangs in the air instead of billowing up. */
+  proximity: {
+    id: "proximity",
+    label: "Proximity burst",
+    settings: explosionSettings({
+      fireballSize: 0.9,
+      fireballDuration: 0.24,
+      fireballTemp: 1.95,
+      smokeAmount: 1.25,
+      smokeDarkness: 0.9,
+      smokeColorShift: 0.62,
+      smokeRise: 0.2,
+      smokeSpreadSpeed: 1.7,
+      smokeTurbulence: 0.6,
+      smokeLinger: 7.5,
+      sparkCount: 130,
+      debrisCount: 8,
+      flashIntensity: 11,
+      shockRing: 1.6,
+      fragmentCount: 14,
+      secondaryPops: 0,
+      scorch: false,
     }),
   },
 }

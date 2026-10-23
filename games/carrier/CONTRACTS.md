@@ -778,9 +778,13 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   glow light up); the turret slews toward it at its own rates (`slewTurret`: CIWS 2.3/1.8 rad/s, SAM 1.2/1.0, gun
   0.65/0.5), the amber ring is where the barrel points. LMB/Space fires, RMB zooms (CIWS 30°, SAM 24°, gun 16°).
 - CIWS: 75 rps, 1,100 m/s, ~1.6 km, 1.6 dmg/round on jets (5 m sphere), heat 2.6 s. Rounds passing within 3 m of a
-  missile, bomb, SAM or shell shoot it down. SAM: 8 cells (each reloads 3 s, starting 2 s after a launch), seeker 9°
-  cone / 4 km / 2.2 s lock, PN (N 4, 30 g from 380 m/s), 15 m fuse, 70→30 damage (not a one-shot); a flare burst fools it by a fixed
-  coin per missile and burst (55%). 5-inch (a steady threat, not the ship-killer): one round per 2.5 s, 800 m/s with drag
+  missile, bomb, SAM or shell shoot it down. SAM: 8 cells (each reloads 3 s, starting 2 s after a launch, 1.6 s between
+  launches), seeker 9° cone / 4 km / 1.2 s lock, PN (N 4, 30 g from 380 m/s), 24 m fuse, 70→30 damage (not a one-shot);
+  a SAM that loses its target out of its gimbal (an overshoot) bursts there; a flare burst fools it by a fixed
+  coin per missile and burst (55%). The trigger (`samTrigger`): a press while the seeker tracks but has not locked arms
+  the launcher (HUD "ARMED") and the SAM goes the moment it locks; a press when locked, or with nothing in the seeker (a
+  dumbfire), launches at once. The seeker box closes on the jet with a progress bar under it and goes solid red with
+  "LOCK"; its tone beeps faster and higher as the lock builds, chirps and holds one note when locked (UI bus). 5-inch (a steady threat, not the ship-killer): one round per 2.5 s, 800 m/s with drag
   (~6 km flat), 10 m proximity burst on jets (45→12), 12 hp on a carrier (too light for a fire), near misses within
   14 m 10→2 hp; HUD splash marker
   (`predictImpact`, the world's own steps). Friendly fire off everywhere; kills credit the gunner (`KillWeapon`
@@ -793,10 +797,20 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `aim` (`AimTuple`, mrad) ~10 Hz; the room sends every manned turret as `turrets` (`TurretTuple`) every 100 ms and
   everyone draws them (`TurretPass`, slewing to the reports at their rates, unmanned ones easing back to rest) with
   cosmetic rounds, muzzle flashes, SAM smoke and trails, shell tracers and bursts (`Gunnery.frame`, its own WeaponFx).
+  A SAM in flight is `WeaponFx.samMissile` (a long white-hot plume, a thick trail that hangs ~8 s while the motor
+  burns) with its own motor voice (`TurretAudio.samMotors`: the `missile-motor` loop placed in the world with Doppler,
+  the nearest three); the launch plays the recorded `sam-launch`. A SAM's air burst is `WeaponFx.samBurst` (the fuse
+  flash, a sphere of fragments, the kit's `proximity` explosion preset and a dark puff that hangs ~12 s) with a sharp
+  fragment crack and the `boom-air` take; the 5-inch's flak stays a small `pop`. At the sight a close burst shakes the
+  view, our SAM connecting holds the effects for a beat (the kit's `HitStop`, presentation only), and a kill credited to
+  the gunner (`Weapons.onKill`) punches the view in like the pilot's kill moment.
   The hull buffer bakes only the pedestals (`turretMountVerts`).
 - Dev harness (not built): `gunnery.html?gunner=ciws|ciws-stbd|sam|sam-port|gun` (offline, drones, an enemy carrier;
   keys 1-5 switch mounts). Real-GPU checks: `scripts/gunnery-shot.ts` (views, ciws, intercept, sam, gun, mp); captures
-  in `captures/gunnery/`.
+  in `captures/gunnery/`. `scripts/sam-clip.ts` records a SAM engagement (track, early click, launch, flight, burst) on
+  a virtual clock to `sam.mp4`. `scripts/sam-playtest.ts` (CPU only) plays scripted gunners (steady, shaky, impatient)
+  against scripted jets on the real seeker and world and reports lock time, hit rate, time of flight and why misses
+  missed; `scripts/audio-demo.ts` has `sam` and `sam-pass` scenes.
 
 ## Boat (`shared/boat.ts`, `src/boat/**`, `src/render/boat-*.ts`, `src/audio/boat-audio.ts`)
 
@@ -1037,10 +1051,10 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   geyser for bombs in the sea. Sea and weather (`weather-audio.ts`): ocean beds by sea state (fading with altitude),
   wind light/gale, rain light/heavy, thunder near/far with the lightning crack. Ships (`ship-audio.ts`, fed by
   `seam.ts` `audio.ships(...)`): the deck bed near a hull, hull slams (`Ship.slams`), creaks in heavy seas, a rare horn.
-  Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
-  `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
+  Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `impact-water`,
+  `ciws`, `naval-gun`, `boat-engine`; the gunnery plays `sam-launch` and a SAM's `missile-motor` (`turret-audio.ts`).
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
-  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel; seeded, WAVs by the kit's
+  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel, the SAM; seeded, WAVs by the kit's
   `encodeWavPcm16`) in headless Chrome on hailmary or Playwright's Chromium anywhere (no GPU needed);
   `scripts/audio-compare.ts <before> <after> --mp3=<dir>` compares two render folders (kit LUFS per scene and per 2 s
   section, peak, spectral centroid, high-band share, null test). Earlier renders went into

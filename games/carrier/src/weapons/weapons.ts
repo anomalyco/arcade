@@ -151,6 +151,8 @@ export class Weapons {
   resolve: ((id: number) => { name: string; color: string } | null) | null = null
   /** Damage and reward feedback (src/feedback), or null (harnesses). */
   feedback: WeaponFeedback | null = null
+  /** A kill credited to us, with its weapon (the gunnery's kill moment at the sight hangs off this). */
+  onKill: ((w: KillWeapon | "") => void) | null = null
   /** When each jet was last shot down (presentation clock), so the host can skip its generic crash effect. */
   private killedAt = new Map<number, number>()
   private net: WeaponsNet | null
@@ -395,7 +397,10 @@ export class Weapons {
         this.hud.feed(killer, this.who(e.on), e.by === this.id && e.on !== this.id)
         const mine = e.by === this.id && e.on !== this.id
         const stung = this.feedback?.kill(mine, e.on === this.id ? null : this.jetOrOwn(e.on)) ?? false
-        if (mine) this.hud.hit(true, !stung)
+        if (mine) {
+          this.hud.hit(true, !stung)
+          this.onKill?.(e.w)
+        }
         if (e.on === this.id) this.feedback?.died()
         // A jet shot down blows up and its wreck falls, burning.
         if (e.w) {
