@@ -35,7 +35,7 @@ export function bakeFinishedProps(m: Mesh): Mesh {
 }
 
 export const finishUniformFieldsWgsl = /* wgsl */ `
-  finish: array<vec4f, ${wearVec4s(OUTBREAK_WEAR_LOOKS)}>, // finished props: on, albedo check, wetness, -; then each look`
+  finish: array<vec4f, ${wearVec4s(OUTBREAK_WEAR_LOOKS)}>, // finished props: on, albedo check, wetness, albedo clamp; then each look`
 
 export const finishDeclarationsWgsl = /* wgsl */ `
 var<private> wearDpx: vec3f;

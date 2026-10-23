@@ -84,7 +84,8 @@ async function setup(page: Page, s: Omit<Shot, "name">) {
       if ((props?.ready ?? true) && (rugs?.settled ?? true) && performance.now() - t0 > 600) break
       await new Promise(r => setTimeout(r, 25))
     }
-    for (let i = 0; i < 20; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
+    // Long enough for the camera to settle after the level rebuild, so both variants frame the same.
+    for (let i = 0; i < 120; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
     const rugs = h.interiors?.()
     return { settled: rugs?.settled, resident: rugs?.resident }
   }, s)
@@ -127,8 +128,9 @@ try {
       const ms = await gpuPage.evaluate(async () => {
         const h = (window as any).__arcadeHarness
         const v: number[] = []
-        for (let i = 0; i < 18; i++) v.push(await h.renderer.measure(h.render))
-        return v.slice(2).sort((x: number, y: number) => x - y)[1]!
+        // A frame right after the rebuild can return a bogus interval: skip any the timer rejects.
+        for (let i = 0; i < 24 && v.length < 18; i++) { try { v.push(await h.renderer.measure(h.render)) } catch {} }
+        return v.slice(2).sort((x: number, y: number) => x - y)[1] ?? NaN
       })
       ;(finish ? b : a).push(ms)
     }

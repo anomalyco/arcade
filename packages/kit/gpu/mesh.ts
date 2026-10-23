@@ -1,4 +1,4 @@
-import { autoChamfer, chamferBox, chamferCylinder, type FinishVertex } from "./finish-geom"
+import { autoChamfer, chamferBox, chamferCylinder, FINISH_SPLIT, splitLong, type FinishVertex } from "./finish-geom"
 
 export type Rgb = readonly [number, number, number]
 
@@ -207,7 +207,7 @@ export class Mesh {
     const r = this.chamfer ? this.chamferFor(x1 - x0, y1 - y0, z1 - z0) : 0
     if (r > 0) {
       const tc = top ?? col
-      this.emitFinished(chamferBox(x0, y0, z0, x1, y1, z1, r, this.wearBand, bottom ? 0b111111 : 0b011111), f => (f === 0 ? tc : col), f => (f === 0 ? topMat : mat), aux)
+      this.emitFinished(splitLong(chamferBox(x0, y0, z0, x1, y1, z1, r, this.wearBand, bottom ? 0b111111 : 0b011111), FINISH_SPLIT), f => (f === 0 ? tc : col), f => (f === 0 ? topMat : mat), aux)
       return
     }
     const t = top ?? col

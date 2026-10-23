@@ -13,6 +13,9 @@ const FACES: { n: [number, number, number]; u: number; v: number }[] = [
   { n: [0, 0, 1], u: 0, v: 1 }, { n: [0, 0, -1], u: 0, v: 1 }, { n: [0, -1, 0], u: 0, v: 2 },
 ]
 
+/** Longest triangle edge (m) a finished box keeps (`splitLong`): its baked AO and exposure vary across big faces. */
+export const FINISH_SPLIT = 1.3
+
 /** The kit's automatic chamfer for a part: about 1.2% of its smallest side, between 2 and 12 mm. */
 export function autoChamfer(w: number, h: number, d: number): number {
   return Math.max(0.002, Math.min(0.012, 0.012 * Math.min(w, h, d)))
@@ -159,5 +162,31 @@ export function chamferCylinder(cx: number, cz: number, rad: number, y0: number,
     const nn = [a.n[0] + b.n[0] + c.n[0], a.n[1] + b.n[1] + c.n[1], a.n[2] + b.n[2] + c.n[2]]
     if (cr[0]! * nn[0]! + cr[1]! * nn[1]! + cr[2]! * nn[2]! < 0) { out[t + 1] = c; out[t + 2] = b }
   }
+  return out
+}
+
+/**
+ * Splits triangles longer than `max` (m) by halving their longest edge until none is: baked vertex AO and exposure
+ * need vertices across a big face, or its four corners' values are interpolated over all of it. Every edge longer
+ * than `max` ends up halved until it isn't, whichever triangle it belongs to, so shared edges split alike and no
+ * T-junctions open.
+ */
+export function splitLong(tris: readonly FinishVertex[], max: number): FinishVertex[] {
+  const out: FinishVertex[] = []
+  const mid = (a: FinishVertex, b: FinishVertex): FinishVertex => ({
+    p: [(a.p[0] + b.p[0]) / 2, (a.p[1] + b.p[1]) / 2, (a.p[2] + b.p[2]) / 2],
+    n: norm([a.n[0] + b.n[0], a.n[1] + b.n[1], a.n[2] + b.n[2]]),
+    k: (a.k + b.k) / 2,
+    face: a.face,
+  })
+  const d2 = (a: FinishVertex, b: FinishVertex) => (a.p[0] - b.p[0]) ** 2 + (a.p[1] - b.p[1]) ** 2 + (a.p[2] - b.p[2]) ** 2
+  const split = (a: FinishVertex, b: FinishVertex, c: FinishVertex) => {
+    const ab = d2(a, b), bc = d2(b, c), ca = d2(c, a), m2 = max * max
+    if (ab <= m2 && bc <= m2 && ca <= m2) { out.push(a, b, c); return }
+    if (ab >= bc && ab >= ca) { const m = mid(a, b); split(a, m, c); split(m, b, c) }
+    else if (bc >= ca) { const m = mid(b, c); split(b, m, a); split(m, c, a) }
+    else { const m = mid(c, a); split(c, m, b); split(m, a, b) }
+  }
+  for (let t = 0; t + 2 < tris.length; t += 3) split(tris[t]!, tris[t + 1]!, tris[t + 2]!)
   return out
 }

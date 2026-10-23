@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { FLOATS_PER_VERT, Mesh, packVerts, VERT_BYTES } from "./mesh"
 import { bakeFinish, decodeFinish, finishByte15, finishByte19, readPacked } from "./finish-bake"
-import { autoChamfer, chamferBox, chamferCylinder } from "./finish-geom"
+import { autoChamfer, chamferBox, chamferCylinder, FINISH_SPLIT, splitLong } from "./finish-geom"
 import { finish, finishPacked } from "./finish"
 import { lookIndex } from "./materials/wear"
 
@@ -74,8 +74,32 @@ describe("mesh", () => {
       expect(v.p[0]).toBeGreaterThanOrEqual(-1e-9); expect(v.p[0]).toBeLessThanOrEqual(1 + 1e-9)
       expect(v.p[1]).toBeGreaterThanOrEqual(-1e-9); expect(v.p[1]).toBeLessThanOrEqual(0.5 + 1e-9)
     }
-    // Six banded faces (10 triangles each), twelve edge strips (2 each), eight corners.
-    expect(m.count / 3).toBe(6 * 10 + 12 * 2 + 8)
+    // Long faces are split for the bake (`splitLong`); every edge ends up within FINISH_SPLIT.
+    const v = meshVerts(m)
+    for (let t = 0; t < v.length; t += 3) for (let e = 0; e < 3; e++) {
+      const a = v[t + e]!.p, b = v[t + ((e + 1) % 3)]!.p
+      expect(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])).toBeLessThanOrEqual(FINISH_SPLIT + 1e-9)
+    }
+    // Under the split length: six banded faces (10 triangles each), twelve edge strips (2 each), eight corners.
+    const small = new Mesh({ chamfer: 0.05 })
+    small.box(0, 0, 0, 1, 0.5, 0.8, grey, undefined, 0, undefined, true)
+    expect(small.count / 3).toBe(6 * 10 + 12 * 2 + 8)
+  })
+  test("splitting long triangles leaves no T-junctions", () => {
+    const tris = splitLong(chamferBox(0, 0, 0, 3, 0.4, 2.2, 0.01, 0.03, 0b111111), 0.5)
+    expect(trianglesFaceOut(tris)).toBe(true)
+    // A closed box stays closed: every edge is shared by exactly two triangles, one each way.
+    const key = (p: readonly number[]) => p.map(x => Math.round(x * 1e6)).join(",")
+    const edges = new Map<string, number>()
+    for (let t = 0; t < tris.length; t += 3) for (let e = 0; e < 3; e++) {
+      const k = `${key(tris[t + e]!.p)}>${key(tris[t + ((e + 1) % 3)]!.p)}`
+      edges.set(k, (edges.get(k) ?? 0) + 1)
+    }
+    for (const [k, n] of edges) {
+      expect(n).toBe(1)
+      const [a, b] = k.split(">")
+      expect(edges.get(`${b}>${a}`)).toBe(1)
+    }
   })
   test("an open bottom keeps the foot square", () => {
     const tris = chamferBox(0, 0, 0, 1, 1, 1, 0.05, 0.03)

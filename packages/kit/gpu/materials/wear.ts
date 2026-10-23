@@ -185,12 +185,14 @@ export type WearSettings = {
   finishScan: number
   /** Extra surface wetness on finished props (0 dry … 1 soaked); weather adds its own. */
   finishWet: number
+  /** Bring a finished non-metal's albedo into the measured range (50–243 sRGB) before wearing it. */
+  albedoClamp: boolean
   /** Debug view: false colour where albedo is outside its measured range (blue too dark, red too bright). */
   albedoCheck: boolean
 }
 
 export const WEAR_DEFAULTS: Readonly<WearSettings> = {
-  finishWear: true, finishEdge: 1, finishGrime: 1, finishDamp: 1, finishStreaks: 1, finishRust: 1, finishVariation: 1, finishScan: 1, finishWet: 0, albedoCheck: false,
+  finishWear: true, finishEdge: 1, finishGrime: 1, finishDamp: 1, finishStreaks: 1, finishRust: 1, finishVariation: 1, finishScan: 1, finishWet: 0, albedoClamp: true, albedoCheck: false,
 }
 
 /** LabPanel rows for `WearSettings`, keys `prefix + field`. */
@@ -207,6 +209,7 @@ export function wearControls(prefix: string, group: string, subsection?: string)
     range("finishVariation", "Albedo variation", 2),
     range("finishScan", "Scan detail", 2),
     range("finishWet", "Wetness", 1, ""),
+    { key: prefix + "albedoClamp", field: "albedoClamp", label: "Albedo into measured range", group, type: "toggle", ...sub },
     { key: prefix + "albedoCheck", field: "albedoCheck", label: "Albedo validator view", group, type: "toggle", ...sub },
   ]
 }
@@ -229,7 +232,7 @@ export type WearPackOptions = {
 
 /** Packs the global vec4 and `looks` into `out` at `offset` (see `wearFloats`). */
 export function packWear(out: Float32Array, offset: number, looks: readonly FinishLookId[], s: Readonly<WearSettings>, opts: WearPackOptions = {}): void {
-  out.set([s.finishWear ? 1 : 0, s.albedoCheck ? 1 : 0, Math.min(1, s.finishWet + (opts.wetness ?? 0)), 0], offset)
+  out.set([s.finishWear ? 1 : 0, s.albedoCheck ? 1 : 0, Math.min(1, s.finishWet + (opts.wetness ?? 0)), s.albedoClamp ? 1 : 0], offset)
   looks.forEach((id, i) => {
     const l = finishLook(id), w = l.wear, o = offset + 4 + i * WEAR_LOOK_VEC4 * 4
     out.set([
@@ -360,6 +363,10 @@ fn wearApply(s: WearSurface, fin: vec4f, p: vec3f, g: vec3f, dpx: vec3f, dpy: ve
   let dl = dot(detail, vec3f(0.2126, 0.7152, 0.0722));
   r.albedo *= mix(vec3f(1.0), detail, amt2.z);
   r.rough = clamp(r.rough + (1.0 - dl) * 0.12 * amt2.z, 0.03, 1.0);
+  // The finish starts from a plausible albedo: non-metals scaled into the measured range, hue kept (wear may then
+  // darken it, as grime does).
+  let l0 = dot(r.albedo, vec3f(0.2126, 0.7152, 0.0722));
+  if (${P("0")}.w > 0.5 && r.metal < 0.5 && l0 > 1e-5) { r.albedo *= clamp(l0, ${dark}, ${bright}) / l0; }
 
   // Per-region variation at two scales (a board, a panel; then a hand's width).
   let v1 = wearBand(p + vec3f(17.3, 3.1, 9.7), 0.7, fw);

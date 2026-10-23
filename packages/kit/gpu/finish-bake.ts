@@ -31,6 +31,17 @@ export type FinishBakeOptions = {
   exposure?: number
   /** Corners closer than this (m) that face the same way share one set of rays (default 2 cm; a chamfer's edge). */
   merge?: number
+  /**
+   * Share of the way from a corner towards its triangle's centre that its rays start (default 0.35, at most the
+   * reach). A corner's value is interpolated across its whole triangle, so it should be the occlusion of the region it
+   * stands for: sampled at the very corner, a floor's corners (against the walls) would darken all of it.
+   */
+  inset?: number
+  /**
+   * Back faces nearer than this (m, default 5 cm) don't occlude: a corner buried in another solid (overlapping boards,
+   * a wall on a floor) would otherwise read black and darken every face it is interpolated across.
+   */
+  buried?: number
   /** Ground under the mesh: a height (m), a height function, or null for none. Rays that pass below it are blocked. */
   ground?: number | ((x: number, z: number) => number) | null
   /** Extra occluding triangles (xyz per corner, triangle list) that are not themselves baked, such as a room's walls. */
@@ -62,8 +73,10 @@ class TriangleBvh {
   /** Per node: first child (inner) or first triangle (leaf), and triangle count (0 = inner). */
   readonly first: Int32Array
   readonly count: Int32Array
+  /** Per triangle (leaf order): its outward normal from the vertex normals, or zero when it has none (two-sided). */
+  readonly facing: Float64Array
   nodes = 0
-  constructor(tri: Float32Array) {
+  constructor(tri: Float32Array, normals?: Float32Array) {
     const n = tri.length / 9
     const lo = new Float64Array(n * 3), hi = new Float64Array(n * 3), mid = new Float64Array(n * 3)
     for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) {
@@ -103,6 +116,8 @@ class TriangleBvh {
     else { this.box.set([0, 0, 0, -1, -1, -1]); this.count[0] = 0; this.first[0] = 0 }
     this.order = idx
     this.edges = new Float64Array(n * 9)
+    this.facing = new Float64Array(n * 3)
+    if (normals) for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) this.facing[i * 3 + k] = normals[idx[i]! * 3 + k] ?? 0
     for (let i = 0; i < n; i++) {
       const p = idx[i]! * 9, q = i * 9
       for (let k = 0; k < 3; k++) {
@@ -118,10 +133,11 @@ class TriangleBvh {
   /**
    * Distance to the first triangle hit along `d` from `o` within `maxT`, or Infinity. Möller–Trumbore, two-sided.
    * `any` returns at the first hit found (a visibility test), not necessarily the nearest. Triangles whose `part` is
-   * `self` are skipped.
+   * `self` are skipped, and so are back faces nearer than `buried`: the ray started inside another solid (boards that
+   * overlap, a wall standing on the floor) and is leaving it.
    */
-  cast(o: V3, d: V3, maxT: number, any = false, part: Int32Array | null = null, self = -2): number {
-    const e = this.edges, box = this.box, first = this.first, count = this.count, order = this.order, stack = this.stack
+  cast(o: V3, d: V3, maxT: number, any = false, part: Int32Array | null = null, self = -2, buried = 0): number {
+    const e = this.edges, box = this.box, first = this.first, count = this.count, order = this.order, stack = this.stack, facing = this.facing
     const ox = o[0], oy = o[1], oz = o[2], ddx = d[0], ddy = d[1], ddz = d[2]
     const ix = 1 / ddx, iy = 1 / ddy, iz = 1 / ddz
     let best = maxT, found = false, sp = 0
@@ -153,6 +169,7 @@ class TriangleBvh {
         const v = (ddx * qx + ddy * qy + ddz * qz) * inv
         if (v < 0 || u + v > 1) continue
         const hit = (e2x * qx + e2y * qy + e2z * qz) * inv
+        if (hit < buried && ddx * facing[i * 3]! + ddy * facing[i * 3 + 1]! + ddz * facing[i * 3 + 2]! > 0) continue
         if (hit > 1e-5 && hit <= best) { best = hit; found = true; if (any) return hit }
       }
     }
@@ -200,7 +217,10 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
   const tri = new Float32Array(count * 3 + extra)
   for (let i = 0; i < count * 3; i++) tri[i] = pos[i]!
   for (let i = 0; i < extra; i++) tri[count * 3 + i] = opts.occluders![i]!
-  const grid = new TriangleBvh(tri)
+  // Each baked triangle faces the way its vertex normals do (whatever its winding); extra occluders are two-sided.
+  const facing = new Float32Array(tri.length / 3)
+  for (let t = 0; t < count / 3; t++) for (let k = 0; k < 3; k++) facing[t * 3 + k] = nrm[t * 9 + k]! + nrm[t * 9 + 3 + k]! + nrm[t * 9 + 6 + k]!
+  const grid = new TriangleBvh(tri, facing)
   const part = opts.parts ? new Int32Array(tri.length / 9).fill(-1) : null
   if (part) for (let t = 0; t < count / 3; t++) { const k = opts.parts![t * 3]; part[t] = k !== undefined && k >= 0 ? k : -1 }
 
@@ -210,6 +230,8 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
   // Triangle lists repeat every corner several times, and a chamfer's corners sit millimetres from its faces': cast once
   // per cell of `merge` facing the same way.
   const merge = opts.merge ?? 0.02
+  const inset = opts.inset ?? 0.35
+  const buried = opts.buried ?? 0.05
   const seenAt = new Map<string, number>()
   const below = (p: V3, d: V3, t: number) => {
     if (!groundAt) return false
@@ -227,17 +249,23 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
     const ax = Math.abs(n[0]) >= Math.abs(n[1]) && Math.abs(n[0]) >= Math.abs(n[2]) ? (n[0] > 0 ? 0 : 1) : Math.abs(n[1]) >= Math.abs(n[2]) ? (n[1] > 0 ? 2 : 3) : n[2] > 0 ? 4 : 5
     const pk = opts.parts?.[i]
     const self = pk !== undefined && pk >= 0 ? pk : -2
-    const corner = `${Math.round(p[0] / merge)},${Math.round(p[1] / merge)},${Math.round(p[2] / merge)},${ax},${self}`
+    // In from the corner towards the triangle's centre (see `inset`), then a hair off the surface so its faces miss.
+    const t0 = Math.floor(i / 3) * 9
+    const cx = (pos[t0]! + pos[t0 + 3]! + pos[t0 + 6]!) / 3 - p[0]
+    const cy = (pos[t0 + 1]! + pos[t0 + 4]! + pos[t0 + 7]!) / 3 - p[1]
+    const cz = (pos[t0 + 2]! + pos[t0 + 5]! + pos[t0 + 8]!) / 3 - p[2]
+    const cl = Math.hypot(cx, cy, cz)
+    const k = cl > 1e-9 ? Math.min(inset, reach / cl) : 0
+    const o: V3 = [p[0] + cx * k + n[0] * 2e-3, p[1] + cy * k + n[1] * 2e-3, p[2] + cz * k + n[2] * 2e-3]
+    const corner = `${Math.round(o[0] / merge)},${Math.round(o[1] / merge)},${Math.round(o[2] / merge)},${ax},${self}`
     const prior = seenAt.get(corner)
     if (prior !== undefined) { ao[i] = ao[prior]!; exposure[i] = exposure[prior]!; continue }
     seenAt.set(corner, i)
-    // Start a hair off the surface (and a hair in from a corner, along the normal) so the vertex's own faces miss.
-    const o: V3 = [p[0] + n[0] * 2e-3, p[1] + n[1] * 2e-3, p[2] + n[2] * 2e-3]
     const [t, b] = frame(n)
     let open = 0
     for (const h of hemi) {
       const d: V3 = [t[0] * h[0] + b[0] * h[1] + n[0] * h[2], t[1] * h[0] + b[1] * h[1] + n[1] * h[2], t[2] * h[0] + b[2] * h[1] + n[2] * h[2]]
-      let hit = grid.cast(o, d, reach, false, part, self)
+      let hit = grid.cast(o, d, reach, false, part, self, buried)
       if (below(o, d, reach)) hit = Math.min(hit, reach * 0.5)
       // Near hits occlude fully, hits at the end of reach hardly at all.
       open += hit === Infinity ? 1 : Math.min(1, hit / reach) ** 0.75
@@ -249,7 +277,7 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
       const d: V3 = [s[0], s[2], s[1]]
       possible++
       if (d[0] * n[0] + d[1] * n[1] + d[2] * n[2] <= 0.02) continue
-      if (grid.cast(o, d, skyReach, true, part, self) === Infinity) seen++
+      if (grid.cast(o, d, skyReach, true, part, self, buried) === Infinity) seen++
     }
     exposure[i] = possible ? seen / possible : 1
   }

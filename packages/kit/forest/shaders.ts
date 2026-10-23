@@ -79,7 +79,7 @@ struct Woods {
   moonlit2: vec4f,    // moon shaft steps, reach (m), moonlit sky gain (kit/sky skyMoonScatter), extinction (mag/airmass)
   groundAt: vec4f,    // ground grid x0, z0, 1/cell, -
   ground: array<vec4f, ${(GROUND_CELLS * GROUND_CELLS) / 4}>,
-  wear: array<vec4f, ${wearVec4s(FOREST_WEAR_LOOKS)}>, // finished camp: on, albedo check, wetness, -; then each look
+  wear: array<vec4f, ${wearVec4s(FOREST_WEAR_LOOKS)}>, // finished camp: on, albedo check, wetness, albedo clamp; then each look
 }
 @group(0) @binding(13) var<uniform> N: Woods;
 fn woodsGroundCell(i: i32, j: i32) -> f32 {

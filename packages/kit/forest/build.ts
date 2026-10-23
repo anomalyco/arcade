@@ -17,7 +17,7 @@ import type { ForestTree, ForestWorld, Vec2, Vec3 } from "../sim/forest-world"
 import { deriveDeadfall, mulberry, segDist, smoothNoise } from "../sim/forest-demo"
 import { LAYER, type ForestModels, type ModelPart } from "./assets"
 import { VertexWriter, fromHalf, readVertex, type RGBA } from "./mesh"
-import { chamferBox } from "../gpu/finish-geom"
+import { chamferBox, FINISH_SPLIT, splitLong } from "../gpu/finish-geom"
 import { finishPacked, type FinishRange } from "../gpu/finish"
 import type { FinishLookId } from "../gpu/materials/wear"
 
@@ -928,7 +928,7 @@ function box(w: VertexWriter, cx: number, cy: number, cz: number, yaw: number, s
     campChamfer.parts.set(w, parts)
     const part = campChamfer.next++
     const r = Math.max(0.002, Math.min(0.012, 0.012 * Math.min(sx, sy, sz)))
-    const tris = chamferBox(-sx / 2, -sy / 2, -sz / 2, sx / 2, sy / 2, sz / 2, r, 0.03, 0b111111)
+    const tris = splitLong(chamferBox(-sx / 2, -sy / 2, -sz / 2, sx / 2, sy / 2, sz / 2, r, 0.03, 0b111111), FINISH_SPLIT)
     // The forest winds its triangles the other way round from the kit's Mesh.
     for (let t = 0; t < tris.length; t += 3) for (const k of [0, 2, 1]) {
       const v = tris[t + k]!, [u, vv] = BOX_UV[v.face]!
