@@ -2,7 +2,12 @@ import { expect, test } from "bun:test"
 import { batchHooks } from "../forest/shaders"
 import { withPhysicalLights } from "./lights/physical"
 import { validateWgsl } from "./test-naga"
-import { TEXTURED_INST_LAYOUT, TEXTURED_VERTEX_LAYOUT, TexturedMeshPass, packTexturedVerts, texturedSceneShader } from "./textured-mesh"
+import type { SceneVariant } from "./pass-graph"
+import { makeSceneShader } from "./shaders"
+import {
+  TEXTURED_INST_LAYOUT, TEXTURED_VERTEX_LAYOUT, TexturedMeshPass, packTexturedVerts, propLookHooks, sceneHooksFor, texturedSceneShader,
+  type SceneHookVariants,
+} from "./textured-mesh"
 
 const g = globalThis as Record<string, unknown>
 g.GPUShaderStage ??= { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 }
@@ -119,4 +124,59 @@ test("TexturedMeshPass: instanced primitives bind TEXTURED_INST_LAYOUT, draw via
   pass.setAllInstances(inst, 0)
   expect(pass.shadowCasters().length).toBe(0)
   pass.dispose()
+})
+
+test("makeSceneShader: instanceVertex appends to vsInst only, and leaves the shader text unchanged when unset", () => {
+  expect(makeSceneShader({ instanceVertex: undefined })).toBe(makeSceneShader({}))
+  const tinted = makeSceneShader({ instanceVertex: "o.color *= 2.0;" })
+  expect(tinted).toContain("o.extra = inst.extra;\n  o.color *= 2.0;")
+  expect(tinted.match(/o\.color \*= 2\.0;/g)).toHaveLength(1)
+})
+
+// Look variants need a game's declarations; Outbreak's own test compiles all four with these hooks.
+test("WGSL: propLookHooks compiles on plain and physical hooks", () => {
+  validateWgsl(texturedSceneShader(propLookHooks({})))
+  validateWgsl(texturedSceneShader(propLookHooks(withPhysicalLights({ lampGrid: false }))))
+})
+
+test("TexturedMeshPass: SceneHookVariants follow the renderer's scene variant, one bind group layout for all", () => {
+  const modules: string[] = []
+  let layouts = 0
+  const fakeTex = { createView: () => ({}) as GPUTextureView } as unknown as GPUTexture
+  const device = {
+    createBindGroupLayout: () => { layouts++; return {} as GPUBindGroupLayout },
+    createPipelineLayout: () => ({}) as GPUPipelineLayout,
+    createShaderModule: (desc: GPUShaderModuleDescriptor) => {
+      modules.push(desc.code)
+      return { code: desc.code, getCompilationInfo: async () => ({ messages: [] }) } as unknown as GPUShaderModule
+    },
+    createRenderPipeline: (desc: GPURenderPipelineDescriptor) => ({ code: (desc.vertex.module as unknown as { code: string }).code }) as unknown as GPURenderPipeline,
+    createSampler: () => ({}) as GPUSampler,
+    createBuffer: (desc: GPUBufferDescriptor) => ({ size: desc.size, destroy: () => {} }) as unknown as GPUBuffer,
+    createBindGroup: () => ({}) as GPUBindGroup,
+    queue: { writeBuffer: () => {} },
+  } as unknown as GPUDevice
+  let variant: SceneVariant = "plain"
+  const ctx = { device, color: "rgba16float" as GPUTextureFormat, depth: "depth24plus" as GPUTextureFormat, samples: 1, frameLayout: {} as GPUBindGroupLayout, sceneVariant: () => variant }
+  const hooks: SceneHookVariants = {
+    plain: { material: "/* plain */" },
+    look: v => ({ material: `/* look ${v} */` }),
+  }
+  const primitive = { vertices: packTexturedVerts(new Float32Array(33), new Float32Array(6)), base: fakeTex, normal: fakeTex, orm: fakeTex,
+    color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 1, blend: false }
+  const pass = new TexturedMeshPass(ctx, [primitive], hooks)
+  const pipelines: string[] = []
+  const encoder = {
+    setPipeline: (p: { code: string }) => pipelines.push(p.code),
+    setBindGroup: () => {}, setVertexBuffer: () => {}, draw: () => {},
+  } as unknown as GPURenderPassEncoder
+  for (const v of ["plain", "noir", "painterly", "noir", "generic"] as const) { variant = v; pass.draw(encoder) }
+  expect(pipelines.map(code => /\/\* (plain|look \w+) \*\//.exec(code)?.[1])).toEqual(["plain", "look noir", "look painterly", "look noir", "look generic"])
+  expect(modules).toHaveLength(4)
+  expect(layouts).toBe(1)
+  // A second pass on the same renderer and hooks reuses every compiled variant.
+  new TexturedMeshPass(ctx, [primitive], hooks).draw(encoder)
+  expect(modules).toHaveLength(4)
+  expect(sceneHooksFor(hooks, "noir")).toEqual({ material: "/* look noir */" })
+  expect(sceneHooksFor({ plain: { material: "p" } }, "noir")).toEqual({ material: "p" })
 })

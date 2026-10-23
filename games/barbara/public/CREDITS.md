@@ -1,11 +1,5 @@
 # Woods credits
 
-## Camp props
-
-- `props/camp-cooler.glb`: original Anomaly geometry and procedural materials, authored by
-  `scripts/props/author-camp-cooler.py`. Bevelled high-poly source, decimated mesh, Cycles normal/AO/ORM/base
-  transfer and lossless WebP compression. No external model or texture. Hashes: `props/sources.json`.
-
 ## Night sky
 
 - Yale Bright Star Catalogue, public-domain JSON conversion by aduboisforge: https://github.com/aduboisforge/Bright-Star-Catalog-JSON

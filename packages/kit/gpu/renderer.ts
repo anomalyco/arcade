@@ -60,6 +60,7 @@ import {
   type PassContext,
   type PassSlot,
   type ScenePass,
+  type SceneVariant,
 } from "./pass-graph"
 import { BloomPyramid, DEFAULT_BLOOM_LEVELS, GrowableInstanceBuffer, SceneTargets, uploadSplitSprites } from "./targets"
 import {
@@ -384,6 +385,7 @@ export class Renderer {
   private bloomPyramid: BloomPyramid
   private passes = new PassList()
   readonly passContext: PassContext
+  private sceneVariant: SceneVariant = "plain"
   private gradeData = new Float32Array(POST_UNIFORM_FLOATS)
   private postLayout: GPUBindGroupLayout
   private sampler: GPUSampler
@@ -549,6 +551,7 @@ export class Renderer {
       depthCompare: DEPTH_CFG.compare,
       depthClearValue: DEPTH_CFG.clearValue,
       samples: SAMPLES,
+      sceneVariant: () => this.sceneVariant,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
       "if (li.cone.w > 0.5 && li.cone.w < 2.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus",
@@ -1556,6 +1559,7 @@ export class Renderer {
         ? "generic"
         : resolveLookVariant(effectiveLook, effectiveCompare)
       : "generic"
+    this.sceneVariant = useLookPipes ? lookVariant : "plain"
     const scenePipes = motion
       ? this.motionPipes
       : useLookPipes

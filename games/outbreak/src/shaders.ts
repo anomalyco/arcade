@@ -9,6 +9,7 @@ import {
   type PostFinishOptions,
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
+import type { SceneHookVariants } from "@arcade/kit/props/textured"
 import { FOLIAGE_LIMB_AUX, foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { capsuleShadowWgsl } from "@arcade/kit/gpu/shadows/capsule-shadows"
 import { streetLampWgsl } from "@arcade/kit/gpu/lights/street"
@@ -683,19 +684,17 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean, triplan
 `
 }
 
-/** Scene hooks for textured glTF props in Outbreak: normal/ORM/AO lighting in lightSum plus Look & Noir shroud parity. */
-export function outbreakTexturedSceneHooks(variant: LookVariantMode = "noir"): SceneHooks {
-  return lookFastSceneHooks(
-    {
-      ...outbreakSceneHooks,
-      postLightMaterial: undefined,
-      material: `${outbreakSceneHooks.material} outbreakAlbedo = albedo;`,
-      combineLighting: `outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * (outbreakFlashIrr + outbreakMateIrr)) * GAIN; col = albedo * (amb + direct + moon)`,
-      lookSurface: buildOutbreakSurfaceWgsl(false, false),
-      lookBaseColor: "outbreakAlbedo",
-    },
-    variant,
-  )
+/**
+ * Textured glTF props on Outbreak's own lighting in every look mode: the same hooks as the level (including the
+ * flat, specular-free post-light material), minus the triplanar grain the baked texture replaces. The look's moon rim
+ * reads the graded albedo, as it reads the vertex colour on `.prop` furniture.
+ */
+export function outbreakTexturedSceneHooks(): SceneHookVariants {
+  const base: SceneHooks = { ...outbreakSceneHooks, lookBaseColor: "outbreakAlbedo" }
+  return {
+    plain: { ...base, surface: buildOutbreakSurfaceWgsl(true, false) },
+    look: variant => lookFastSceneHooks({ ...base, lookSurface: buildOutbreakSurfaceWgsl(false, false) }, variant),
+  }
 }
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */

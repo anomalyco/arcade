@@ -76,6 +76,7 @@ export class PropDressing {
     // Satin furniture: slightly darker, more saturated, with a raised AO floor so contact shadows hold at a distance.
     const look = { brightness: s.propBrightness * 0.94, ao: Math.min(1, Math.max(s.propAO, 0.62)), saturation: s.propSaturation * 1.16 }
     this.models.setLook(look)
+    this.textured?.setLook(look)
     const houses = furnishedHouses(town)
     if (houses !== this.houses) {
       this.houses = houses

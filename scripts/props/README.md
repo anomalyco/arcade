@@ -116,8 +116,12 @@ pictures had flaps, fronds and levers that shredded. Plates and the typewriter a
 ## Textured props
 
 ```sh
-bun scripts/props/generate.ts --ids rotary-phone,tv-set,kitchen-counter --textured --texture-size 512 --worker mini
+bun scripts/props/generate.ts --ids rotary-phone,tv-set,kitchen-counter --textured --worker mini
 ```
+
+Map size comes from one library-wide texel density: the next power of two of 256 texels/m × √(surface area / UV
+coverage), clamped to 128–512 (`--texel-density`, `--max-texture-size`; `--texture-size` pins one size for all).
+The rotary phone bakes at 256², the TV and counter at 512².
 
 TRELLIS now defaults to a UV/PBR source; `trellis-batch.py --vertex-color-only` requests the older fast route.
 Vertex-only cache entries regenerate when PBR is requested. `--skip-trellis` reuses a valid textured raw GLB.
@@ -130,13 +134,15 @@ metallic share one ORM image. Base and scalar passes use emission, so no new dir
 Existing lighting in generated source colour remains; this is not an intrinsic-image de-lighting algorithm.
 
 `@gltf-transform/cli@4.3.0` writes lossless WebP textures in the GLB. Three 512² RGBA maps with mips cost ~4 MiB,
-regardless of compressed file size. All 26 at 512² would cost ~104 MiB, not the proposed 32 MB. The current
-loader decodes KTX2 to RGBA too. A full-library rollout needs lower resolution or GPU-native compression/residency.
+regardless of compressed file size; a 256² prop costs ~1 MiB. The loader decodes KTX2 to RGBA too. Loading KTX2 as
+BC7/ASTC (BC5 normals) is the next step before a full-library rollout; the numbers are in
+[perf/textured-props.md](../../perf/textured-props.md).
 
 Runtime: `TexturedPropBatches` registers one pass per loaded prop, batching placements per material. Outbreak
-opts in with `propTextures`; failed/loading assets and far LOD use `.prop`. BARBARA uses the forest hooks for an
-authored cooler (source script `author-camp-cooler.py`). Textured instances accept yaw and uniform scale;
-other rotations belong in glTF node transforms. Host material hooks apply after texture sampling.
+opts in with `propTextures`; failed/loading assets and far LOD use `.prop`. The host passes one `SceneHooks` set
+or one per look variant (plain, noir, painterly, generic), and `setLook` applies its furniture tint, saturation
+and AO floor. Textured instances accept yaw and uniform scale; other rotations belong in glTF node transforms.
+Host material hooks apply after texture sampling.
 
 Measured assets, game-exposure proof and remaining limits: [perf/textured-props.md](../../perf/textured-props.md).
 

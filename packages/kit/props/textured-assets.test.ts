@@ -3,12 +3,12 @@ import { NodeIO } from "@gltf-transform/core"
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
 
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS)
-for (const [id, budget, path] of [
-  ["rotary-phone", 3000, "./assets/rotary-phone.glb"],
-  ["tv-set", 7000, "./assets/tv-set.glb"],
-  ["kitchen-counter", 12000, "./assets/kitchen-counter.glb"],
-  ["camp-cooler", 3000, "../../../games/barbara/public/props/camp-cooler.glb"],
-] as const) test(`${id}: finite low-poly geometry and three shared WebP PBR maps`, async () => {
+for (const [id, budget, path, size] of [
+  // Map size follows the library's 256 texels/m target (scripts/props/blender-pbr.py), capped at 512.
+  ["rotary-phone", 3000, "./assets/rotary-phone.glb", 256],
+  ["tv-set", 7000, "./assets/tv-set.glb", 512],
+  ["kitchen-counter", 12000, "./assets/kitchen-counter.glb", 512],
+] as const) test(`${id}: finite low-poly geometry and three shared ${size}² WebP PBR maps`, async () => {
   const bytes = new Uint8Array(await Bun.file(new URL(path, import.meta.url)).arrayBuffer())
   expect(bytes.length).toBeLessThan(25 * 1024 * 1024)
   const doc = await io.readBinary(bytes)
@@ -31,6 +31,6 @@ for (const [id, budget, path] of [
   expect(root.listTextures()).toHaveLength(3)
   for (const texture of root.listTextures()) {
     expect(texture.getMimeType()).toBe("image/webp")
-    expect(texture.getSize()).toEqual([512, 512])
+    expect(texture.getSize()).toEqual([size, size])
   }
 })

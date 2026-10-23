@@ -13,7 +13,6 @@ import { toForestWorld, type ForestWorld } from "../shared/forest-world"
 import { boundaryMesh } from "./boundary-view"
 import { TapeView } from "./tape-view"
 import type { WoodsWorld } from "../shared/world"
-import { CampProps } from "./camp-props"
 
 /**
  * The only module that turns world data into pictures. The forest itself (terrain, trees, floor, rocks, camp, lake,
@@ -115,7 +114,6 @@ export class WorldView {
   private fenceModel = -1
   private glows: ForestGlow[] = []
   private readonly tapes: TapeView
-  private campProps: CampProps | null = null
 
   private constructor(readonly forest: ForestView) {
     this.tapes = new TapeView(forest.renderer)
@@ -128,12 +126,6 @@ export class WorldView {
     const settings = { highlightShoulder: true, campDetail: true, skyMode: opts.smoke ? "today" as const : "physical" as const, skyMoon: "full" as const, darkAdapt: 1 }
     const forest = await createForestView(gpu, forestWorld(world, settings.campDetail), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings })
     const view = new WorldView(forest)
-    if (!opts.smoke) {
-      try {
-        view.campProps = await CampProps.create(forest.renderer)
-        view.campProps.place(world, settings.campDetail)
-      } catch (error) { console.warn("[camp props] Cooler unavailable:", error) }
-    }
     view.models(world)
     forest.setOccluders(view.occluders(world))
     return view
@@ -165,7 +157,6 @@ export class WorldView {
     this.forest.setOccluders(this.occluders(world))
     this.models(world)
     this.tapes.reset()
-    this.campProps?.place(world, this.forest.settings.campDetail)
   }
 
   /** Footprints of trunks, rocks and buildings with their top heights: the trunk shadows a flare on the ground casts. */
@@ -216,8 +207,7 @@ export class WorldView {
     this.forest[sync || target ? "update" : "frame"]({
       eye: f.eye, viewProj: f.viewProj, width: f.width, height: f.height, time: f.time, dt: f.dt, fovY: f.fovY, torches: f.torches,
       batches: f.batches?.length ? [...f.fp.batches(), ...f.batches] : f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
-      lights: f.place.scene, fogLamps: f.place.fog, glows: f.flares?.glows.length ? [...this.glows, ...f.flares.glows] : this.glows,
-      casters: this.campProps ? [...(f.casters ?? []), ...this.campProps.casters()] : f.casters, storm: f.storm ?? null,
+      lights: f.place.scene, fogLamps: f.place.fog, glows: f.flares?.glows.length ? [...this.glows, ...f.flares.glows] : this.glows, casters: f.casters, storm: f.storm ?? null,
       ...(f.flares ? { particles: f.flares.particles } : {}),
     })
     if (sync || target) this.forest.drawTo(target)

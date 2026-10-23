@@ -36,9 +36,13 @@ OUT = opt("--out")
 SPECS = json.load(open(opt("--spec")))
 IDS = [s for s in (opt("--ids") or "").split(",") if s] or [s["id"] for s in SPECS["props"]]
 TEXTURED = "--textured" in argv
-TEXTURE_SIZE = int(opt("--texture-size", "512"))
-if TEXTURE_SIZE not in (256, 512, 1024):
-    raise ValueError("--texture-size must be 256, 512 or 1024")
+# Map size comes from one library-wide texel density unless --texture-size pins it (blender-pbr.texture_size_for).
+TEXTURE_SIZE = int(opt("--texture-size", "0")) or None
+TEXEL_DENSITY = float(opt("--texel-density", "256"))
+MAX_TEXTURE_SIZE = int(opt("--max-texture-size", "512"))
+for _size in (TEXTURE_SIZE, MAX_TEXTURE_SIZE):
+    if _size is not None and _size not in (128, 256, 512, 1024):
+        raise ValueError("texture sizes must be 128, 256, 512 or 1024")
 FIX = SPECS.get("fixups", {})
 PREVIEW = os.path.join(WORK, "preview")
 os.makedirs(PREVIEW, exist_ok=True)
@@ -643,7 +647,7 @@ def build_textured(pid, raw):
     baker = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(baker)
     path = os.path.join(OUT, f"{pid}.glb")
-    bake = baker.bake_pbr(source, low, path, TEXTURE_SIZE)
+    bake = baker.bake_pbr(source, low, path, TEXTURE_SIZE, density=TEXEL_DENSITY, max_size=MAX_TEXTURE_SIZE)
     return {"id": pid, "yaw": yaw, "size": size, "mesh": scores, "error": error,
             "lods": [{"tris": len(low.data.polygons)}], "bytes": os.path.getsize(path),
             "source_sha256": hashlib.sha256(open(raw, "rb").read()).hexdigest(),

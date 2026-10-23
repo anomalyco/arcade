@@ -17,14 +17,40 @@ def select(*objects, active):
     bpy.context.view_layer.objects.active = active
 
 
-def bake_pbr(source, low, path, size=512, samples=32):
+def texture_size_for(area, uv_area, density, max_size, min_size=128):
+    """Smallest power of two that holds `density` texels per metre over the packed UVs, within [min_size, max_size].
+
+    The UV coverage counts: a 30%-packed sheet needs √(1/0.3) ≈ 1.8x the side of a full one for the same density.
+    """
+    want = density * math.sqrt(area / max(uv_area, 1e-9))
+    return int(min(max_size, max(min_size, 2 ** math.ceil(math.log2(max(want, 1.0))))))
+
+
+def uv_and_surface_area(low):
+    low.data.calc_loop_triangles()
+    uv = low.data.uv_layers.active.data
+    uv_area = 0.0
+    for triangle in low.data.loop_triangles:
+        a, b, c = (uv[i].uv for i in triangle.loops)
+        uv_area += abs((b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x)) * 0.5
+    return sum(face.area for face in low.data.polygons), uv_area
+
+
+def pack_uvs(size):
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=2 / size)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def bake_pbr(source, low, path, size=None, density=256.0, max_size=512, samples=32):
+    """Bake at `size`, or at the library's texel `density` (texels/m) capped at `max_size` when `size` is None."""
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
     scene.cycles.samples = samples
     scene.render.bake.use_selected_to_active = True
     scene.render.bake.use_clear = True
-    scene.render.bake.margin = max(4, size // 64)
     diagonal = source.dimensions.length
     scene.render.bake.cage_extrusion = diagonal * 0.025
     scene.render.bake.max_ray_distance = diagonal * 0.05
@@ -40,8 +66,14 @@ def bake_pbr(source, low, path, size=512, samples=32):
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0)
     bpy.ops.uv.average_islands_scale()
-    bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=2 / size)
     bpy.ops.object.mode_set(mode="OBJECT")
+    pack_uvs(size or max_size)
+    if size is None:
+        # Repack only if the density size changes the two-texel margin.
+        size = texture_size_for(*uv_and_surface_area(low), density, max_size)
+        if size != max_size:
+            pack_uvs(size)
+    scene.render.bake.margin = max(4, size // 64)
     for face in low.data.polygons:
         face.use_smooth = True
     low.data.set_sharp_from_angle(angle=math.radians(40))
@@ -155,13 +187,7 @@ def bake_pbr(source, low, path, size=512, samples=32):
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True,
                               export_texcoords=True, export_normals=True, export_materials="EXPORT",
                               export_yup=True)
-    area = sum(face.area for face in low.data.polygons)
-    low.data.calc_loop_triangles()
-    uv = low.data.uv_layers.active.data
-    uv_area = 0.0
-    for triangle in low.data.loop_triangles:
-        a, b, c = (uv[i].uv for i in triangle.loops)
-        uv_area += abs((b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x)) * 0.5
-    return {"texture_size": size, "texels_per_metre": round(size * math.sqrt(uv_area / max(area, 1e-9)), 1),
+    area, uv_area = uv_and_surface_area(low)
+    return {"texture_size": size, "texel_density_target": density, "texels_per_metre": round(size * math.sqrt(uv_area / max(area, 1e-9)), 1),
             "uv_coverage": round(uv_area, 4), "gpu_texture_bytes_with_mips": size * size * 4 * 3 * 4 // 3,
             "albedo": "source base colour only; no new lighting baked, source lighting not removed"}

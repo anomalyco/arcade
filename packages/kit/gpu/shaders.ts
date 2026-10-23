@@ -149,6 +149,8 @@ export type SceneHooks = {
   uv?: boolean
   declarations?: string
   vertex?: string
+  /** WGSL appended to `vsInst` (`v`, `inst` and `o` in scope); omitted from the shader text when unset. */
+  instanceVertex?: string
   /**
    * WGSL f32 (in `vsStatic`, `v` in scope): how many 24-bit depth steps to pull this vertex toward the camera, a
    * polygon offset for decals that sit millimetres proud of a wall (lit window glow, lamp lenses). A constant step
@@ -303,7 +305,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
     o.color = inst.tint.rgb * pow(v.color.rgb, vec3f(2.2));
     o.mat = 12.0;
   }
-  o.extra = inst.extra;
+  o.extra = inst.extra;${hooks.instanceVertex ? `\n  ${hooks.instanceVertex}` : ""}
   ${motion ? "o.previous = M.previous * vec4f(instWorld(v.pos, Inst(oldPos, oldTint, oldExtra)), 1.0);" : ""}
   return o;
 }

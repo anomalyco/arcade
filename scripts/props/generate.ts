@@ -27,9 +27,16 @@ const idCsv = ids.join(",")
 const skipTrellis = process.argv.includes("--skip-trellis")
 const force = process.argv.includes("--force")
 const textured = process.argv.includes("--textured")
-const textureSize = Number(arg("--texture-size") ?? 512)
-if (![256, 512, 1024].includes(textureSize)) throw new Error("--texture-size must be 256, 512 or 1024")
-const bakeFlags = textured ? ["--textured", "--texture-size", String(textureSize)] : []
+// Textured maps are sized per prop from one library-wide texel density (texels/m over the packed UVs, next power of
+// two, 128 to --max-texture-size). --texture-size pins every prop to one size instead.
+const sizeFlags = (["--texture-size", "--texel-density", "--max-texture-size"] as const).flatMap(flag => {
+  const value = arg(flag)
+  if (value === undefined) return []
+  if (flag !== "--texel-density" && ![128, 256, 512, 1024].includes(Number(value))) throw new Error(`${flag} must be 128, 256, 512 or 1024`)
+  if (flag === "--texel-density" && !(Number(value) > 0)) throw new Error("--texel-density must be positive")
+  return [flag, value]
+})
+const bakeFlags = textured ? ["--textured", ...sizeFlags] : []
 const extension = textured ? "glb" : "prop"
 mkdirSync(out, { recursive: true })
 

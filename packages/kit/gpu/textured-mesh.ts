@@ -1,5 +1,6 @@
 import { makeSceneShader, type SceneHooks } from "./shaders"
-import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "./pass-graph"
+import type { LookVariantMode } from "./look-shaders"
+import { compileShaderModuleWithLog, type PassContext, type ScenePass, type SceneVariant } from "./pass-graph"
 import { packVerts } from "./mesh"
 import type { SpotShadowCaster } from "./shadows/spot-shadows"
 
@@ -108,9 +109,60 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
   return makeSceneShader(texturedSceneHooks(hooks, masked))
 }
 
+/** Hooks for each scene shader the renderer can draw, so imported meshes light like the level in every look mode. */
+export type SceneHookVariants = { plain: SceneHooks; look?: (variant: LookVariantMode) => SceneHooks }
+
+export const isSceneHookVariants = (hooks: SceneHooks | SceneHookVariants): hooks is SceneHookVariants => "plain" in hooks
+
+/** Applies `wrap` to every variant (or to the single hook set). */
+export function mapSceneHooks(hooks: SceneHooks | SceneHookVariants, wrap: (hooks: SceneHooks) => SceneHooks): SceneHooks | SceneHookVariants {
+  if (!isSceneHookVariants(hooks)) return wrap(hooks)
+  const look = hooks.look
+  return { plain: wrap(hooks.plain), ...(look ? { look: (variant: LookVariantMode) => wrap(look(variant)) } : {}) }
+}
+
+/** The hooks a pass draws with for `variant`: single hooks always, variants by look (plain when a game has none). */
+export function sceneHooksFor(hooks: SceneHooks | SceneHookVariants, variant: SceneVariant): SceneHooks {
+  if (!isSceneHookVariants(hooks)) return hooks
+  return variant === "plain" || !hooks.look ? hooks.plain : hooks.look(variant)
+}
+
+/**
+ * `.prop` look parity for textured props (`PropLook`): the base map is graded in display space exactly as
+ * `propMesh` grades vertex colours (Rec. 601 saturation, then brightness and baked AO), so a textured prop and its
+ * vertex-colour LOD sit at the same exposure. Brightness rides in the linear instance tint (brightness^2.2);
+ * saturation and AO weight are `TexturedMeshPass.setPropLook`. AO moves from ambient into the base colour.
+ */
+export function propLookHooks(hooks: SceneHooks): SceneHooks {
+  return { ...hooks,
+    instanceVertex: `o.color *= inst.tint.rgb;${hooks.instanceVertex ? ` ${hooks.instanceVertex}` : ""}`,
+    material: `{
+        let propG = pow(max(texBase.rgb, vec3f(0.0)), vec3f(1.0 / 2.2));
+        let propY = dot(propG, vec3f(0.299, 0.587, 0.114));
+        let propSat = max(vec3f(0.0), vec3f(propY) + (propG - vec3f(propY)) * Mtl.flags.z);
+        albedo = pow(propSat, vec3f(2.2)) * o.color * max(0.0, 1.0 - Mtl.flags.w * (1.0 - texAo));
+      }
+      ${hooks.material ?? ""}`,
+  }
+}
+
 // Material/geometry buffers belong to each pass; identical shaders and fixed render state belong to the renderer.
 export type TexturedPipelines = { layout: GPUBindGroupLayout; pipeline: (blend: boolean, masked?: boolean, instanced?: boolean) => GPURenderPipeline }
 const pipelineCache = new WeakMap<PassContext, Map<string, TexturedPipelines>>()
+const layoutCache = new WeakMap<GPUDevice, GPUBindGroupLayout>()
+/** One material bind group layout per device, so a pass's bind groups fit every hook variant's pipelines. */
+function texturedLayout(d: GPUDevice): GPUBindGroupLayout {
+  let layout = layoutCache.get(d)
+  if (!layout) {
+    layout = d.createBindGroupLayout({ entries: [
+      ...[0, 1, 2, 5].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: {} })),
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
+    ] })
+    layoutCache.set(d, layout)
+  }
+  return layout
+}
 /** Cached textured scene pipelines (opaque, blended, alpha-tested, static or instanced) and their material bind group layout, per renderer and hooks. */
 export function texturedPipelines(ctx: PassContext, hooks: SceneHooks): TexturedPipelines {
   let cache = pipelineCache.get(ctx)
@@ -118,11 +170,7 @@ export function texturedPipelines(ctx: PassContext, hooks: SceneHooks): Textured
   const code = texturedSceneShader(hooks), cached = cache.get(code)
   if (cached) return cached
   const d = ctx.device
-  const layout = d.createBindGroupLayout({ entries: [
-    ...[0, 1, 2, 5].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: {} })),
-    { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-    { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
-  ] })
+  const layout = texturedLayout(d)
   const module = compileShaderModuleWithLog(d, code, "textured scene")
   const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] })
   const variants = new Map<string, GPURenderPipeline>()
@@ -168,28 +216,28 @@ type TexturedDraw = {
   instanceCount: number
 }
 
-/** Imported meshes share the kit's lights, polar shadows, scene hooks, HDR target and temporal resolve. */
+type TexturedPipelineSet = Record<"opaque" | "alpha" | "mask" | "opaqueInst" | "alphaInst" | "maskInst", GPURenderPipeline | null>
+
+/**
+ * Imported meshes share the kit's lights, polar shadows, scene hooks, HDR target and temporal resolve. Pass
+ * `SceneHookVariants` to follow the renderer's look mode; each variant compiles on first use.
+ */
 export class TexturedMeshPass implements ScenePass {
   private readonly device: GPUDevice
   private draws: TexturedDraw[] = []
-  private opaque: GPURenderPipeline | null
-  private alpha: GPURenderPipeline | null
-  private mask: GPURenderPipeline | null
-  private opaqueInst: GPURenderPipeline | null
-  private alphaInst: GPURenderPipeline | null
-  private maskInst: GPURenderPipeline | null
-  constructor(ctx: PassContext, primitives: TexturedPrimitive[], hooks: SceneHooks) {
-    const d = ctx.device, { layout, pipeline } = texturedPipelines(ctx, hooks)
+  private readonly sets = new Map<string, TexturedPipelineSet>()
+  private readonly needs: Record<keyof TexturedPipelineSet, boolean>
+  constructor(private readonly ctx: PassContext, primitives: TexturedPrimitive[], private readonly hooks: SceneHooks | SceneHookVariants) {
+    const d = ctx.device, layout = texturedLayout(d)
     this.device = d
     // Each imported pass has a fixed draw list. Avoid compiling unused variants (especially costly on SwiftShader).
-    const isStat = (p: TexturedPrimitive) => p.instances === undefined
-    const isInst = (p: TexturedPrimitive) => p.instances !== undefined
-    this.opaque = primitives.some(p => isStat(p) && !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false, false, false) : null
-    this.alpha = primitives.some(p => isStat(p) && p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true, false, false) : null
-    this.mask = primitives.some(p => isStat(p) && (p.alphaCutoff ?? 0) > 0) ? pipeline(false, true, false) : null
-    this.opaqueInst = primitives.some(p => isInst(p) && !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false, false, true) : null
-    this.alphaInst = primitives.some(p => isInst(p) && p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true, false, true) : null
-    this.maskInst = primitives.some(p => isInst(p) && (p.alphaCutoff ?? 0) > 0) ? pipeline(false, true, true) : null
+    const has = (instanced: boolean, kind: "opaque" | "alpha" | "mask") => primitives.some(p => (p.instances !== undefined) === instanced
+      && (kind === "mask" ? (p.alphaCutoff ?? 0) > 0 : (p.alphaCutoff ?? 0) <= 0 && p.blend === (kind === "alpha")))
+    this.needs = {
+      opaque: has(false, "opaque"), alpha: has(false, "alpha"), mask: has(false, "mask"),
+      opaqueInst: has(true, "opaque"), alphaInst: has(true, "alpha"), maskInst: has(true, "mask"),
+    }
+    this.pipelines()
     const sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", maxAnisotropy: 8 })
     for (let i = 0; i < primitives.length; i++) {
       const p = primitives[i]!
@@ -219,6 +267,31 @@ export class TexturedMeshPass implements ScenePass {
         instanceCount: 0,
       })
       if (instanced) this.setInstances(i, p.instances!, p.instanceCount ?? Math.floor(p.instances!.length / 12))
+    }
+  }
+  /** Pipelines for the renderer's current scene variant (single hook sets share one). */
+  private pipelines(): TexturedPipelineSet {
+    const variant = isSceneHookVariants(this.hooks) ? this.ctx.sceneVariant?.() ?? "plain" : "plain"
+    let set = this.sets.get(variant)
+    if (set) return set
+    const { pipeline } = texturedPipelines(this.ctx, sceneHooksFor(this.hooks, variant))
+    const n = this.needs
+    set = {
+      opaque: n.opaque ? pipeline(false, false, false) : null,
+      alpha: n.alpha ? pipeline(true, false, false) : null,
+      mask: n.mask ? pipeline(false, true, false) : null,
+      opaqueInst: n.opaqueInst ? pipeline(false, false, true) : null,
+      alphaInst: n.alphaInst ? pipeline(true, false, true) : null,
+      maskInst: n.maskInst ? pipeline(false, true, true) : null,
+    }
+    this.sets.set(variant, set)
+    return set
+  }
+  /** `propLookHooks` grading: saturation and AO weight as in `PropLook`; baked AO leaves ambient for the base colour. */
+  setPropLook(saturation: number, ao: number) {
+    for (const draw of this.draws) {
+      this.device.queue.writeBuffer(draw.uniform, 32, new Float32Array([0]))
+      this.device.queue.writeBuffer(draw.uniform, 40, new Float32Array([saturation, ao]))
     }
   }
   /** Updates the 12-float instance buffer (`posYaw`, `tint`, `extra`) and 8-float shadow instance buffer for primitive `index`. */
@@ -270,17 +343,18 @@ export class TexturedMeshPass implements ScenePass {
     for (let i = 0; i < this.draws.length; i++) if (this.draws[i]!.instanced) this.setInstances(i, instances, count)
   }
   draw(pass: GPURenderPassEncoder) {
+    const p = this.pipelines()
     for (const blend of [false, true]) {
       for (const draw of this.draws) if (draw.blend === blend) {
         if (draw.instanced) {
           if (draw.instanceCount <= 0 || !draw.instBuffer) continue
-          pass.setPipeline(draw.masked ? this.maskInst! : blend ? this.alphaInst! : this.opaqueInst!)
+          pass.setPipeline(draw.masked ? p.maskInst! : blend ? p.alphaInst! : p.opaqueInst!)
           pass.setBindGroup(1, draw.group)
           pass.setVertexBuffer(0, draw.buffer)
           pass.setVertexBuffer(1, draw.instBuffer)
           pass.draw(draw.count, draw.instanceCount)
         } else {
-          pass.setPipeline(draw.masked ? this.mask! : blend ? this.alpha! : this.opaque!)
+          pass.setPipeline(draw.masked ? p.mask! : blend ? p.alpha! : p.opaque!)
           pass.setBindGroup(1, draw.group)
           pass.setVertexBuffer(0, draw.buffer)
           pass.draw(draw.count)

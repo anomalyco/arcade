@@ -28,10 +28,13 @@ Creatures and rooms: see the method rows in [docs/assets.md](../../../docs/asset
    `--worker pro` is the fallback). Done when `<work>/report.json` lists no failure and the three preview renders read
    as the object.
 4. **Finish.** The default cleanup bakes Cycles AO and vertex colour. For textured props use
-   `generate.ts --textured --texture-size 512`: normalised UV islands, high-to-low normal/AO/ORM/base transfer and
-   lossless WebP GLB ([commands and limits](../../../scripts/props/README.md#textured-props)). Check the source
-   albedo for embedded lighting; the transfer preserves it. Done when the report has no failures and all three
-   PBR maps load in the game. The shared finish pass (wear, edges, material sanity) is landing on `kit-finish`.
+   `generate.ts --textured`: normalised UV islands, high-to-low normal/AO/ORM/base transfer and lossless WebP GLB,
+   with maps sized for 256 texels/m (don't pin `--texture-size` without a reason;
+   [commands and limits](../../../scripts/props/README.md#textured-props)). Check the source albedo for embedded
+   lighting; the transfer preserves it. In the game, give `TexturedPropBatches` the game's own `SceneHookVariants`
+   (every look mode, `postLightMaterial` included) and call `setLook` with the vertex props' `PropLook`. Done when
+   the report has no failures and vertex and textured stills match in exposure in each look mode
+   (`scripts/props/textured-proof.ts`). The shared finish pass (wear, edges, material sanity) is landing on `kit-finish`.
 5. **Check.** `bun test props/` in `packages/kit` (two LODs, floor pivot, size, triangle budget). Then look at it in
    the Lab's `props` station (`bun run arcade station props`) and at the game's own camera, beside its target. Done
    when the tests pass and the in-game still holds up next to the target.
