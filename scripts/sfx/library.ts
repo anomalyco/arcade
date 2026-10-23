@@ -384,7 +384,7 @@ async function build() {
         const pcm = await decode(path)
         const stats = analyzeSfx(pcm)
         const loudness = loudnessOf(spec, stats)
-        list.push({ file: reuse.path.split("/").pop()!, path: reuse.path, source: reuse.license.startsWith("ElevenLabs") ? "elevenlabs-sound-v2" : "project", license: reuse.license, provenance: reuse.provenance, durationSeconds: round(stats.durationSeconds, 3), loudness: round(loudness, 1), peakDb: round(stats.peakDb, 1), gain: round(10 ** ((spec.target - loudness) / 20), 3), bytes: statSync(path).size, ...(spec.loop ? audibleLoop(pcm) : {}) })
+        list.push({ file: reuse.path.split("/").pop()!, path: reuse.path, source: reuse.license.includes("text-to-speech") ? "elevenlabs-tts" : reuse.license.startsWith("ElevenLabs") ? "elevenlabs-sound-v2" : "project", license: reuse.license, provenance: reuse.provenance, durationSeconds: round(stats.durationSeconds, 3), loudness: round(loudness, 1), peakDb: round(stats.peakDb, 1), gain: round(10 ** ((spec.target - loudness) / 20), 3), bytes: statSync(path).size, ...(spec.loop ? audibleLoop(pcm) : {}) })
       }
     } else if (spec.generate) {
       const curatedPath = join(work, "curated", `${spec.id}.json`)

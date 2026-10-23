@@ -16,6 +16,7 @@ import { BoatModule } from "./boat/seam"
 import { BOAT_MODE } from "../shared/boat"
 import { Gunnery, type GunneryNet } from "./gunnery/gunnery"
 import { createGame } from "./game/game"
+import { Life } from "./game/life"
 import { Input } from "./input"
 import { connect } from "./net"
 import { ATMOSPHERE, fillAtmosphere } from "./render/atmosphere"
@@ -188,6 +189,8 @@ async function main() {
   renderer.addPass("opaque", ocean)
   renderer.addPass("opaque", clouds)
   renderer.addPass("alpha", lights)
+  // Life around you: radio chatter, seabirds over the shores, rain on the canopy (src/game/life.ts).
+  const life = new Life(renderer, flight)
 
   // Weather (shared/weather.ts): the room's synced rain, wind and storm seas, applied to the sea every hull floats on,
   // the rain pass, and the look (`atmosphere`, `grade` and the ocean look stay the editable sunny bases).
@@ -217,6 +220,7 @@ async function main() {
     game,
     audio: flight.audio,
     flight,
+    life,
     net: () => net,
     quality,
     bots: {
@@ -292,7 +296,7 @@ async function main() {
   } catch {}
   const gameShell = createGameShell({
     game: "carrier", title: "CARRIER", quickLabel: "Quick join", friendsNote: "a private room to share",
-    askName: true, quality, channels: ["master", "effects", "ambience"],
+    askName: true, quality, channels: ["master", "effects", "ambience", "voice"],
     start: start ? "playing" : "title",
     keysBlocked: () => chat.open || !!dev?.wantsInput,
     escapeOwned: () => escapeHeld || teams.open || ops.open || chat.open || flight.radar.mapOpen,
@@ -355,7 +359,7 @@ async function main() {
   syncScreen()
 
   const debug: { renderer: Renderer; camera: Camera; net: typeof net; input: Input; frame: Float32Array; grade: typeof grade; atmosphere: typeof atmosphere; arch: Archipelago | null; ocean: Ocean; clouds: Clouds } = { renderer, camera, net, input, frame, grade, atmosphere, arch: null, ocean, clouds }
-  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, baseOcean, daynight, stars, lights, zones, chat }, dev ? { lab: dev.lab, debugMenu: dev.menu, bots: dev.bots, perf } : {}) })
+  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, baseOcean, daynight, stars, lights, zones, chat, life }, dev ? { lab: dev.lab, debugMenu: dev.menu, bots: dev.bots, perf } : {}) })
 
   let carrierBlastTimer = 0
   registerGameCommands(commands => {
@@ -420,6 +424,7 @@ async function main() {
     boat.setWorld(sea, arch)
     gunnery.setGround({ sea, arch, ships: [] })
     zones.setWorld(sea, arch)
+    life.setWorld(arch)
   }
   const useNet = (n: typeof net) => {
     net = n
@@ -516,6 +521,7 @@ async function main() {
     clouds.update(t, view)
     weather.draw(dt, t, view, frame, camera.fov)
     zones.update(t, camera.eye, net, game.state.ship, gameShell.flow.screen === "title")
+    life.update({ dt, playing: gameShell.playing, net, eye: camera.eye, fov: camera.fov, width: canvas.width, height: canvas.height, rain: w.rain * w.density, frame })
     renderer.render(frame, shownGrade)
     if (inRoom) lobby.setConnection(net.state === "online" ? "online" : "connecting")
     requestAnimationFrame(tick)

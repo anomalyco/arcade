@@ -22,6 +22,8 @@ import { viewSection } from "./view-lab"
 import { WeatherLab } from "./weather-lab"
 import type { CarrierQuality } from "../quality"
 import { zonesSection } from "../objective/lab"
+import type { Life } from "../game/life"
+import { lifeSections } from "./life-lab"
 import { applyZoneRules } from "../objective/zones"
 import type { Ocean } from "../render/ocean"
 import { waterSection } from "./water-lab"
@@ -38,6 +40,7 @@ export type DevToolsContext = {
   ocean: Ocean
   game: Game
   audio: JetAudio
+  life: Life
   /** The current connection (it changes when the menu picks another room). */
   net: () => Net
   bots: Omit<BotsHost, "net">
@@ -72,6 +75,8 @@ export function installDevTools(ctx: DevToolsContext) {
     new TimeLab({ daynight: ctx.daynight, broadcast: (hour, speed, fade) => ctx.net().sendTime(hour, speed, fade) }).section,
     // AUDIO: levels, jet sound tuning and test buttons (M mutes anywhere).
     new MixerLab(ctx.audio).section,
+    // Radio chatter (Audio), seabirds and canopy rain (World): src/game/life.ts.
+    ...lifeSections(ctx.life),
     // SOUNDS: the audition board (every sound slot's candidate takes; pick by ear).
     new SoundsLab().section,
     sightSection,

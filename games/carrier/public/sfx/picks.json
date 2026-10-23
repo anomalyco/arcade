@@ -193,5 +193,55 @@
   "take": 3,
   "trim": 0,
   "ratings": []
+ },
+ "radio-launch": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-ball": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-mother": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-spike": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-break-left": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-break-right": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-splash": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-hit": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-zone-captured": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
+ },
+ "radio-zones-moving": {
+  "take": 1,
+  "trim": 0,
+  "ratings": []
  }
 }

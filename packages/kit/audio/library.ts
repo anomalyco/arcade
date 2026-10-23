@@ -170,15 +170,17 @@ const CRAFT: Record<CraftKind, { label: string; loop: string; done: string }> = 
 const CARRIER = ["carrier"] as const
 const carrierTakes = (
   id: string, label: string, group: SfxGroup, bus: MixCategory, slot: string, takes: readonly number[],
-  o: { target: number; loop?: boolean; range: { ref: number; max: number }; wet: number; durationRange: readonly [number, number]; cooldown?: number },
+  o: { target: number; loop?: boolean; range: { ref: number; max: number }; wet: number; durationRange: readonly [number, number]; cooldown?: number; tts?: string },
 ): SfxSpec => ({
   id, label, group, bus, variants: takes.length, ...(o.loop ? { loop: true } : {}), target: o.target, gain: 1,
   pitchJitter: o.loop ? 0 : 0.02, gainJitter: o.loop ? 0 : 0.05, ...(o.cooldown ? { cooldown: o.cooldown } : {}),
   range: o.range, wet: o.wet, usedBy: CARRIER, durationRange: o.durationRange,
   reuse: takes.map(t => ({
     path: `games/carrier/public/sfx/v3/${slot}-${t}.ogg`,
-    license: "ElevenLabs commercial sound-generation license (Anomaly)",
-    provenance: `Carrier's "${slot}" take ${t} (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)`,
+    license: o.tts ? "ElevenLabs commercial text-to-speech license (Anomaly)" : "ElevenLabs commercial sound-generation license (Anomaly)",
+    provenance: o.tts
+      ? `Carrier's "${slot}" take ${t} (ElevenLabs text to speech eleven_v4, voice ${o.tts}; games/carrier/scripts/sfx-cinematic.ts)`
+      : `Carrier's "${slot}" take ${t} (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)`,
   })),
 })
 const ALL4 = [1, 2, 3, 4] as const
@@ -823,6 +825,17 @@ export const SFX_SPECS: readonly SfxSpec[] = [
   carrierTakes("weather.thunder.sea.far", "Thunder over the sea, far", "weather", "ambience", "thunder-far", ALL4, { target: -22, range: far, wet: 0.4, durationRange: [7, 8.2] }),
   carrierTakes("weather.lightning.crack", "Lightning crack", "weather", "ambience", "lightning-crack", [1], { target: -16, range: far, wet: 0.3, durationRange: [1.5, 2.2] }),
   carrierTakes("ui.kill-confirm", "Kill confirm", "ui", "ui", "ui-kill", [1], { target: -22, range: bed, wet: 0, durationRange: [1, 1.7] }),
+  // Carrier's radio chatter (radio.ts): ElevenLabs text to speech, played through its radio filter.
+  carrierTakes("voice.radio.launch", "Radio: cleared, good shot", "radio", "voice", "radio-launch", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [2.3, 2.8], tts: "Rolando" }),
+  carrierTakes("voice.radio.ball", "Radio: call the ball", "radio", "voice", "radio-ball", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1.3, 1.6], tts: "Rolando" }),
+  carrierTakes("voice.radio.mother", "Radio: Mother's taking hits", "radio", "voice", "radio-mother", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1.2, 1.5], tts: "Rolando" }),
+  carrierTakes("voice.radio.spike", "Radio: spike, spike", "radio", "voice", "radio-spike", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1.6, 2], tts: "Jerry B." }),
+  carrierTakes("voice.radio.break-left", "Radio: missile, break left", "radio", "voice", "radio-break-left", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1.7, 2.1], tts: "Jerry B." }),
+  carrierTakes("voice.radio.break-right", "Radio: missile, break right", "radio", "voice", "radio-break-right", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1.4, 1.7], tts: "Jerry B." }),
+  carrierTakes("voice.radio.splash", "Radio: splash one", "radio", "voice", "radio-splash", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [0.8, 1.1], tts: "Jerry B." }),
+  carrierTakes("voice.radio.hit", "Radio: I'm hit", "radio", "voice", "radio-hit", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1.6, 2.1], tts: "Jerry B." }),
+  carrierTakes("voice.radio.zone-captured", "Radio: zone captured", "radio", "voice", "radio-zone-captured", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [1, 1.3], tts: "Eryn" }),
+  carrierTakes("voice.radio.zones-moving", "Radio: zones moving", "radio", "voice", "radio-zones-moving", [1, 2], { target: -16, range: bed, wet: 0, durationRange: [2.6, 2.9], tts: "Eryn" }),
 ]
 
 export const SFX_LIBRARY: readonly SfxEntry[] = SFX_SPECS.map(spec => ({ ...spec, files: LIBRARY_FILES[spec.id] ?? [] }))
@@ -855,7 +868,7 @@ export function sfxManifest(entries: readonly SfxEntry[]): SampleAssetMeta[] {
     category: entry.bus,
     source: file.source,
     prompt: entry.generate?.prompt,
-    modelId: file.source === "elevenlabs-sound-v2" ? "eleven_text_to_sound_v2" : undefined,
+    modelId: file.source === "elevenlabs-sound-v2" ? "eleven_text_to_sound_v2" : file.source === "elevenlabs-tts" ? "eleven_v4" : undefined,
     requestId: file.requestId,
     license: file.license,
     provenance: file.provenance,
