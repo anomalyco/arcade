@@ -410,7 +410,7 @@ export function stepNight(n: NightState, world: WoodsWorld, walkers: readonly Ni
   const live = n.phase === "camp" || n.phase === "search"
   // The taken are out of the night: no torch, no finds, nobody to be alone.
   const active = walkers.filter((w) => !isGone(n, w.id))
-  for (const w of walkers) if (!active.includes(w)) w.light = false
+  for (const w of walkers) if (!active.includes(w)) { w.light = false; w.isolated = 0 }
   for (const w of active) {
     if (w.capture) w.light = false
     if (w.swap > 0) {

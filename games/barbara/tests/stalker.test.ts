@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
 import { WoodsRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
-import { trunkBetween } from "../shared/creature"
+import { trunkBetween, type Beacon } from "../shared/creature"
 import { decodeServer, type Snapshot } from "../shared/protocol"
 import { createWoods, EYE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, stepWoods, type Feel, type PlayerInput } from "../shared/sim"
 import { placeSpiderSigns } from "../shared/spider-signs"
-import { BEAT_FIRST, createStalker, poseFromRow, SPIDER_SIZE, STALKER_MIN, stalkerPose, stalkerRow, stalkerX, stalkerZ, stepStalker, type StalkerEvent, type StalkerState, type StalkerWalker } from "../shared/stalker"
-import { isDeepWater, makeWorld, standHeight, trailDistance } from "../shared/world"
+import { BEAT_FIRST, createStalker, SPIDER_BODY_Y, poseFromRow, SPIDER_SIZE, STALKER_MIN, stalkerPose, stalkerRow, stalkerX, stalkerZ, stepStalker, type StalkerEvent, type StalkerState, type StalkerWalker } from "../shared/stalker"
+import { boundaryLine, isDeepWater, makeWorld, nextRandom, standHeight, trailDistance } from "../shared/world"
 
 const world = makeWorld()
 const DT = 1 / 30
@@ -173,4 +173,157 @@ test("its signs: a web across the trail between two trunks, and bundles high in 
   const other = placeSpiderSigns(world, 77, false)
   expect(other.webs).toEqual(a.webs)
   expect(other.bundles.some((x) => x.size === "person")).toBe(false)
+})
+
+test("someone taken is out of its night: it neither keeps stalking where they stood nor counts them alone", () => {
+  const state = createWoods(world, 0, 31, [{ id: 0, name: "A" }, { id: 1, name: "B" }])
+  const a = state.players[0]!, b = state.players[1]!
+  const c = world.camp
+  Object.assign(a, { x: c.x - 80, z: c.z - 90, light: false, isolated: 1000 })
+  Object.assign(b, { x: c.x + 80, z: c.z - 90, light: false })
+  state.night.verdict.gone.push({ id: a.id, x: a.x, z: a.z, yaw: 0, at: 0 })
+  place(state.stalker, c.x, c.z - 170)
+  const still: PlayerInput = { yaw: 0, pitch: 0, light: false, tie: false, map: false, mx: 0, mz: 0 }
+  const feel: Feel = { ...FEEL, creature: "spider", botCount: 0 }
+  for (let f = 0; f < 3 * 60 * 30; f++) stepWoods(state, world, new Map([[0, still], [1, still]]), DT, feel)
+  expect(a.isolated).toBe(0)
+  const s = state.stalker, toB = Math.hypot(stalkerX(s) - b.x, stalkerZ(s) - b.z)
+  expect(toB).toBeGreaterThanOrEqual(STALKER_MIN)
+  expect(toB).toBeLessThan(48)
+  expect(Math.hypot(stalkerX(s) - a.x, stalkerZ(s) - a.z)).toBeGreaterThan(toB)
+})
+
+test("driven off, it keeps 20 m from everyone and stays out of the lake", () => {
+  const run = (s: StalkerState, walkers: StalkerWalker[]) => {
+    s.glare = 5
+    let closest = Infinity, wet = false
+    for (let f = 0; f < 25 * 30; f++) {
+      step(s, walkers, f * DT)
+      for (const w of walkers) closest = Math.min(closest, distance(s, w))
+      wet ||= isDeepWater(world, stalkerX(s), stalkerZ(s))
+    }
+    return { closest, wet, mode: s.mode }
+  }
+  // A torch on it from the south, and someone standing in the dark right where straight away would take it.
+  const x = world.camp.x + 10, z = world.camp.z - 110
+  const torch = walker({ x, z: z + 30, yaw: 0, light: true }), dark = walker({ id: 1, x, z: z - 40 })
+  const a = createStalker(world, 7)
+  place(a, x, z)
+  const one = run(a, [torch, dark])
+  expect(one.closest).toBeGreaterThanOrEqual(STALKER_MIN)
+  expect(one.wet).toBe(false)
+
+  // On the lake's east shore with a torch on it from the east: straight away is the water.
+  const lake = world.lake
+  let sx = lake.x + lake.rx
+  while (isDeepWater(world, sx, lake.z)) sx += 1
+  sx += 8
+  const b = createStalker(world, 8)
+  place(b, sx, lake.z)
+  const two = run(b, [walker({ x: sx + 32, z: lake.z, yaw: Math.PI / 2, light: true })])
+  expect(two.closest).toBeGreaterThanOrEqual(STALKER_MIN)
+  expect(two.wet).toBe(false)
+})
+
+test("it starts inside the fence and out of the lake on every night", () => {
+  const line = boundaryLine(world)
+  for (let seed = 0; seed < 200; seed++) {
+    const s = createStalker(world, seed), x = stalkerX(s), z = stalkerZ(s)
+    expect(Math.abs(x) < line && Math.abs(z) < line).toBe(true)
+    expect(isDeepWater(world, x, z)).toBe(false)
+  }
+})
+
+test("a burning road flare out in the dark is a backdrop for its walk across", () => {
+  // Out in the woods looking away from camp (its lit windows are a backdrop too), with a clear 70 m line ahead.
+  let line: { w: StalkerWalker; bx: number; bz: number } | null = null
+  for (let k = 0; k < 40 && !line; k++) {
+    const x = world.camp.x + 20 + k * 3, z = world.camp.z - 100 - k * 2
+    for (let i = 0; i < 64 && !line; i++) {
+      const yaw = (i / 64) * Math.PI * 2, fx = -Math.sin(yaw), fz = -Math.cos(yaw)
+      if (fx * (world.camp.x - x) + fz * (world.camp.z - z) > 0) continue
+      const bx = x + fx * 70, bz = z + fz * 70
+      if (isDeepWater(world, bx, bz) || Math.abs(bx) > world.params.half - 25 || Math.abs(bz) > world.params.half - 25) continue
+      if (!trunkBetween(world, x, z, bx, bz, 0.3)) line = { w: walker({ x, z, yaw }), bx, bz }
+    }
+  }
+  expect(line).not.toBeNull()
+  const { w, bx, bz } = line!
+  const flare: Beacon = { x: bx, z: bz, by: -1, held: false, level: 1 }
+  let without = 0, withFlare = 0
+  for (let seed = 1; seed < 12; seed++) {
+    for (const beacons of [[], [flare]]) {
+      const s = createStalker(world, seed)
+      place(s, w.x + 150, w.z + 60)
+      const beat = stepStalker(s, world, [w], 400, DT, FEEL, SIGNAL_HOLD_SECONDS, eye, beacons).some((e) => e.kind === "spider-beat")
+      if (beat) beacons.length ? withFlare++ : without++
+    }
+  }
+  // Torch off and no other light: only the flare gives it something to cross.
+  expect(without).toBe(0)
+  expect(withFlare).toBeGreaterThan(0)
+})
+
+/**
+ * Someone walks straight at it (1.9 m/s) with their torch held on its body for `seconds`. Returns the longest it was
+ * ever within `STALKER_MIN` of them (s), and whether it ever left the fence or went into the lake.
+ */
+function chase(s: StalkerState, w: StalkerWalker, seconds: number) {
+  const line = boundaryLine(world)
+  let inside = 0, longest = 0, fence = false, wet = false
+  for (let f = 0; f < seconds * 30; f++) {
+    const sx = stalkerX(s), sz = stalkerZ(s), dx = sx - w.x, dz = sz - w.z, d = Math.hypot(dx, dz)
+    const nx = w.x + (dx / d) * 1.9 * DT, nz = w.z + (dz / d) * 1.9 * DT
+    if (d > 1 && !isDeepWater(world, nx, nz) && Math.abs(nx) < line - 1 && Math.abs(nz) < line - 1) { w.x = nx; w.z = nz }
+    w.yaw = Math.atan2(-dx, -dz)
+    w.pitch = Math.atan2(standHeight(world, sx, sz) + SPIDER_BODY_Y - eye(w)[1], d)
+    step(s, [w], f * DT)
+    const now = distance(s, w)
+    inside = now < STALKER_MIN ? inside + DT : 0
+    longest = Math.max(longest, inside)
+    fence ||= Math.abs(stalkerX(s)) >= line || Math.abs(stalkerZ(s)) >= line
+    wet ||= isDeepWater(world, stalkerX(s), stalkerZ(s))
+  }
+  return { longest, fence, wet }
+}
+
+test("cornered against the fence in a beam, it doesn't freeze: it's out of reach at once, inside the fence", () => {
+  const h = world.params.half
+  const s = createStalker(world, 12)
+  place(s, h - 25, h - 25)
+  const r = chase(s, walker({ x: h - 50, z: h - 50, light: true }), 40)
+  expect(r.longest).toBeLessThanOrEqual(0.25)
+  expect(r.fence).toBe(false)
+  expect(r.wet).toBe(false)
+})
+
+test("backed up to the lake shore in a beam, the same", () => {
+  const lake = world.lake
+  let sx = lake.x + lake.rx
+  while (isDeepWater(world, sx, lake.z)) sx += 1
+  const s = createStalker(world, 13)
+  place(s, sx + 3, lake.z)
+  const r = chase(s, walker({ x: sx + 28, z: lake.z, light: true }), 40)
+  expect(r.longest).toBeLessThanOrEqual(0.25)
+  expect(r.fence).toBe(false)
+  expect(r.wet).toBe(false)
+})
+
+test("200 nights, someone walking straight at it with a torch on it from anywhere: never within 20 m past a moment", () => {
+  const line = boundaryLine(world)
+  let worst = 0
+  for (let seed = 0; seed < 200; seed++) {
+    const s = createStalker(world, seed), rng = { seed: seed * 7919 + 1 }
+    let x = 0, z = 0
+    for (let i = 0; i < 50; i++) {
+      const a = nextRandom(rng) * Math.PI * 2, d = 45 + 30 * nextRandom(rng)
+      x = stalkerX(s) + Math.sin(a) * d; z = stalkerZ(s) + Math.cos(a) * d
+      if (Math.abs(x) < line - 2 && Math.abs(z) < line - 2 && !isDeepWater(world, x, z)) break
+    }
+    const r = chase(s, walker({ x, z, light: true }), 30)
+    worst = Math.max(worst, r.longest)
+    expect(r.fence).toBe(false)
+    expect(r.wet).toBe(false)
+  }
+  expect(worst).toBeLessThanOrEqual(0.25)
 })

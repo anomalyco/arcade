@@ -4,7 +4,7 @@ import { arachnidControls, arachnidScale, arachnidShape, createArachnidSettings,
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { lerpAngle } from "@arcade/kit/net/interpolate"
-import { CREATURE_STEP, createCreatureMotion, unitDt, unitSurface, type CreatureSurface } from "@arcade/kit/sim/creature-motion"
+import { CREATURE_STEP, createCreatureMotion, unitDt, unitSurface, type CreatureMotion, type CreatureSurface } from "@arcade/kit/sim/creature-motion"
 import { spiderSurface, type StalkerPose } from "../shared/stalker"
 import type { WoodsWorld } from "../shared/world"
 import type { SpiderEye } from "./eyeshine"
@@ -16,8 +16,19 @@ import type { SpiderEye } from "./eyeshine"
  *
  * The root comes as a pose per frame; the legs step at the kit's fixed 60 Hz between the last frame's pose and this
  * one's, with a velocity eased from the root's travel, and are drawn between their last two steps. A jump (a beat
- * starting somewhere out of sight) re-stands them where the root lands.
+ * starting somewhere out of sight, or a vanish) re-stands them where the root lands; near you, the old legs scuttle
+ * off sideways out of your sight first (`EXIT_SECONDS`), so even a vanish in your beam reads as it leaving.
  */
+/**
+ * When its root jumps (it vanished, run down, or a beat starts elsewhere) within this far of you (m), the legs you were
+ * watching don't pop: they scuttle off sideways out of your line of sight, fast, for `EXIT_SECONDS`, then are gone.
+ */
+const EXIT_NEAR = 60
+const EXIT_SECONDS = 1.2
+const EXIT_SPEED = 6.5
+
+type Exit = { legs: ArachnidLegs; root: CreatureMotion; vx: number; vz: number; left: number; acc: number; previous: ArachnidPose; current: ArachnidPose }
+
 export class SpiderView {
   /** Look and gait knobs (the Lab's harvestman defaults; `SPIDER_SIZE` is the shared root's scale). */
   readonly settings: ArachnidSettings = createArachnidSettings()
@@ -36,6 +47,7 @@ export class SpiderView {
   private acc = 0
   private previous: ArachnidPose | null = null
   private current: ArachnidPose | null = null
+  private exit: Exit | null = null
   /** The pose drawn this frame, or null without a spider. */
   pose: ArachnidPose | null = null
 
@@ -60,12 +72,49 @@ export class SpiderView {
     return this.ground
   }
 
-  /** Steps the legs to this frame's root (`null`: no spider) and returns its batches. */
-  frame(p: StalkerPose | null, dt: number): Batch[] {
+  /** The legs it left by a jump near `eye`, scuttling off sideways out of your sight (the side it was facing). */
+  private leave(eye: readonly number[], size: number): void {
+    if (!this.legs || !this.last || !this.current || this.jump < 0) return
+    const dx = this.last.x - eye[0]!, dz = this.last.z - eye[2]!, d = Math.hypot(dx, dz)
+    if (d > EXIT_NEAR || d < 1e-3) return
+    const ax = dx / d, az = dz / d, hx = Math.cos(this.last.heading), hz = -Math.sin(this.last.heading)
+    const side = -az * hx + ax * hz >= 0 ? 1 : -1
+    let ux = -az * side * 0.85 + ax * 0.5, uz = ax * side * 0.85 + az * 0.5
+    const l = Math.hypot(ux, uz)
+    ux /= l; uz /= l
+    const v = EXIT_SPEED / Math.sqrt(size)
+    this.exit = { legs: this.legs, root: { ...this.root }, vx: ux * v, vz: uz * v, left: EXIT_SECONDS, acc: this.acc, previous: this.current, current: this.current }
+  }
+
+  private stepExit(dt: number, ground: CreatureSurface, size: number): ArachnidPose | null {
+    const e = this.exit
+    if (!e) return null
+    e.left -= dt
+    if (e.left <= 0) { this.exit = null; return null }
+    e.acc = Math.min(e.acc + dt, 0.25)
+    const r = e.root
+    for (; e.acc >= CREATURE_STEP; e.acc -= CREATURE_STEP) {
+      r.x += e.vx * CREATURE_STEP; r.z += e.vz * CREATURE_STEP
+      r.vx = r.desiredVx = e.vx; r.vz = r.desiredVz = e.vz
+      r.heading = Math.atan2(-e.vz, e.vx); r.angularVelocity = 0; r.run = 1
+      e.legs.step(r, ground, unitDt(CREATURE_STEP, size))
+      for (const c of e.legs.contacts) this.steps.push({ x: c.x, y: c.y, z: c.z })
+      e.previous = e.current
+      e.current = e.legs.pose()
+    }
+    return interpolateArachnidPose(e.previous, e.current, e.acc / CREATURE_STEP)
+  }
+
+  /**
+   * Steps the legs to this frame's root (`null`: no spider) and returns its batches. `eye` (your eye, m) lets a jump
+   * near you scuttle off instead of popping.
+   */
+  frame(p: StalkerPose | null, dt: number, eye?: readonly number[]): Batch[] {
     this.steps.length = 0
-    if (!p) { this.legs = null; this.pose = null; this.last = null; return [] }
+    if (!p) { this.legs = null; this.pose = null; this.last = null; this.exit = null; return [] }
     const size = arachnidScale(this.settings), ground = this.surface(size), r = this.root
     if (!this.legs || !this.last || p.jump !== this.jump) {
+      if (eye && p.jump !== this.jump) this.leave(eye, size)
       Object.assign(r, { x: p.x / size, z: p.z / size, heading: p.heading, vx: 0, vz: 0, angularVelocity: 0, desiredVx: 0, desiredVz: 0, turn: "travel", run: 0 })
       this.legs = new ArachnidLegs(r, ground, size, arachnidShape(this.settings))
       this.previous = this.current = this.legs.pose()
@@ -100,7 +149,8 @@ export class SpiderView {
     this.acc -= n * CREATURE_STEP
     this.last = p
     this.pose = interpolateArachnidPose(this.previous!, this.current!, this.acc / CREATURE_STEP)
-    return this.view.frame([this.pose])
+    const leaving = this.stepExit(dt, ground, size)
+    return this.view.frame(leaving ? [this.pose, leaving] : [this.pose])
   }
 
   /** Its two eyes on the turret (m), each looking out to its side. */
