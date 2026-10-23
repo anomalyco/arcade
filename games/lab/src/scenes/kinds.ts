@@ -149,6 +149,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
   { id: "spider-gait", label: "Spider gait", subject: "The arachnid gait walking the night forest: size, leg length, ride height and step timing", host: { kind: "page", url: "/arcade/lab/spider.html" }, panels: page },
   { id: "woods-camera", label: "Barbara camera", subject: "The night woods through different cameras and the realism effects a real camera adds", host: { kind: "page", url: "/arcade/barbara/" }, panels: page, play: "Play" },
+  { id: "barbara-looks", label: "Barbara looks", subject: "BARBARA's curated night looks and the storm: lightning, rain in the beams, thunder, gusts", host: { kind: "page", url: "/arcade/barbara/" }, panels: page, play: "Play" },
   { id: "archer", label: "Archer", subject: "Archers' arenas, movement tuning and power-ups", host: { kind: "page", url: "/arcade/archers/playground.html" }, panels: page, play: "Play" },
 ]
 
@@ -188,6 +189,7 @@ const PAGE_STATIONS: Record<string, string> = {
   archers: "archer",
   "woods-camera": "woods-camera",
   "spider-gait": "spider-gait",
+  "barbara-looks": "barbara-looks",
 }
 
 /** What a station nobody gave a kind yet opens as, so a new station file never stops the Lab from starting. */

@@ -6,6 +6,7 @@ import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } fr
 import { FLARE_SCRAPE, flareSources, handFlare, type FlareEvent } from "../../shared/flares"
 import { SIGNAL_HOLD_SECONDS, type WoodsEvent, type WoodsState } from "../../shared/sim"
 import type { VoiceEvent } from "../../shared/voices"
+import type { ThunderEvent } from "@arcade/kit/weather/storm"
 import { groundHeight, type WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
@@ -15,7 +16,7 @@ import { BRUSH_IDS, VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSetti
 export { Soundscape, type Listener, type SoundLayer } from "./soundscape"
 export { VOICE, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
-const LAYERS: SoundLayer[] = ["wind", "creaks", "room", "leaves", "insects", "lake", "dock", "lights", "walls", "distant", "flares"]
+const LAYERS: SoundLayer[] = ["wind", "creaks", "room", "leaves", "insects", "lake", "dock", "lights", "walls", "distant", "flares", "storm"]
 
 /** Footsteps (the shared quiet bank, #398 levels), the soundscape and the searchers' voices, each on its player level, through one limiter. */
 export class WoodsMix {
@@ -72,6 +73,9 @@ export type TapeFrame = {
   /** Flares struck this frame (where, and how long ago) and every one burning. */
   struck?: { seed: number; x: number; y: number; z: number; elapsed: number }[]
   burning?: FlareSound[]
+  /** The storm this frame (rain, wind, gust, its clock) and thunder emitted this frame. */
+  storm?: { rain: number; wind: number; gust: number; clock: number }
+  thunder?: ThunderEvent[]
 }
 
 /**
@@ -96,6 +100,10 @@ export class WoodsAudio {
   private queuedFlares: Extract<FlareEvent, { kind: "flare-struck" }>[] = []
   private queued: (DistantEvent | CreatureEvent)[] = []
   private queuedVoices: VoiceEvent[] = []
+  /** Thunder on its way, until it is scheduled (or arrives while the woods are silent and is dropped). */
+  private thunder: ThunderEvent[] = []
+  private weather: { rain: number; wind: number; gust: number; clock: number } | null = null
+  private freshThunder: ThunderEvent[] = []
   /** Lines heard before the mix existed (the context still starting): said once it does, unless long gone. */
   private waitingVoices: VoiceEvent[] = []
   /** Lines to have decoded ahead of time (the brush, the opening's): pinned in the bus once there is one. */
@@ -163,6 +171,7 @@ export class WoodsAudio {
     this.queuedFlares.length = 0
     this.waitingVoices.length = 0
     this.arriving.length = 0
+    this.thunder.length = 0
     this.mix?.scape.stopAll()
     this.mix?.voices.stopAll()
     this.mix?.levels(0, 0, 0, true)
@@ -243,12 +252,30 @@ export class WoodsAudio {
       this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending, burning })
     }
     this.pending = { steps: [], distant: [], voices: [], creature: [], struck: [] }
+    if (this.tape && (this.weather || this.freshThunder.length)) Object.assign(this.tape[this.tape.length - 1]!, { ...(this.weather ? { storm: { ...this.weather } } : {}), thunder: this.freshThunder })
+    this.freshThunder = []
     if (!mix) return
     const v = this.bank.volumes
     mix.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted, v.volumeVoice / 100)
+    mix.scape.weather = this.weather
     mix.scape.update(this.listener, state.t, signalling)
     if (mix.scape.loaded) mix.scape.flares(burning, this.listener)
+    if (this.thunder.length && mix.scape.on("storm")) {
+      const clock = this.weather?.clock ?? 0
+      this.thunder = this.thunder.filter((e) => !mix.scape.storm.thunder(e, this.listener, clock))
+    }
     mix.voices.update(this.listener)
+  }
+
+  /**
+   * The storm this frame (`ForestStorm.frame`): its rain, wind and gust for the beds, and the thunder it emitted, which
+   * plays after its travel from the strike. Call before `frame`.
+   */
+  storm(f: { rain: number; wind: number; gust: number; clock: number; thunder: readonly ThunderEvent[] } | null): void {
+    this.weather = f && (f.rain > 0.001 || f.wind > 1.001 || f.gust > 0 || this.thunder.length || f.thunder.length) ? { rain: f.rain, wind: f.wind, gust: f.gust, clock: f.clock } : f ? { rain: 0, wind: 1, gust: 0, clock: f.clock } : null
+    if (!f?.thunder.length) return
+    this.freshThunder.push(...f.thunder.map((e) => ({ ...e })))
+    if (this.live || this.begun) this.thunder.push(...f.thunder.map((e) => ({ ...e })))
   }
 
   /** The session's events: a distant event plays where it happens, on the next `frame` (with that frame's clock). */
@@ -274,7 +301,7 @@ export class WoodsAudio {
   }
 
   /** The Lab's audition button (a gesture, so it may start the sound before Begin): waits for the files, then plays. */
-  private async auditionNow(sound: DistantSound): Promise<void> {
+  async auditionNow(sound: DistantSound): Promise<void> {
     if (await this.prepare()) this.audition(sound)
   }
 
@@ -311,6 +338,7 @@ export class WoodsAudio {
     const mix = new WoodsMix(ctx, { ...this.sound, ...opts.sound }, this.baseUrl, () => world, this.voice, opts.fetcher)
     mix.scape.solo = opts.solo ?? null
     await mix.scape.load(opts.fetcher, true)
+    if (tape.some((f) => f.storm || f.thunder?.length)) await mix.scape.storm.load(opts.fetcher)
     // Offline, every line on the tape is decoded up front so each starts on its frame.
     if (opts.voices !== false) await mix.voices.preload([...BRUSH_IDS, ...tape.flatMap((f) => (f.voices ?? []).map((e) => e.line))])
     const b = this.bank.volumes
@@ -325,6 +353,7 @@ export class WoodsAudio {
       if (at <= last) continue
       last = at
       void ctx.suspend(at).then(() => {
+        mix.scape.weather = f.storm ?? null
         mix.scape.update(f.l, f.sim, f.signal ?? false)
         if (opts.footsteps !== false) for (const s of f.steps) mix.feet.play(s.events, s.surface, s.walkTime, s.gain)
         for (const e of f.distant) mix.scape.distant(e, f.l, f.sim)
@@ -333,6 +362,7 @@ export class WoodsAudio {
         for (const e of f.creature ?? []) mix.scape.creature(e, f.l, f.sim, (x, z) => groundHeight(world, x, z))
         for (const s of f.struck ?? []) mix.scape.flareStrike(s.seed, s.x, s.y, s.z, f.l, FLARE_SCRAPE, s.elapsed)
         if (f.burning) mix.scape.flares(f.burning, f.l)
+        for (const e of f.thunder ?? []) mix.scape.storm.thunder(e, f.l, f.storm?.clock ?? e.emitted)
         void ctx.resume()
       })
     }
