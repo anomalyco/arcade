@@ -11,7 +11,7 @@ import type { Strike, StrikeLight, Vec3 } from "../weather/lightning"
 import { RAIN_LIGHTING_DEFAULTS, rainLightingControls, type RainLightingSettings } from "../weather/rain-lighting"
 import { weatherDefaults, type WeatherSettings } from "../weather/settings"
 import { WeatherSimulation, type WeatherFrameState } from "../weather/state"
-import { StormStrikes, type StormFlashes, type StrikeRequest, type ThunderEvent } from "../weather/storm"
+import { StormStrikes, type SharedStormClock, type StormFlashes, type StrikeRequest, type ThunderEvent } from "../weather/storm"
 import { FOREST_WIND_DIR } from "./wind"
 
 export type ForestStormSettings = {
@@ -65,7 +65,8 @@ export const FOREST_STORM_DEFAULTS: Readonly<ForestStormSettings> = {
 }
 
 /** Rain in the forest: light-volume mode, short camera-relative streaks (the weather agent's defaults). */
-export const FOREST_RAIN_LIGHTING: Readonly<RainLightingSettings> = { ...RAIN_LIGHTING_DEFAULTS, mode: "volume" }
+/** Longer, brighter streaks than a street needs: under a canopy at night the beams are the only light the rain gets. */
+export const FOREST_RAIN_LIGHTING: Readonly<RainLightingSettings> = { ...RAIN_LIGHTING_DEFAULTS, mode: "volume", shutter: 0.02, streakGain: 6 }
 /** The eye after a flash: up to two stops darker, recovering over ~3 s; the forest's own meter holds meanwhile. */
 export const FOREST_EYE: Readonly<ExposureSettings> = { ...EXPOSURE_DEFAULTS, mode: "adapt", attack: 0.25, recovery: 3, lossEV: 1.6, glareStrength: 0.25 }
 
@@ -118,6 +119,8 @@ export type ForestStormInput = {
   groundY: number
   /** The forest look's wind (×): the rain slants with the trees. */
   forestWind: number
+  /** A room's shared clock and anchor: scheduled strikes then match on every client (`SharedStormClock`). */
+  shared?: SharedStormClock
 }
 
 const ease = (dt: number, tau: number) => 1 - Math.exp(-dt / tau)
@@ -175,7 +178,7 @@ export class ForestStorm {
   frame(i: ForestStormInput): ForestStormFrame {
     const s = this.settings, dt = Math.max(0, Math.min(0.1, i.dt))
     const bearing = -i.yaw
-    const strikes = this.strikes.step(dt, { rate: s.strikes, cloud: s.strikeCloud, near: s.strikeNear, far: s.strikeFar, flashes: s.flashes }, i.eye, bearing, i.groundY)
+    const strikes = this.strikes.step(dt, { rate: s.strikes, cloud: s.strikeCloud, near: s.strikeNear, far: s.strikeFar, flashes: s.flashes }, i.eye, bearing, i.groundY, i.shared)
     const t = strikes.time
 
     // Rain arrives over a couple of seconds; the forest soaks more slowly and dries slower still.
@@ -208,7 +211,7 @@ export class ForestStorm {
 
     const view: ForestStormView = {
       bolt: strikes.bolt, light: strikes.light, boltBrightness: s.boltBrightness,
-      flash: flash * s.flashLux, flashDir: strikes.dir, flashSky: flash * s.flashSky, cloudGlow: s.cloudGlow, flashMist: flash * s.flashSky * 0.04 * s.flashMist,
+      flash: flash * s.flashLux, flashDir: strikes.dir, flashSky: flash * s.flashSky, cloudGlow: s.cloudGlow, flashMist: flash * s.flashLux * 0.0045 * s.flashMist,
       exposure: adapted.multiplier, glare: adapted.glare, holdExposure: t < this.holdUntil,
       wetness: this.wet, puddles: this.puddles, rain, wind,
     }
@@ -235,7 +238,7 @@ export function forestStormControls(group = "Weather", prefix = "woods.storm."):
     range("strikeCloud", "Cloud to cloud", 0, 1, 0.05, "share", "Lightning"),
     { key: prefix + "flashes", field: "flashes", label: "Lightning flashes", group, subsection: "Lightning", type: "select", options: [{ value: "full", label: "Full" }, { value: "reduced", label: "Reduced" }, { value: "off", label: "Off (thunder only)" }] },
     range("flashLux", "Flash on the forest", 0, 8, 0.05, "lx", "Flash"),
-    range("flashSky", "Flash on the clouds", 0, 2, 0.01, "cd/m²", "Flash"),
+    range("flashSky", "Flash on the clouds", 0, 6, 0.01, "cd/m²", "Flash"),
     range("flashMist", "Flash in the mist", 0, 3, 0.05, "×", "Flash"),
     range("boltBrightness", "Channel brightness", 0, 3, 0.05, "×", "Flash"),
     range("cloudGlow", "Overcast glow", 0, 0.004, 0.0001, "cd/m²", "Sky"),

@@ -28,6 +28,13 @@ export type StormStrikeSettings = {
   flashes: StormFlashes
 }
 
+/**
+ * A storm shared by everyone on one clock: scheduled strikes come from the seed and whole seconds of `time` alone (no
+ * history), placed round `anchor` (x, z), so every client on the same settings sees the same strike at the same moment
+ * from the same place, and hears it after its own travel. Strikes asked for stay local.
+ */
+export type SharedStormClock = { time: number; anchor: readonly [number, number] }
+
 export const STORM_STRIKE_DEFAULTS: Readonly<StormStrikeSettings> = { rate: 0, cloud: 0.25, near: 250, far: 3000, flashes: "full" }
 
 /** A strike asked for now: anything left out is picked (in view, at the band's distances). */
@@ -71,6 +78,8 @@ export class StormStrikes {
   private serial = 0
   private nextAt = 4
   private requests: StrikeRequest[] = []
+  /** The last whole second of a shared clock already scheduled. */
+  private slot: number | null = null
   private readonly fresh: ThunderEvent[] = []
   /** Strikes heard but not seen (`dark` requests): thunder only. */
   private readonly unseen = new WeakSet<Strike>()
@@ -84,20 +93,31 @@ export class StormStrikes {
   get clock(): number { return this.time }
   get live(): readonly Strike[] { return this.strikes }
 
-  step(dt: number, s: Readonly<StormStrikeSettings>, eye: readonly number[], viewBearing: number, groundY: number): StormStrikeFrame {
+  step(dt: number, s: Readonly<StormStrikeSettings>, eye: readonly number[], viewBearing: number, groundY: number, shared?: SharedStormClock): StormStrikeFrame {
     this.time += Math.max(0, Math.min(0.1, dt))
     this.fresh.length = 0
     const reduce = s.flashes === "reduced", dark = s.flashes === "off"
     for (const r of this.requests.splice(0)) {
-      const k = this.add(this.plan(r, viewBearing, s), eye, groundY, reduce)
+      const k = this.add(this.plan(r, viewBearing, s), eye, eye, groundY, reduce)
       if (r.dark) this.unseen.add(k)
     }
-    // Poisson arrivals at least 6 s apart (Reduced: a third of the rate, 15 s apart).
-    const rate = s.rate * (reduce ? 0.35 : 1)
-    if (rate > 0 && this.time >= this.nextAt) {
-      this.add(this.plan({}, viewBearing, s, true), eye, groundY, reduce)
+    // Arrivals at least 6 s apart (Reduced: a third of the rate, 15 s apart).
+    const rate = s.rate * (reduce ? 0.35 : 1), gap = reduce ? 15 : 6
+    if (shared) {
+      const now = Math.floor(shared.time)
+      if (this.slot === null || now < this.slot || now - this.slot > 30) this.slot = now
+      const anchor = [shared.anchor[0], eye[1]!, shared.anchor[1]]
+      for (let k = this.slot + 1; k <= now; k++) {
+        const plan = sharedPlan(this.seed, k, rate, gap, s)
+        if (!plan) continue
+        // Its stroke lands at the slot's start on the shared clock, on this storm's own clock.
+        this.add(plan, anchor, eye, groundY, reduce, this.time - (shared.time - k))
+      }
+      this.slot = now
+    } else if (rate > 0 && this.time >= this.nextAt) {
+      this.add(this.plan({}, viewBearing, s, true), eye, eye, groundY, reduce)
       const r = rng(0xbeef + this.serial * 31 + this.seed)
-      this.nextAt = this.time + Math.max(reduce ? 15 : 6, -Math.log(1 - r() * 0.999) * 60 / rate)
+      this.nextAt = this.time + Math.max(gap, -Math.log(1 - r() * 0.999) * 60 / rate)
     } else if (rate <= 0) this.nextAt = this.time + 2
     this.strikes = this.strikes.filter(k => strikeEnd(k) > this.time)
     const pick = pickStrikeLights(this.strikes.filter(k => !this.unseen.has(k)), this.time, reduce)
@@ -121,7 +141,7 @@ export class StormStrikes {
   }
 
   /** A strike's plan: in view 60% of the time; distance across the band, nearer strikes rarer (∝ area). */
-  private plan(r: StrikeRequest, viewBearing: number, s: Readonly<StormStrikeSettings>, scheduled = false) {
+  private plan(r: StrikeRequest, viewBearing: number, s: Readonly<StormStrikeSettings>, scheduled = false): StrikePlanned {
     const g = rng(0xa11 + this.serial * 104729 + this.seed * 7919)
     const cloud = r.kind ? r.kind === "cloud" : scheduled && g() < s.cloud
     const near = Math.max(80, Math.min(s.near, s.far)), far = Math.max(near, s.far)
@@ -133,15 +153,36 @@ export class StormStrikes {
     return { seed: r.seed ?? ((this.serial + 1) * 2654435761 + this.seed) >>> 0, kind: (cloud ? "cloud" : "ground") as BoltKind, bearing, distance, power }
   }
 
-  private add(plan: ReturnType<StormStrikes["plan"]>, eye: readonly number[], groundY: number, reduce: boolean) {
+  /** A strike placed round `at` (the listener, or a shared anchor), its thunder timed from the listener's `eye`. */
+  private add(plan: StrikePlanned, at: readonly number[], eye: readonly number[], groundY: number, reduce: boolean, t = this.time + 0.1) {
     this.serial++
     // One scene-light pulse per strike; the shared limiter keeps overlapping strikes to three a second. Reduced: only
     // once the last swell has faded (3 s), so swells never stack and dip.
-    const k = makeStrike(plan, this.time + 0.1, eye[0]!, eye[2]!, groundY, groundY + this.ceiling, this.limiter, 1, reduce ? 3 : 0)
+    const k = makeStrike(plan, t, at[0]!, at[2]!, groundY, groundY + this.ceiling, this.limiter, 1, reduce ? 3 : 0)
     this.strikes.push(k)
-    const slant = Math.hypot(plan.distance, k.kind === "cloud" ? this.ceiling * 0.85 : 60)
-    const [px, , pz] = k.position
-    this.fresh.push({ id: this.serial, kind: k.kind, distance: slant, bearing: plan.bearing, position: [px, groundY + (k.kind === "cloud" ? this.ceiling * 0.85 : 60), pz], emitted: k.t, arrives: k.t + slant / SPEED_OF_SOUND, power: plan.power })
+    const [px, , pz] = k.position, py = groundY + (k.kind === "cloud" ? this.ceiling * 0.85 : 60)
+    const slant = Math.hypot(px - eye[0]!, py - groundY, pz - eye[2]!)
+    const bearing = Math.atan2(px - eye[0]!, -(pz - eye[2]!))
+    this.fresh.push({ id: this.serial, kind: k.kind, distance: slant, bearing, position: [px, py, pz], emitted: k.t, arrives: k.t + slant / SPEED_OF_SOUND, power: plan.power })
     return k
   }
+}
+
+type StrikePlanned = { seed: number; kind: BoltKind; bearing: number; distance: number; power: number }
+
+/** Whether whole second `k` of a shared storm holds a strike: a hash under `rate`/60, none in the `gap` before it. */
+const hit = (seed: number, k: number, p: number) => rng(((seed * 2654435761) ^ (k * 40503 + 0x5bd1e995)) >>> 0)() < p
+
+/** The strike in whole second `k` of a shared storm, or null: from the seed and `k` only. */
+export function sharedPlan(seed: number, k: number, rate: number, gap: number, s: Readonly<StormStrikeSettings>): StrikePlanned | null {
+  const p = Math.min(0.5, rate / 60)
+  if (p <= 0 || !hit(seed, k, p)) return null
+  for (let j = 1; j < gap; j++) if (hit(seed, k - j, p)) return null
+  const g = rng(((seed * 7919) ^ (k * 104729 + 0x2545f491)) >>> 0)
+  const cloud = g() < s.cloud
+  const near = Math.max(80, Math.min(s.near, s.far)), far = Math.max(near, s.far)
+  const bearing = g() * Math.PI * 2
+  const distance = cloud ? 250 + 300 * g() : Math.sqrt(near * near + g() * (far * far - near * near))
+  const power = distance > 1500 ? 0.45 : 0.75 + 0.25 * g()
+  return { seed: (k * 2654435761 + seed * 31) >>> 0, kind: cloud ? "cloud" : "ground", bearing, distance, power }
 }

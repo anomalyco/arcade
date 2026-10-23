@@ -1,6 +1,6 @@
 // Headless, muted stills of every curated Look at one spot and time, a near strike at its peak, and rough GPU cost of
 // Downpour at High and Low (run after `bun run build`, through HiveMind browser):
-//   bun scripts/looks-proof.ts [--out <dir>] [--size 1600x900] [--looks id,id] [--no-perf]
+//   bun scripts/looks-proof.ts [--out <dir>] [--size 1600x900] [--looks id,id] [--no-perf] [--probe] [--sweep look:k=v,k=v;k=v]
 // The spot is the camera lab's (70 m north of camp, your torch and two friends'), on a synthetic clock. Scheduled
 // strikes are held off for the Look stills so each is comparable; Storm coming is taken at the peak of a far strike.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -13,15 +13,17 @@ const out = resolve(arg("--out", process.env.LEASE_OUT ?? "captures/barbara-look
 const [w, h] = arg("--size", "1600x900").split("x").map(Number) as [number, number]
 const only = arg("--looks", "")
 const perf = !process.argv.includes("--no-perf")
+/** View pitch for every Look (rad): level, so the ground, the trunks and the canopy gaps above share the frame. */
+const PITCH = 0.02
 
 type Woods = {
   frames: number; paused: boolean; autoplay: boolean
   step(ms: number): void
   setPose(x: number, z: number, yaw: number, pitch?: number): void
   looks: { pick(id: string): void; ids: readonly string[] }
-  storm: { settings: Record<string, number | string>; settle(): void; strike(at: string): void; strikes: { live: readonly { t: number }[]; clock: number } }
+  storm: { settings: Record<string, number | string>; settle(): void; strike(at: string): void; strikes: { live: readonly { t: number }[]; clock: number }; last: { view: { flash: number; flashSky: number } } | null }
   trigger(what: string): void
-  world: { camp: { x: number; z: number } }
+  world: { camp: { x: number; z: number }; buildings: { kind: string; rect: number[] }[] }
   state: { players: { id: number; x: number; z: number; yaw: number }[]; brains: { id: number; mode: string; timer: number; heading: number; sweep: number }[] }
   settings: Record<string, number>
   camera: { flashlight: boolean }
@@ -70,21 +72,29 @@ const shoot = async (name: string) => {
 }
 /** Pick a Look at the spot with scheduled strikes held off, rain and wet ground settled. */
 const lookAt = async (id: string) => {
-  await page.evaluate(({ id, spot }) => {
+  await page.evaluate(({ id, spot, PITCH }) => {
     woods.looks.pick(id)
     woods.storm.settings.strikes = 0
     woods.storm.settle()
-    woods.setPose(spot.x, spot.z, 0.08, -0.07)
+    woods.setPose(spot.x, spot.z, 0.08, PITCH)
     woods.camera.flashlight = true
-  }, { id, spot })
+  }, { id, spot, PITCH })
   await settle(150)
 }
-/** Steps to just after a strike's return stroke (its leader is 0.1 s): the first frames of the flash. */
+/** Steps frame by frame through the leader to the flash's peak (the first frame after which it dims). */
 const strikePeak = async (at: string) => {
   await page.evaluate((at) => woods.storm.strike(at), at)
-  // 0.1 s leader + a couple of frames into the first stroke.
-  await page.evaluate(async () => { for (let i = 0; i < 7; i++) woods.step(1000 / 60) })
-  const t = await page.evaluate(() => ({ clock: woods.storm.strikes.clock, strikes: woods.storm.strikes.live.map((k) => k.t) }))
+  const t = await page.evaluate(() => {
+    const flash = () => woods.storm.last?.view.flash ?? 0
+    let prev = 0, frames = 0
+    for (; frames < 90; frames++) {
+      woods.step(1000 / 60)
+      const now = flash()
+      if (prev > 0 && now < prev) break
+      prev = now
+    }
+    return { clock: woods.storm.strikes.clock, frames, flash: flash(), sky: woods.storm.last?.view.flashSky ?? 0 }
+  })
   console.log("strike", at, JSON.stringify(t))
 }
 
@@ -97,7 +107,30 @@ for (const id of ids) {
   await shoot(`look-${id}`)
   timing[id] = Date.now() - t0
 }
-// The near strike at its peak, in Downpour.
+// `--sweep look:key=v,key=v;key=v`: extra stills of one Look with forest settings overridden, one per `;` group.
+const sweep = arg("--sweep", "")
+if (sweep) {
+  const [id, sets] = sweep.split(":") as [string, string]
+  for (const [i, set] of sets.split(";").entries()) {
+    await lookAt(id)
+    await page.evaluate((kv) => { for (const p of kv.split(",")) { const [k, v] = p.split("="); (woods as unknown as { look: Record<string, unknown> }).look[k!] = isNaN(Number(v)) ? v : Number(v) } }, set)
+    await settle(150)
+    await shoot(`sweep-${id}-${i}`)
+    console.log("sweep", i, set)
+  }
+}
+// Clear moonlit also from the dock, looking south over the lake toward the moon (its glitter path).
+if (!only || only.includes("moonlit")) {
+  await lookAt("moonlit")
+  await page.evaluate(() => {
+    const d = woods.world.buildings.find((b) => b.kind === "dock")
+    if (d) woods.setPose((d.rect[0] + d.rect[2]) / 2, d.rect[3] - 2, Math.PI, -0.12)
+  })
+  await settle(150)
+  await shoot("look-moonlit-lake")
+}
+// The near strike at its peak, in Downpour, then the eye 2.5 s later. `--probe` adds the same peak with the rain off
+// and with the camera half a metre to the right (to tell weather sprites from forest geometry, and how near a thing is).
 if (!only || only.includes("downpour")) {
   await lookAt("downpour")
   await settle(30)
@@ -105,6 +138,16 @@ if (!only || only.includes("downpour")) {
   await shoot("strike-near-peak")
   await settle(150)
   await shoot("strike-near-after")
+  if (process.argv.includes("--probe")) {
+    await page.evaluate(() => { woods.storm.settings.rain = 0; woods.storm.settings.drips = 0; woods.storm.settle() })
+    await settle(200)
+    await strikePeak("near")
+    await shoot("probe-dry-peak")
+    await page.evaluate(({ spot, PITCH }) => { woods.storm.settings.rain = 1; woods.storm.settings.drips = 2; woods.storm.settle(); woods.setPose(spot.x + Math.cos(0.08) * 0.5, spot.z - Math.sin(0.08) * 0.5, 0.08, PITCH) }, { spot, PITCH })
+    await settle(200)
+    await strikePeak("near")
+    await shoot("probe-shift-peak")
+  }
 }
 const gpu: Record<string, number | null> = {}
 if (perf) {

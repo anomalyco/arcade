@@ -26,7 +26,7 @@ import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
 import type { ForestStormView } from "./storm"
 import { BoltPass, BOLT_LOOK } from "../weather/lightning-pass"
-import type { Strike } from "../weather/lightning"
+import type { Strike, StrikeLight } from "../weather/lightning"
 import type { WeatherEave, WeatherExcludeRect, WeatherLight, WeatherPrepareInput } from "../weather"
 import { forestPost } from "./post"
 import { FOREST_WIND_DIR } from "./wind"
@@ -500,7 +500,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     renderer.setCustomUniforms(custom)
 
     // ---- Storm: the cloud base over the sky, the channel, the rain.
-    if (st && !stormSky) { stormSky = new StormSkyPass(renderer.passContext); renderer.addPass("sky", stormSky) }
+    if (st && !stormSky && (st.cloudGlow > 0 || st.flashSky > 0)) { stormSky = new StormSkyPass(renderer.passContext); renderer.addPass("sky", stormSky) }
     if (stormSky) stormSky.on = !!st && (st.cloudGlow > 0 || st.flashSky > 0)
     if (st?.bolt && !bolt) { bolt = new BoltPass(renderer.passContext); renderer.addPass("alpha", bolt) }
     if (bolt) {
@@ -513,8 +513,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
         if (!drawn) { drawn = scaledStrike(k, f.eye, BOLT_FAR); boltShapes.set(k, drawn) }
         scale = (drawn as Strike & { scale?: number }).scale ?? 1
       }
-      const b = st?.boltBrightness ?? 1
-      bolt.frame(drawn, st!.light, { ...BOLT_LOOK, coreIntensity: BOLT_LOOK.coreIntensity * b, glowIntensity: BOLT_LOOK.glowIntensity * b, coreWidth: BOLT_LOOK.coreWidth * scale, glowWidth: BOLT_LOOK.glowWidth * scale }, [0, 0, 0], f.fovY)
+      // The eye's glare after the flash lands round the channel itself (its glow), never as a veil over the frame.
+      const b = st?.boltBrightness ?? 1, g = 1 + 3 * (st?.glare ?? 0)
+      bolt.frame(drawn, st?.light ?? NO_STRIKE_LIGHT, { ...BOLT_LOOK, coreIntensity: BOLT_LOOK.coreIntensity * b, glowIntensity: BOLT_LOOK.glowIntensity * b * g, coreWidth: BOLT_LOOK.coreWidth * scale, glowWidth: BOLT_LOOK.glowWidth * scale }, [0, 0, 0], f.fovY)
     }
     const weather = st?.rain && !smoke ? rainInput(st, f, local, halfAngle, torchColor) : null
 
@@ -547,7 +548,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const s = settings, rain = st.rain!
     const ex = f.eye[0], ez = f.eye[2], groundY = world.height(ex, ez)
     rainLights.length = 0
-    const cone = Math.cos(Math.min(1.2, halfAngle * 1.25))
+    // The beam's core and its bright fringe: drops just outside the core catch the spill too.
+    const cone = Math.cos(Math.min(1.2, halfAngle * 2))
     for (const t of f.torches) {
       if (!t.on || rainLights.length >= 12) continue
       rainLights.push({ x: t.pos[0], y: t.pos[1], z: t.pos[2], radius: s.torchReach * 0.7, r: torchColor[0]!, g: torchColor[1]!, b: torchColor[2]!, power: s.torchPower * (t.level ?? 1) * RAIN_LIGHT * rain.glow, axis: t.dir, cosHalf: cone, isCone: true })
@@ -576,7 +578,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
         const corners = [at(-b.w / 2, -b.d / 2), at(b.w / 2, -b.d / 2), at(b.w / 2, b.d / 2), at(-b.w / 2, b.d / 2)]
         if (shelters.length < 8 && Math.hypot(b.x - ex, b.z - ez) < 40) shelters.push([Math.min(...corners.map(p => p[0])), Math.min(...corners.map(p => p[1])), Math.max(...corners.map(p => p[0])), Math.max(...corners.map(p => p[1]))])
       }
-      const near = world.trees.filter(t => t.species !== "snag" && Math.abs(t.x - ex) < 10 && Math.abs(t.z - ez) < 10).map(t => ({ t, d: Math.hypot(t.x - ex, t.z - ez) })).filter(n => n.d > 1.2 && n.d < 10).sort((a, b) => a.d - b.d)
+      const near = world.trees.filter(t => t.species !== "snag" && Math.abs(t.x - ex) < 12 && Math.abs(t.z - ez) < 12).map(t => ({ t, d: Math.hypot(t.x - ex, t.z - ez) })).filter(n => n.d > 3 && n.d < 12).sort((a, b) => a.d - b.d)
       for (const { t, d } of near) {
         if (eaves.length >= Math.min(8, 3 + Math.round(5 * Math.min(1, rain.drips)))) break
         const ux = (ex - t.x) / d, uz = (ez - t.z) / d, crown = Math.max(1, t.h * 0.09)
@@ -1022,6 +1024,7 @@ class StormSkyPass implements ScenePass {
   draw(pass: GPURenderPassEncoder) { if (!this.on) return; pass.setPipeline(this.pipe); pass.draw(3) }
 }
 
+const NO_STRIKE_LIGHT: StrikeLight = { channel: 0, branches: 0, front: 0, leader: 0, scene: 0, after: 0 }
 /** Where a far lightning channel is drawn (m from the eye): inside the camera's far plane, behind the forest. */
 const BOLT_FAR = 270
 /** Weather-layer light power per torch candela (calibrated so drops in a beam sit near the lit mist). */

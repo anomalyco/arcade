@@ -452,10 +452,9 @@ export class Soundscape {
       b.filter!.frequency.setTargetAtTime(1800 + 9000 * g * g, now, 0.4)
       set(b, this.on("wind") ? s.soundWind * 0.115 * g * Math.sqrt(windK) * (0.35 + 0.65 * Math.min(1, c.densities[i]!)) * c.exposure : 0, 0.4)
     }
-    if (storm && (storm.rain > 0 || storm.wind > 1 || storm.gust > 0)) {
-      if (!this.storm.loaded) void this.storm.load()
-      if (this.on("storm")) this.storm.update(l, { ...storm, inside }, now)
-    }
+    if (storm && (storm.rain > 0 || storm.wind > 1 || storm.gust > 0) && !this.storm.loaded) void this.storm.load()
+    // Once loaded the storm always updates, dry and still when it's off or another layer is soloed, so its beds fade out.
+    if (this.storm.loaded) this.storm.update(l, storm && this.on("storm") ? { ...storm, inside } : { rain: 0, wind: 1, gust: 0, clock: storm?.clock ?? 0, inside }, now)
     set(this.beds.get("leaves"), this.on("leaves") ? s.soundLeaves * 0.085 * (0.3 + 0.7 * gustHere) * (0.35 + 0.65 * Math.min(1, c.density)) * Math.sqrt(c.exposure) : 0, 0.4)
     set(this.beds.get("room"), this.on("room") ? s.soundRoom * 0.0054 : 0)
     // Crickets go quiet while something heavy moves nearby.

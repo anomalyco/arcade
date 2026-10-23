@@ -447,7 +447,7 @@ fn forestFlash(world: vec3f, n: vec3f, open: f32) -> vec3f {
   return vec3f(0.84, 0.88, 1.0) * N.storm.w * ndl * vis / 3.14159265;
 }
 fn forestCloudLight(n: vec3f) -> vec3f {
-  return (vec3f(0.8, 0.85, 1.0) * N.storm2.x * 0.35 + vec3f(1.0, 0.82, 0.62) * N.field.w) * (0.5 + 0.5 * max(n.y, 0.0));
+  return (vec3f(0.8, 0.85, 1.0) * N.storm.w * 0.04 + vec3f(1.0, 0.82, 0.62) * N.field.w) * (0.5 + 0.5 * max(n.y, 0.0));
 }
 `
 

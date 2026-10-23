@@ -415,6 +415,8 @@ struct SplashOut {
 
   let distToAnchor = length(base.xz - anchorXZ);
   var a = fade * (1.0 - smoothstep(${SPLASH_BOX * 0.38}, ${SPLASH_BOX * 0.52}, distToAnchor));
+  // A drip falling past the lens is out of focus and gone in a blink; at 1–2 m a 4 cm streak would be a slab.
+  if (isDrip) { a *= smoothstep(1.5, 3.5, length(vec3f(base.x, clamp(W.eyeTime.y, base.y, eaveY), base.z) - W.eyeTime.xyz)); }
   if (a <= 0.002) { return o; }
 
   let dripTime = age*period;
