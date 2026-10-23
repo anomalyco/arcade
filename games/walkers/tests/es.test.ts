@@ -3,9 +3,8 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { evaluate, policyShape } from "../shared/episode"
 import { Es } from "../shared/es"
-import { DEFAULT_REWARD } from "../shared/episode"
 import { envFor } from "../shared/tasks"
-import { inlineEvaluator, parsePolicy, Trainer } from "../shared/trainer"
+import { parsePolicy } from "../shared/trainer"
 
 describe("evolution strategies", () => {
   test("climbs a trivial objective", () => {
@@ -22,23 +21,18 @@ describe("evolution strategies", () => {
     expect(score(es.theta)).toBeGreaterThan(start * 0.05)
   })
 
-  test("is deterministic for a seed", async () => {
-    const run = async () => {
-      const t = new Trainer({ creature: "worm", env: envFor("room"), hidden: 8, seed: 5, es: { pairs: 4, sigma: 0.05, lr: 0.03, weightDecay: 0.005 } }, inlineEvaluator)
-      for (let g = 0; g < 3; g++) await t.generation()
-      return Array.from(t.es.theta).join(",")
+  test("is deterministic for a seed", () => {
+    const run = () => {
+      const es = new Es(new Float64Array(20), { pairs: 4, sigma: 0.05, lr: 0.03, weightDecay: 0.005 }, 5)
+      for (let g = 0; g < 3; g++) {
+        const rows = es.ask()
+        es.tell(Array.from({ length: es.population }, (_, i) =>
+          -rows.subarray(i * 20, (i + 1) * 20).reduce((sum, v) => sum + (v - 1) ** 2, 0)))
+      }
+      return Array.from(es.theta)
     }
-    expect(await run()).toBe(await run())
+    expect(run()).toEqual(run())
   })
-
-  test("a quadruped learns to move forward within a few generations", async () => {
-    const t = new Trainer({ creature: "quadruped", env: envFor("room"), hidden: 8, seed: 1, es: { pairs: 12, sigma: 0.06, lr: 0.03, weightDecay: 0.005 }, reward: { ...DEFAULT_REWARD, seconds: 4 } }, inlineEvaluator)
-    const first = await t.generation()
-    for (let g = 0; g < 20; g++) await t.generation()
-    const last = t.history[t.history.length - 1]!
-    expect(t.best!.fitness).toBeGreaterThan(first.best + 0.5)
-    expect(last.mean).toBeGreaterThan(first.mean)
-  }, 30_000)
 })
 
 describe("policies", () => {
@@ -49,16 +43,23 @@ describe("policies", () => {
     expect(parsePolicy({ format: "walkers-policy", version: 2, sim: 2, creature: "biped", env: { task: "moon" }, hidden: 16, params: [] })).toBeNull()
   })
 
-  test("shipped pre-trained policies replay to exactly their recorded score", () => {
+  test("shipped pre-trained policies replay their recorded behaviour bit-identically", () => {
     const dir = join(import.meta.dir, "../src/pretrained")
     const files = readdirSync(dir).filter((f) => f.endsWith(".json"))
     expect(files.length).toBeGreaterThan(0)
+    expect(files).toContain("quadruped-room.json")
+    expect(files).toContain("quadruped-heist.json")
+    expect(files).toContain("human-heist.json")
     for (const f of files) {
       const p = parsePolicy(JSON.parse(readFileSync(join(dir, f), "utf8")))
       expect(p).not.toBeNull()
       expect(f).toBe(`${p!.creature}-${p!.env.task}.json`)
       const r = evaluate(p!.creature, p!.env, policyShape(p!.creature, p!.hidden), Float64Array.from(p!.params), p!.reward)
       expect(r.fitness).toBe(p!.fitness)
+      expect(r.distance).toBe(p!.distance)
+      expect(r.time).toBe(p!.time!)
+      expect(r.outcome).toBe(p!.outcome!)
+      expect(r.alarms).toBe(p!.alarms!)
     }
   })
 })

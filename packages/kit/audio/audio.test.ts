@@ -9,8 +9,8 @@ import {
   createBoxOcclusionQuery,
   Gearbox,
   character,
-  renderOcclusionReverbAb,
-  renderWorldSignalReplayOffline,
+  analyzeAudioBuffer,
+  encodeWavPcm16,
   SpellAudioEmitter,
   tyreSlip,
   VehicleAudioEmitter,
@@ -239,42 +239,29 @@ describe("voice budget, cooldowns, stealing policies, and listener cleanup", () 
 })
 
 describe("offline deterministic rendering, clip protection, silence windows, and A/B proof", () => {
-  test("occlusion and reverb A/B render is clip-free, darkens occluded spectrum, and extends reverb tail", async () => {
-    const ab = await renderOcclusionReverbAb(7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
-    expect(ab.dryOpen.stats.clippedSamples).toBe(0)
-    expect(ab.reverbOccluded.stats.clippedSamples).toBe(0)
-    expect(ab.dryOpen.stats.peak).toBeGreaterThan(0.05)
-    expect(ab.dryOpen.stats.peak).toBeLessThan(1.0)
-    expect(ab.reverbOccluded.stats.peak).toBeGreaterThan(0.03)
-    expect(ab.reverbOccluded.stats.peak).toBeLessThan(1.0)
-
-    // Occluded variant has lower spectral centroid and stronger reverb tail energy
-    expect(ab.delta.centroidDropHz).toBeGreaterThan(100)
-    expect(ab.delta.reverbTailGainRatio).toBeGreaterThan(1.4)
-    expect(ab.dryOpen.wav.byteLength).toBeGreaterThan(44)
-    expect(ab.reverbOccluded.wav.byteLength).toBe(ab.dryOpen.wav.byteLength)
-  })
-
-  test("world-signal chase and spell-cycle replays are deterministic, clip-free, and silent after stop", async () => {
-    const run1 = await renderWorldSignalReplayOffline("chase", 7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
-    const run2 = await renderWorldSignalReplayOffline("chase", 7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
-
-    expect(run1.events).toEqual(run2.events)
-    expect(run1.events.nitroIgnitions).toBe(2)
-    expect(run1.events.impacts.length).toBe(2)
-    expect(run1.events.shifts.length).toBeGreaterThanOrEqual(2)
-    expect(run1.stats.clippedSamples).toBe(0)
-    expect(run1.stats.peak).toBeGreaterThan(0.05)
-    expect(run1.stats.peak).toBeLessThan(1.0)
-    // Quiet window [5.25s, 5.92s] after stop() at 5.0s must be silent
-    expect(run1.stats.quietWindowRms[0]).toBeLessThan(1e-4)
-
-    const spellRun = await renderWorldSignalReplayOffline("spell_cycle", 7, DeterministicOfflineAudioContext as unknown as typeof OfflineAudioContext)
-    expect(spellRun.events.spellActivations).toBe(2)
-    // First charge released normally -> 1 cast; second charge depleted mana mid-hold -> no cast!
-    expect(spellRun.events.spellCasts).toBe(1)
-    expect(spellRun.stats.clippedSamples).toBe(0)
-    expect(spellRun.stats.quietWindowRms[0]).toBeLessThan(1e-4)
+  // The full A/B tail and six-second emitter-cycle assertions live in scripts/kit-audio-soak.ts.
+  test("a short seeded render is bit-identical, clip-free, and silent after stop", async () => {
+    const render = async () => {
+      const ctx = new DeterministicOfflineAudioContext(2, 48000 * 0.5, 48000) as unknown as OfflineAudioContext
+      const runtime = new AudioRuntime({ context: ctx, seed: 7, reverbWet: 0.45 })
+      runtime.scheduleTime = 0.025
+      expect(runtime.playCue("impact_metal_clink")).not.toBeNull()
+      runtime.scheduleTime = 0.2
+      runtime.stopAllVoices(0.015)
+      runtime.setReverbWet(0, 0.015)
+      const buffer = await ctx.startRendering()
+      runtime.dispose()
+      return { wav: encodeWavPcm16(buffer), stats: analyzeAudioBuffer(buffer, { quietWindows: [[0.35, 0.49]] }) }
+    }
+    const a = await render()
+    const b = await render()
+    expect(a.wav).toEqual(b.wav)
+    expect(a.wav.byteLength).toBe(44 + 48000 * 0.5 * 4)
+    expect(a.stats.durationSeconds).toBe(0.5)
+    expect(a.stats.clippedSamples).toBe(0)
+    expect(a.stats.peak).toBeGreaterThan(0.05)
+    expect(a.stats.peak).toBeLessThan(1)
+    expect(a.stats.quietWindowRms[0]).toBeLessThan(1e-4)
   })
 
   test("Audio Lab controller registers compatible LabSection and supports group randomize/reset/copy", async () => {

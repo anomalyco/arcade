@@ -68,6 +68,11 @@
   `?stage=`, `?curriculum=0`, `?lasers=` (laser speed), `?autostart=0`, `?compare=0`, `?panel=0`. `window.walkers` exposes settings, the trainer and history.
 - `bun run check` (tsc, server tsc, tests, build); CI also smoke-loads the bundle. Pushing to `main` deploys
   https://anoma.ly/arcade/walkers/.
+- Default tests replay every committed pretrained policy and require bit-identical fitness, distance, duration,
+  outcome and alarm count. The human policy is still balance-only. Physics stability windows are three seconds
+  (all three flailing seeds remain). Full checks are opt-in, from the repository root:
+  - Training improvement and seeded training replay: `HIVEMIND_PIN_FALLBACK_S=3600 hivemind run --kind cargo --worker pro -- bun run --cwd games/walkers test:training`.
+  - Original 60-second standing and 30-second × three-seed flailing checks: `HIVEMIND_PIN_FALLBACK_S=3600 hivemind run --kind cargo --worker pro -- bun run --cwd games/walkers test:soak`.
 
 ## Human thief
 

@@ -3,6 +3,8 @@ import { LINKS, LinkQueue, TcpLink } from "./net/link-sim"
 import { InputRelay, RollbackClient, type RollbackSim, TickPacer } from "./net/rollback"
 import { mulberry32 } from "./sim/rng"
 
+const soak = process.env.ARCADE_TEST_SOAK === "1"
+
 /** Two counters: each tick adds each seat's input; a "wrap" event every time one passes a multiple of 10. */
 type S = { x: [number, number] }
 type F = { i: [number, number] }
@@ -92,11 +94,24 @@ describe("rollback over a Wi-Fi link", () => {
   for (const [name, roomRate] of [["a room on time", 1], ["a room ticking 10% slow", 0.9], ["a room ticking 20% slow", 0.8], ["a room ticking 5% fast", 1.05]] as const)
   test(`${name}: clients agree with it and the pacer keeps inputs on time`, () => {
     const TICK = 1000 / 60
-    const rand = mulberry32(7)
+    const rand = mulberry32(soak ? 7 : 3)
+    let heldPackets = 0
+    let delayedPackets = 0
+    // Count actual head-of-line bursts so a short replay cannot pass on a clean link.
+    class ObservedLink extends TcpLink {
+      private previous = -1
+      override deliver(now: number): number {
+        const at = super.deliver(now)
+        if (at === this.previous) heldPackets++
+        if (at - now > 100) delayedPackets++
+        this.previous = at
+        return at
+      }
+    }
     const room: S = { x: [0, 0] }
     const relay = new InputRelay<number>()
-    const up = [0, 1].map(() => new LinkQueue<{ t: number; b: number; beat?: boolean }>(new TcpLink(LINKS.wifi, rand)))
-    const down = [0, 1].map(() => new LinkQueue<{ t: number; f: F; slack: number[] }>(new TcpLink(LINKS.wifi, rand)))
+    const up = [0, 1].map(() => new LinkQueue<{ t: number; b: number; beat?: boolean }>(new ObservedLink(LINKS.wifi, rand)))
+    const down = [0, 1].map(() => new LinkQueue<{ t: number; f: F; slack: number[] }>(new ObservedLink(LINKS.wifi, rand)))
     const clients = ([0, 1] as const).map((k) => new RollbackClient(sim(k)))
     const pacers = [0, 1].map(() => new TickPacer(TICK))
     const held = [0, 0]
@@ -109,7 +124,7 @@ describe("rollback over a Wi-Fi link", () => {
       pacers[k]!.start(0, 80, 0)
     }
     const step = (s: S, f: F) => sim(0).step(s, f)
-    for (let ms = 0; ms < 60_000; ms++) {
+    for (let ms = 0; ms < (soak ? 60_000 : 10_000); ms++) {
       // Room: inputs in, then a tick every TICK ms, broadcasting its frame.
       for (const k of [0, 1]) for (const m of up[k]!.arrived(ms)) {
         if (m.t <= ran && !m.beat) late++
@@ -136,7 +151,10 @@ describe("rollback over a Wi-Fi link", () => {
         const head = p.update(ms)
         for (let t = before + 1; t <= head; t++) {
           const was = held[k]!
-          if (rand() < 0.02) held[k] = Math.floor(rand() * 3)
+          // Short runs need enough transitions for the pacer's arrival-quantile estimate to settle.
+          if (soak) {
+            if (rand() < 0.02) held[k] = Math.floor(rand() * 3)
+          } else if (t % 4 === 0) held[k] = (held[k]! + 1) % 3
           c.input(t, held[k]!)
           // Like the game: send changes, plus a heartbeat every 6 ticks while something is held.
           if (held[k] !== was) {
@@ -152,6 +170,9 @@ describe("rollback over a Wi-Fi link", () => {
       expect(c.confirmed.x).toEqual(history.get(c.tick)!)
     }
     // Over TCP a lost segment or a Wi-Fi stall holds every input behind it, so a few changes always land late.
+    expect(sent).toBeGreaterThanOrEqual(soak ? 10 : 200)
+    expect(heldPackets).toBeGreaterThan(10)
+    expect(delayedPackets).toBeGreaterThan(10)
     expect(late / sent).toBeLessThan(0.1)
     for (const p of pacers) expect(p.tick - ran).toBeLessThan(10)
   })

@@ -1,12 +1,11 @@
 import { expect, test } from "bun:test"
 import { CREATURES } from "../shared/creatures"
-import { DEFAULT_REWARD, Episode, policyShape } from "../shared/episode"
+import { Episode, policyShape } from "../shared/episode"
 import { jointAngle, worldHash } from "../shared/physics"
 import { Policy, initParams } from "../shared/policy"
 import { mulberry32 } from "@arcade/kit/sim/rng"
 import { HumanRealism } from "../shared/realism"
 import { envFor } from "../shared/tasks"
-import { inlineEvaluator, Trainer } from "../shared/trainer"
 
 test("human mass, one-way elbows/knees and heel/toe support", () => {
   const c = CREATURES.human
@@ -92,12 +91,3 @@ test("gem requires the hand tip, not proximity of the head or torso", () => {
   miss.step()
   expect(miss.carrying).toBe(false)
 })
-
-test("ES improves a short human lesson", async () => {
-  const t = new Trainer({ creature: "human", env: envFor("heist"), hidden: 8, seed: 7, curriculum: false,
-    es: { pairs: 12, sigma: .06, lr: .02, weightDecay: .005 }, reward: { ...DEFAULT_REWARD, heistSeconds: 3 } }, inlineEvaluator)
-  const first = await t.generation()
-  for (let i = 0; i < 25; i++) await t.generation()
-  expect(t.best!.fitness).toBeGreaterThan(first.best + .5)
-  expect(t.history.at(-1)!.mean).toBeGreaterThan(first.mean)
-}, 60_000)
