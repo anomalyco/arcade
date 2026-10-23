@@ -10,6 +10,8 @@ export const WATER_CONTROLS: LabControl[] = [
   { key: "reflection", label: "Sky reflection", group: "Water", min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "sunGlints", label: "Sun glints", group: "Water", min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "haze", label: "Horizon haze", group: "Water", min: 0, max: 4, step: 0.1, unit: "×" },
+  { key: "horizonDistance", label: "Horizon smoothing", group: "Water", min: 400, max: 6000, step: 100, unit: "m" },
+  { key: "horizonRoughness", label: "Horizon roughness", group: "Water", min: 0.1, max: 0.6, step: 0.01, unit: "" },
   { key: "colour", label: "Body tint", group: "Water", type: "select", options: [
     { value: "#ffffff", label: "Neutral" }, { value: "#bededb", label: "Ocean teal" },
     { value: "#9bb7ac", label: "Forest green" }, { value: "#b1c4df", label: "Deep blue" },

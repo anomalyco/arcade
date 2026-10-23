@@ -488,7 +488,8 @@ export class Ocean implements ScenePass {
     if (this.water.mode === "continuous") {
       const w = this.water
       const tint = waterTint(w.colour)
-      this.vec(0, k.deep.map((v, i) => v * tint[i]!), 0)
+      this.vec(0, k.deep.map((v, i) => v * tint[i]!), w.horizonDistance)
+      this.vec(2, k.sand, w.horizonRoughness)
       this.slot(3, ...k.coral, w.normalStrength)
       this.slot(4, ...k.foam, k.foamAmount * w.foam)
       this.slot(5, ...k.absorb, w.sunGlints)

@@ -8,7 +8,7 @@ import { writeBuildId } from "./build-id"
 import { installPage, type Clock } from "../games/carrier/scripts/video/page"
 
 type Debug = { __vc: Clock; carrier: {
-  driver: { boat: { x: number; z: number; heave: number } }
+  driver: { boat: { x: number; z: number; heave: number; u: number } }
   camera: { viewProj: Float64Array }; ocean: { water: { mode: "today" | "continuous" } }
 } }
 if (!hostname().startsWith("aak2-2")) throw Error("Water proof must run on mini")
@@ -66,6 +66,11 @@ try {
   await frames(180)
   await page.keyboard.up("w")
   const played = await position()
+  const speed = await page.evaluate(() => (globalThis as unknown as Debug).carrier.driver.boat.u)
+  if (speed < 1) throw Error("Play speed too low to test release regression")
+  await page.locator("canvas#view").click({ position: { x: 720, y: 600 } })
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")))
+  if (await page.evaluate(() => (globalThis as unknown as Debug).carrier.driver.boat.u) !== speed) throw Error("Play click/blur reset boat speed")
   if (distance(dragged, played) < 1) throw Error("Play mode did not drive the boat")
   if (await page.evaluate(() => !!document.pointerLockElement)) throw Error("Water Lab stole pointer lock")
   await page.getByRole("radio", { name: "Today", exact: true }).click()

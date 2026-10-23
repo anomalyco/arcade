@@ -20,22 +20,24 @@ try { before = (await import(temporary)).OCEAN_WGSL as string }
 finally { unlinkSync(temporary) }
 if (tokens(before) !== tokens(OCEAN_WGSL)) throw Error("Today ocean shader changed")
 
-// Existing source outside the Carrier adapter must stay pinned; new water modules are opt-in.
+// Compare inherited source to the current main ancestor; keep the original shader/sea pins above.
+const sourceBase = git("merge-base", "HEAD", "origin/main").trim()
 const paths = ["packages/kit", "packages/knobs", "games/getaway", "games/blackout", "games/outbreak", "games/brawl", "games/archers", "games/lot", "games/nightshift", "games/carrier/shared", "package.json", "bun.lock"]
 // The architecture catalogue is build-time documentation metadata, never a renderer dependency.
-const changed = git("diff", base, "--name-only", "--", ...paths, ":(exclude)packages/kit/water/**", ":(exclude)packages/kit/architecture-map.ts").trim()
+const changed = git("diff", sourceBase, "--name-only", "--", ...paths, ":(exclude)packages/kit/water/**", ":(exclude)packages/kit/architecture-map.ts").trim()
 if (changed) throw Error(`Default source pins changed:\n${changed}`)
 const sea = "games/carrier/shared/sea.ts"
 const seaHash = hash(await Bun.file(sea).text())
 if (seaHash !== hash(git("show", `${base}:${sea}`))) throw Error("Authoritative sea changed")
 const report = {
   base,
+  sourceBase,
   todayShader: { identicalTokens: true, sha256: hash(tokens(OCEAN_WGSL)), originalBytes: before.length, currentBytes: OCEAN_WGSL.length },
   sea: { unchanged: true, sha256: seaHash },
-  pinned: paths.map(path => ({ path, baseTree: git("rev-parse", `${base}:${path}`).trim() })),
+  pinned: paths.map(path => ({ path, baseTree: git("rev-parse", `${sourceBase}:${path}`).trim() })),
   scope: "Source pins plus identical generated Today WGSL tokens. This is not an image or bundle-hash parity claim.",
   exclusions: ["packages/kit/water/** (new opt-in module)", "packages/kit/architecture-map.ts (documentation catalogue)"],
 }
 mkdirSync("captures/water", { recursive: true })
 await Bun.write("captures/water/pins.json", JSON.stringify(report, null, 2))
-console.log("Today WGSL, authoritative sea and other-game source pins match original main.")
+console.log("Today WGSL and sea match original main; other-game source matches the current main ancestor.")

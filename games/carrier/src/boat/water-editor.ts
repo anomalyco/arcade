@@ -49,9 +49,12 @@ export function createWaterEditor(canvas: HTMLCanvasElement, host: Host, params:
     return { x: eye[0]! + (p[0]! - eye[0]!) * t, z: eye[2]! + (p[2]! - eye[2]!) * t }
   }
   function stop() {
-    if (pointer !== null && canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer)
+    const drag = pointer
     pointer = null; target = null
+    if (drag === null) return
+    // Only a drag begun in Edit owns this velocity; clicks and blur in Play do not.
     host.driver.boat.u = 0
+    if (canvas.hasPointerCapture(drag)) canvas.releasePointerCapture(drag)
   }
   canvas.addEventListener("pointerdown", e => {
     if (state.interaction !== "edit" || e.button !== 0) return

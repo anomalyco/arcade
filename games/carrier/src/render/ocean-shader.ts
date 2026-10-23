@@ -589,8 +589,12 @@ ${continuous ? /* wgsl */ `
   let waterSlope = vec2f((1.0 + waterJ.z) * waterG.x - waterJ.y * waterG.y,
     (1.0 + waterJ.x) * waterG.y - waterJ.y * waterG.x) / waterDet;
   let detail = waterDetail(q, t, footprint, O.look[9].w, O.look[8].w);
-  let slopeWater = waterSlope * O.look[3].w + detail.xy + waterKelvin(v.wp, footprint);
-  waterVariance = waterVariance * O.look[3].w * O.look[3].w + detail.z;
+  let farWater = smoothstep(O.look[0].w * 0.35, O.look[0].w, length(v.rel));
+  let slopeKeep = 1.0 - farWater;
+  let slopeWater = (waterSlope * O.look[3].w + detail.xy + waterKelvin(v.wp, footprint)) * slopeKeep;
+  // Resolved slopes become a broad microfacet distribution rather than horizon stripes.
+  waterVariance = waterVariance * O.look[3].w * O.look[3].w + detail.z
+    + farWater * O.look[2].w * O.look[2].w;
   n = normalize(vec3f(-slopeWater.x, 1.0, -slopeWater.y));
   nS = n;
 ` : ""}
@@ -719,7 +723,7 @@ ${continuous ? /* wgsl */ `
   // Capped well below the bloom's knee on distant facets: the path is a streak of glints, not a glowing disc.
   // Under the moon (Frame extra.w) the area specular is lifted: its light is ~20x dimmer than the sun's.
   col += sun * (1.0 + 5.0 * F.extra.w) * sunVeil() * ${continuous
-    ? "(0.12 * (1.0 - exp(-waterSpecular(n, V, Ls, O.look[11].z, waterVariance, sunR))) + 4.0 * waterGlints(wq, n, V, Lv, footIso)) * O.look[5].w"
+    ? "(0.12 * (1.0 - exp(-waterSpecular(n, V, Ls, mix(O.look[11].z, O.look[2].w, farWater), waterVariance, sunR))) + 4.0 * waterGlints(wq, n, V, Lv, footIso) * slopeKeep) * O.look[5].w"
     : "min(Dg * FrS * saturate(dot(n, Ls)) / (4.0 * max(NoV, 0.05)), k7.y * mix(0.08, 1.0, facetFade * facetFade) * mix(1.0, 0.25, smoothstep(0.6, 4.0, footprint))) * broad"};
 
   // 7) Glitter sparkles in the broad sun path.
