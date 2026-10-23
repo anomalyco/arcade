@@ -43,6 +43,8 @@ import { walkDefaults, walkControls } from "./walk-settings"
 import { LotAudio, bindLotAudio, renderWalkAudio, type StormLoader, type WalkAudioFrame } from "./walk-audio"
 import { applyLotWeather, lotWeatherDefaults, lotWeatherControls, type LotWeatherMode } from "./weather/settings"
 import type { LotStorm, StormFrame, StormLamp } from "./weather/storm"
+import { EyeAdaptation, EXPOSURE_DEFAULTS, exposureControls } from "@arcade/kit/weather/exposure"
+import { RAIN_LIGHTING_DEFAULTS, rainLightingControls } from "@arcade/kit/weather/rain-lighting"
 
 const controlsHtml = () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Mouse0", "Look"), keyPromptHtml("ShiftLeft", "Run"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
 const query = new URLSearchParams(location.search)
@@ -194,6 +196,8 @@ async function main() {
   // Weather is its own chunk, loaded the first time it is turned on (or a strike is asked for): Today and the smoke
   // never fetch, compile or draw any of it.
   const weather=lotWeatherDefaults(query)
+  const exposure={...EXPOSURE_DEFAULTS}, eyeAdaptation=new EyeAdaptation(), rainLighting={...RAIN_LIGHTING_DEFAULTS}
+  let exposureFrame={multiplier:1,adaptationEV:0,glare:0}
   let storm:LotStorm|null=null, stormLoad:Promise<LotStorm>|null=null, stormFrame:StormFrame|null=null
   // A failed load is not cached: it shows a quiet note under the prompts and tries again 10 s later.
   let stormNote="", stormRetry=0
@@ -207,6 +211,8 @@ async function main() {
   const strike=(plan?:Parameters<LotStorm["strikeNow"]>[0])=>{ audio.enableStorm(loadStormAudio); return loadStorm().then(s=>s.strikeNow(plan)) }
   // Reset goes back to Today even when a ?weather= deep link opened the page.
   panel.addControls(weather,lotWeatherControls(weather,()=>void strike().catch(()=>{})),lotWeatherDefaults())
+  panel.addControls(exposure,exposureControls("Weather"),{...EXPOSURE_DEFAULTS})
+  panel.addControls(rainLighting,rainLightingControls(),{...RAIN_LIGHTING_DEFAULTS})
   panel.addControls(walking,walkControls)
   const audio=new LotAudio(world.scene.lamps)
   const sound=bindLotAudio(canvas,audio,walking,()=>panel.holdsInput,()=>shell.settings.muted)
@@ -313,12 +319,16 @@ async function main() {
     lights.update(frameLights, [])
     if(storm) {
       // The nearest lit practicals light the rain (the weather layer evaluates up to twelve).
-      const stormLamps:StormLamp[]=frameLights.filter(l=>(l.id ?? 0)>=0&&l.power>0).map(l=>({l,d:Math.hypot(l.x-camera.eye[0],l.y-camera.eye[2])})).sort((a,b)=>a.d-b.d).slice(0,10)
-        .map(({l})=>({x:l.x,y:l.h,z:l.y,color:l.color,power:Math.min(4,Math.sqrt(l.power)*0.9),range:l.r,axis:l.spot?.axis,cosOuter:l.spot?.cosOuter}))
+      const stormLamps:StormLamp[]=frameLights.filter(l=>((l.id ?? 0)>=0||rainLighting.mode==="volume")&&l.power>0).map(l=>({l,d:Math.hypot(l.x-camera.eye[0],l.y-camera.eye[2])})).sort((a,b)=>a.d-b.d).slice(0,10)
+        .map(({l})=>({x:l.x,y:l.h,z:l.y,color:l.color,power:Math.min(4,Math.sqrt(l.power)*0.9),range:l.r,
+          axis:l.spot?.axis ?? (rainLighting.mode==="volume" ? l.beam?.axis ?? (l.street ? [0,-1,0] : undefined) : undefined),
+          cosOuter:l.spot?.cosOuter ?? (rainLighting.mode==="volume" ? l.beam ? Math.cos(l.beam.halfAngle) : l.street ? Math.cos(1.1) : undefined : undefined)}))
       stormFrame=storm.frame({dt,settings:weather,eye:camera.eye,direction:camera.direction,fovY:camera.fov*Math.PI/180,width,height,groundY:groundHeight(world.scene.ground,camera.eye[0],camera.eye[2]),
-        inside:insideNow,lamps:stormLamps,fog:[settings.density,settings.falloff],frame:frameData})
+        inside:insideNow,lamps:stormLamps,fog:[settings.density,settings.falloff],frame:frameData,rainLighting})
       sf=stormFrame.active ? stormFrame : null
     }
+    // Relative storm stimulus, not scene metering; the authored baseline stays fixed at one.
+    exposureFrame=eyeAdaptation.step({dt,luminance:1+(sf?.flash ?? 0)*48,referenceLuminance:1,glare:Math.min(1,sf?.flash ?? 0)},exposure)
     const shadowEncoder=device.createCommandEncoder()
     if(spots.update(shadowEncoder,shadowLamps,camera.eye,dt,id=>lights.indexOf(id),casters)) renderer.setSpotShadows(spots.bindings())
     device.queue.submit([shadowEncoder.finish()])
@@ -358,7 +368,7 @@ async function main() {
       ambient: [0,0,0,0], mapSize: [1400, 1400], ao: 0 })
     lastFrame={ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
-      view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
+      view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, exposureFrame.glare, settings.exposure*exposureFrame.multiplier],
       fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(wetNow),fogBlur:fog.blurInput(), weather:sf?.weather ?? null }
     // The smoke draws synchronously: render() holds a frame back while the previous one is on the GPU, which on
     // SwiftShader would leave the second frame unsubmitted for minutes. It draws offscreen: presenting the canvas
@@ -406,6 +416,8 @@ async function main() {
     renderWalkAudio:(tape:WalkAudioFrame[],duration:number)=>renderWalkAudio(tape,duration,world.scene.lamps,tape.some(f=>f.storm)?loadStormAudio:undefined) })
   Object.defineProperty((window as any).lot,"audioFrame",{get:()=>audioFrame})
   Object.defineProperties((window as any).lot,{storm:{get:()=>storm},stormFrame:{get:()=>stormFrame}})
+  Object.assign((window as any).lot,{exposure,eyeAdaptation,rainLighting})
+  Object.defineProperty((window as any).lot,"exposureFrame",{get:()=>exposureFrame})
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); shell.loading?.fail(String(error)); document.getElementById("hud")!.textContent = String(error) })

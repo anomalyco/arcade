@@ -27,6 +27,8 @@ export const WORLD_PRESETS: readonly WorldPreset[] = [
   { id: "sodium-70s", label: "70s sodium", idea: "look", note: "21:30 drizzle under the 70s sodium grade.", values: { hour: 21.5, lookPreset: "sodium_70s", weatherPreset: "drizzle" } },
   { id: "painterly", label: "Painterly", idea: "look", note: "Late afternoon under the Painterly grade.", values: { hour: 16.5, lookPreset: "painterly" } },
   { id: "storm", label: "Storm night", idea: "weather", note: "Heavy rain, wind and lightning at 22:30; the parked car's headlights on.", values: { hour: 22.5, weatherPreset: "storm", headlights: true } },
+  { id: "rain-volumes", label: "Lamp-lit rain", idea: "weather", note: "Short streaks lit by three-dimensional lamp cones.", values: { hour: 22.5, weatherPreset: "rain", headlights: true, "rainLight.mode": "volume" } },
+  { id: "storm-adaptation", label: "Flash recovery", idea: "weather", note: "A lightning flash leaves a darker view that gradually recovers.", values: { hour: 22.5, weatherPreset: "storm", headlights: true, "exposure.mode": "adapt" } },
   { id: "fog-dawn", label: "Foggy dawn", idea: "weather", note: "06:40, fog banks rolling over the street.", values: { hour: 6.7, weatherPreset: "fog" } },
   { id: "snow-night", label: "Snow night", idea: "weather", note: "Snow at 22:00 with the lamps on.", values: { hour: 22, weatherPreset: "snow" } },
   { id: "night-lamps", label: "Night lamps", idea: "light", note: "Midnight, dry: streetlamp, porch lamp and the lamp inside only.", values: { hour: 0 } },

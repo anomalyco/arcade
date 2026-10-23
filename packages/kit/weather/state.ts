@@ -17,6 +17,8 @@ export type WeatherLight = {
   cosHalf?: number
   /** True when the light is a directional cone (flashlight / window / porch spot). */
   isCone?: boolean
+  /** Optional true 3D cone, used by opt-in light-volume rain. Legacy plan cones stay unchanged. */
+  axis?: readonly [number, number, number]
 }
 
 /** Roof overhang eave segment: [x0, z0, x1, z1, eaveHeight]. */

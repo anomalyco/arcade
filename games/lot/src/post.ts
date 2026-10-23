@@ -5,7 +5,7 @@ import { postShader } from "@arcade/kit/gpu/shaders"
 export const post = postShader(false, false, { chromatic: 0, bloom: 0.26, grain: 0.008, vignette: 0.45, bloomGate: { cap: 0.02, hot: 4 }, composite: /* wgsl */ `
   let uv=o.uv;
   // Three's five bloom weights sum to 3; kit's additive five-level pyramid sums to 5.
-  var hdr=(clean(textureSample(src,samp,uv)).rgb+textureSample(bloomTex,samp,uv).rgb*(0.26*3.0/5.0))*G.w;
+  var hdr=(clean(textureSample(src,samp,uv)).rgb+textureSample(bloomTex,samp,uv).rgb*(0.26*3.0/5.0)*(1.0+G.z))*G.w;
   let wb=vec3f(0.97,1.0072,1.042);
   hdr*=wb/dot(wb,vec3f(0.2126,0.7152,0.0722));
   let lum=dot(hdr,vec3f(0.2126,0.7152,0.0722));

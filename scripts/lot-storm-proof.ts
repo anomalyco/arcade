@@ -15,6 +15,7 @@ const { chromium } = budget
 //   bun scripts/lot-storm-proof.ts walk      Rain: open lot, past the wagon, under the booth edge, into the lobby, with sound
 //   bun scripts/lot-storm-proof.ts measure   paired whole-frame GPU time, Today vs each mode, at the gate
 //   bun scripts/lot-storm-proof.ts today     Today at the gate without touching weather; LOT_STORM_DIST=<main's dist> for the baseline
+//   bun scripts/lot-storm-proof.ts rain-review  isolated lamp rain and flash/recovery stills; LOT_STORM_CANDIDATES=today for main parity
 // Frames are JPEGs in $LOT_STORM_OUT; encode them on a render worker, not on Studio's display.
 const mode = process.argv[2] ?? "stills"
 const out = resolve(process.env.LOT_STORM_OUT ?? "captures/lot/storm")
@@ -85,6 +86,68 @@ try {
       if (i >= 6 && i <= 9) save(`strike-${i}.png`, await grab(page, "image/png")); else await step(page, 1)
       console.log(i, JSON.stringify(await page.evaluate(() => (window as any).lot.stormFrame?.light)))
     }
+  } else if (mode === "rain-review") {
+    const records: unknown[] = []
+    for (const subject of (process.env.LOT_STORM_SUBJECTS ?? "lamp,flash").split(",")) for (const candidate of (process.env.LOT_STORM_CANDIDATES ?? "today,candidate").split(",")) {
+      // Start dry and load weather only after pausing: its clock/seed have not advanced during page loading.
+      const page = await open()
+      await page.evaluate(({ subject, candidate }) => {
+        const a = (window as any).lot
+        a.setWeather(subject === "lamp" ? "rain" : "storm"); a.weather.strikes = 0
+        if (candidate !== "today") {
+          if (subject === "lamp") a.rainLighting.mode = "volume"
+          else a.exposure.mode = "adapt"
+        }
+        // History reset does not reset sampling phases after asynchronous loading.
+        a.renderer.temporal.frameIndex = 0
+        a.renderer.volumeFrame = 0
+        const forests = a.renderer.passes.slots.opaque.filter((p: any) => Array.isArray(p.models) && p.uniformData instanceof Float32Array && typeof p.frame === "number")
+        if (forests.length !== 1) throw Error(`Expected one forest dither sequence, found ${forests.length}`)
+        forests[0].frame = 0
+        a.renderer.resetTemporalHistory()
+      }, { subject, candidate })
+      // Drain each small batch instead of piling hundreds of full scene frames onto the GPU.
+      for (let n = 0; n < 12; n++) await page.evaluate(async () => {
+        const a = (window as any).lot
+        for (let i = 0; i < 15; i++) a.step(1000 / 60)
+        await a.renderer.passContext.device.queue.onSubmittedWorkDone()
+      })
+      if (subject === "lamp") save(`${candidate}-lamp.png`, await grab(page, "image/png"))
+      else {
+        await page.evaluate(async plan => {
+          const a = (window as any).lot
+          await a.strike({ ...plan, bearing: Math.atan2(a.camera.direction[0], -a.camera.direction[2]) - 0.35 })
+          a.step(1000 / 60)
+          const strike = a.storm.strikeLog.at(-1)
+          if (!strike || !strike.scenePulses.length) throw Error("No admitted scene flash")
+          const peak = strike.t + strike.strokes[strike.scenePulses[0]].at + 0.004
+          while (peak - a.stormFrame.time > 0.05) a.step(50)
+          a.step(Math.max(0, peak - a.stormFrame.time) * 1000)
+        }, PLAN)
+        for (const phase of ["peak", "after"]) {
+          const result = await page.evaluate(async phase => {
+            const a = (window as any).lot
+            if (phase === "after") for (let i = 0; i < 30; i++) a.step(1000 / 60)
+            // A still compares one frozen instant, with identical sampling and no prior-frame history.
+            // Strike admission can change the number of stepping frames before that instant.
+            a.renderer.temporal.frameIndex = 0
+            a.renderer.volumeFrame = 0
+            for (const p of a.renderer.passes.slots.opaque) if (Array.isArray(p.models) && p.uniformData instanceof Float32Array && typeof p.frame === "number") p.frame = 0
+            a.renderer.resetTemporalHistory()
+            // Re-render the same instant; canvas readback must occur in the submitting task.
+            a.step(0)
+            return { png: await (window as any).grab("image/png"), time: a.stormFrame.time, flash: a.stormFrame.flash,
+              exposure: a.exposureFrame ?? { multiplier: 1, adaptationEV: 0, glare: 0 } }
+          }, phase)
+          save(`${candidate}-${phase}.png`, result.png)
+          records.push({ subject, candidate, phase, time: result.time, flash: result.flash, exposure: result.exposure })
+          assert(phase !== "peak" || result.flash > 0.5, "Missed the flash")
+          assert(candidate === "today" || phase !== "after" || result.exposure.multiplier < 0.99, "Missing darker aftermath")
+        }
+      }
+      await page.close()
+    }
+    writeFileSync(resolve(out, `rain-review-${process.env.LOT_STORM_SUBJECTS ?? "all"}-${process.env.LOT_STORM_CANDIDATES ?? "all"}.json`), JSON.stringify({ viewport: [W, H], records }, null, 2))
   } else if (mode === "strike") {
     // 9 s at 60 fps: the leader, return stroke and restrikes, the afterimage, and the thunder arriving ~1 s later.
     const page = await open("&weather=storm")

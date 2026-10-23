@@ -1,6 +1,7 @@
 import { reactivePipelineDescriptor } from "../gpu/reactive"
 import type { WeatherSettings } from "./settings"
 import type { WeatherEave, WeatherExcludeRect, WeatherFrameState, WeatherLight } from "./state"
+import type { RainLightingSettings } from "./rain-lighting"
 
 export const MAX_WEATHER_LIGHTS = 12
 export const MAX_WEATHER_EXCLUDES = 8
@@ -155,7 +156,12 @@ fn evalWeatherLightAt(world: vec3f) -> vec3f {
     let x = sqrt(dPlan2) / max(r, 0.1);
     let win = (1.0 - x * x) * (1.0 - x * x);
     var att = lc.w * win / (1.0 + d3 * d3 * 0.22);
-    if (lcone.w > 0.5 && dPlan2 > 1e-4) {
+    if (W.anchor.w > 0.5) {
+      if (lcone.w >= -1.0) {
+        let c = dot(-d3Vec / d3, lcone.xyz);
+        att *= smoothstep(lcone.w, min(0.999, lcone.w + 0.15), c) * 2.85;
+      }
+    } else if (lcone.w > 0.5 && dPlan2 > 1e-4) {
       let dirXZ = dv / sqrt(dPlan2);
       let c = dot(dirXZ, lcone.xy);
       let coneFeather = smoothstep(lcone.z - 0.08, min(0.998, lcone.z + 0.12), c);
@@ -223,14 +229,16 @@ struct StreakOut {
   if (a <= 0.002) { return o; }
 
   // Evaluate scene light cones & pools at the droplet's 3D world position
-  let litRgb = evalWeatherLightAt(world);
+  let vertexHead = vi % 6u == 1u || vi % 6u == 2u || vi % 6u == 4u;
+  let sampleWorld = select(world - W.velExposure.xyz * W.velExposure.w * (0.85 + 0.30 * fract(h.z * 7.13)), world, vertexHead);
+  let litRgb = evalWeatherLightAt(select(world, sampleWorld, W.anchor.w > 0.5));
   let litIntensity = max(litRgb.r, max(litRgb.g, litRgb.b));
   let litOnly = W.lighting.x;
   let flash = W.lighting.y;
-  let unlitFloor = mix(0.62, 0.14, litOnly);
+  let unlitFloor = mix(0.62, select(0.14, 0.0, W.anchor.w > 0.5), litOnly);
   let lightGate = clamp(unlitFloor + litIntensity * (1.55 + 2.15 * litOnly) + flash * 1.85, 0.0, 3.6);
   a *= min(1.45, lightGate);
-  if (a <= 0.003) { return o; }
+  if (a <= 0.003 && W.anchor.w < 0.5) { return o; }
 
   let dropSize = W.shape.x * (0.65 + 0.70 * h.x * h.y);
   let vScale = 0.85 + 0.30 * fract(h.z * 7.13);
@@ -249,7 +257,7 @@ struct StreakOut {
   let vp = W.viewportFocal.xy;
   let sh = (ch.xy / ch.w) * vp * 0.5;
   var st = (ct.xy / ct.w) * vp * 0.5;
-  let maxLen = vp.y * select(0.095, 0.022, isSnow);
+  let maxLen = select(vp.y * select(0.095, 0.022, isSnow), W.viewportFocal.w, W.anchor.w > 0.5 && !isSnow);
   let rawLen = length(sh - st);
   if (rawLen > maxLen && rawLen > 1e-3) {
     ct = mix(ch, ct, maxLen / rawLen);
@@ -325,7 +333,14 @@ struct SplashOut {
   if (fade <= 0.0) { return o; }
 
   let h0 = rand3(vec3u(local, select(37u, 53u, isDrip), 0x5eedu));
-  let period = select(${SPLASH_PERIOD}, 0.36, isDrip);
+  var period = select(${SPLASH_PERIOD}, 0.36, isDrip);
+  var dripFallTime = 0.0;
+  if (isDrip && W.anchor.w > 0.5) {
+    let e = local % max(1u,u32(W.lighting.w));
+    let height = max(1.8,W.eaveHeights[e/4u][e%4u]-W.anchor.y);
+    dripFallTime = sqrt(2.0*height/9.81);
+    period = dripFallTime+0.28;
+  }
   let phase = W.eyeTime.w / period + h0.x;
   let cycle = u32(floor(phase));
   let age = fract(phase);
@@ -343,7 +358,7 @@ struct SplashOut {
     base = vec3f(wrappedXZ.x, groundY + 0.03, wrappedXZ.y);
   } else {
     let nEaves = max(1u, u32(W.lighting.w));
-    let eIdx = (local + cycle) % min(${MAX_WEATHER_EAVES}u, nEaves);
+    let eIdx = select(local+cycle,local,W.anchor.w>0.5) % min(${MAX_WEATHER_EAVES}u, nEaves);
     let seg = W.eaveSegs[eIdx];
     let eh = W.eaveHeights[eIdx / 4u][eIdx % 4u];
     let along = fract(h.x + h0.y * 0.37);
@@ -359,11 +374,14 @@ struct SplashOut {
   var a = fade * (1.0 - smoothstep(${SPLASH_BOX * 0.38}, ${SPLASH_BOX * 0.52}, distToAnchor));
   if (a <= 0.002) { return o; }
 
-  let litRgb = evalWeatherLightAt(base + vec3f(0.0, 0.25, 0.0));
+  let dripTime = age*period;
+  let dripHead = max(base.y,eaveY-0.5*9.81*dripTime*dripTime);
+  let lightPoint = select(base+vec3f(0.0,0.25,0.0),vec3f(base.x,dripHead,base.z),isDrip && vi>=6u && W.anchor.w>0.5);
+  let litRgb = evalWeatherLightAt(lightPoint);
   let litIntensity = max(litRgb.r, max(litRgb.g, litRgb.b));
   let litOnly = W.lighting.x;
   let flash = W.lighting.y;
-  let lightGate = clamp(mix(0.52, 0.12, litOnly) + litIntensity * (1.65 + 2.15 * litOnly) + flash * 1.8, 0.0, 3.6);
+  let lightGate = clamp(mix(0.52, select(0.12, 0.0, W.anchor.w > 0.5), litOnly) + litIntensity * (1.65 + 2.15 * litOnly) + flash * 1.8, 0.0, 3.6);
   a *= min(1.5, lightGate);
   if (a <= 0.003) { return o; }
 
@@ -377,10 +395,11 @@ struct SplashOut {
   var world = base;
   if (vi < 6u) {
     // Expanding horizontal ground ring (delicate thin water ripple)
-    let ringAge = select(age, clamp((age - 0.35) / 0.65, 0.0, 1.0), isDrip);
+    let ringAge = select(select(age, clamp((age - 0.35) / 0.65, 0.0, 1.0), isDrip),clamp((dripTime-dripFallTime)/0.28,0.0,1.0),isDrip && W.anchor.w>0.5);
     let r = size * (0.06 + 0.24 * ringAge);
     world = base + vec3f(uv.x * r, 0.02, uv.y * r);
-    a *= (1.0 - ringAge) * (1.0 - ringAge) * select(0.75, step(0.35, age) * 0.85, isDrip);
+    let impact = select(step(0.35,age),step(dripFallTime,dripTime),W.anchor.w>0.5);
+    a *= (1.0 - ringAge) * (1.0 - ringAge) * select(0.75, impact * 0.85, isDrip);
     o.kind = 0u;
   } else if (!isDrip) {
     // Upward splash crown fleck (brief micro-spray at impact)
@@ -395,13 +414,13 @@ struct SplashOut {
   } else {
     // Falling eave drip streak from overhang (y = eaveY) to ground (y = base.y)
     let fallFrac = clamp(age / 0.45, 0.0, 1.0);
-    let yHead = mix(eaveY, base.y, fallFrac * fallFrac);
-    let yTail = min(eaveY, yHead + 0.46);
+    let yHead = select(mix(eaveY, base.y, fallFrac * fallFrac),dripHead,W.anchor.w>0.5);
+    let yTail = min(eaveY, yHead + select(0.46,9.81*dripTime*W.velExposure.w,W.anchor.w>0.5));
     let toCamXZ = normalize(W.eyeTime.xz - base.xz + vec2f(1e-4));
     let right = vec3f(-toCamXZ.y, 0.0, toCamXZ.x);
     let yCur = mix(yTail, yHead, uv.y * 0.5 + 0.5);
     world = vec3f(base.x, yCur, base.z) + right * (uv.x * 0.020);
-    a *= (1.0 - smoothstep(0.38, 0.48, age)) * 0.88;
+    a *= select(1.0-smoothstep(0.38,0.48,age),1.0-smoothstep(dripFallTime-0.015,dripFallTime+0.015,dripTime),W.anchor.w>0.5) * 0.88;
     o.kind = 1u;
   }
 
@@ -505,6 +524,8 @@ export type WeatherPrepareInput = {
   groundY?: number
   ambientLum?: number
   lights?: readonly WeatherLight[]
+  /** Opt-in physical cone direction, light-gated visibility and shorter camera-relative streaks. */
+  rainLighting?: Readonly<RainLightingSettings>
   excludeRects?: readonly WeatherExcludeRect[]
   eaves?: readonly WeatherEave[]
   cameraDist?: number
@@ -683,7 +704,8 @@ export class WeatherRenderer {
     u[20] = focusX
     u[21] = groundY
     u[22] = focusZ
-    u[23] = 0
+    const rainLighting = input.rainLighting?.mode === "volume" ? input.rainLighting : null
+    u[23] = rainLighting ? 1 : 0
 
     const vpW = Math.max(1, camera?.width ?? input.viewportWidth)
     const vpH = Math.max(1, camera?.height ?? input.viewportHeight)
@@ -692,7 +714,7 @@ export class WeatherRenderer {
     u[24] = vpW
     u[25] = vpH
     u[26] = focalPx
-    u[27] = groundY
+    u[27] = rainLighting ? Math.min(64, Math.max(4, rainLighting.maxPixels)) : groundY
 
     const wrap = (v: number, box: number) => v - box * Math.floor(v / box)
     u[28] = wrap(state.driftX - focusX, NEAR_BOX)
@@ -712,7 +734,7 @@ export class WeatherRenderer {
     u[36] = vx
     u[37] = vy
     u[38] = vz
-    u[39] = 0.048 * settings.dropLength
+    u[39] = (rainLighting ? Math.min(0.05, Math.max(0.002, rainLighting.shutter)) : 0.048) * settings.dropLength
 
     u[40] = state.windX
     u[41] = state.windZ
@@ -738,10 +760,10 @@ export class WeatherRenderer {
 
     u[52] = 0.0085 * settings.dropSize
     u[53] = 1.15 * Math.sqrt(Math.max(0.4, settings.dropSize))
-    u[54] = 0.56 * Math.sqrt(Math.max(0.4, settings.dropSize))
+    u[54] = 0.56 * Math.sqrt(Math.max(0.4, settings.dropSize)) * (rainLighting ? Math.max(0.1, Math.min(1, rainLighting.splashScale)) : 1)
     u[55] = settings.snowMode ? 1 : 0
 
-    u[56] = settings.litOnly
+    u[56] = rainLighting ? 1 : settings.litOnly
     u[57] = state.flash
     u[58] = input.ambientLum ?? 0.35
     u[59] = eaveCount
@@ -781,6 +803,14 @@ export class WeatherRenderer {
       u[kOff + 1] = l.dz ?? 0
       u[kOff + 2] = l.cosHalf ?? -1
       u[kOff + 3] = l.isCone ? 1 : 0
+      if (rainLighting) {
+        const axis = l.axis ?? (l.isCone ? [l.dx ?? 0, 0, l.dz ?? 0] : null)
+        const length = axis ? Math.hypot(...axis) : 0
+        u[kOff] = length ? axis![0]! / length : 0
+        u[kOff + 1] = length ? axis![1]! / length : 0
+        u[kOff + 2] = length ? axis![2]! / length : 0
+        u[kOff + 3] = length ? l.cosHalf ?? -1 : -2
+      }
     }
 
     for (let i = 0; i < excludeCount; i++) {

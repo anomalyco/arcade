@@ -324,6 +324,14 @@ beams (`litOnly`), lit by the nearest practicals.
   Storm 7.69 between strikes.
 - Research: Garg & Nayar 2006 (streak appearance depends on light and view); Tatarchuk 2006 (ToyShop).
 
+**Light-volume rain and flash recovery (opt-in).** `weather/rain-lighting.ts` supplies typed controls for 3D light
+cones, endpoint-lit short streaks, smaller splashes and gravity-timed eave drips. `weather/exposure.ts` tracks bounded
+log-EV sensitivity per view: 0.3 s bright response, 3 s dark recovery, no shadow lift. Lot and the shared Lab world
+bind both under Weather, with independent Today defaults and Reset. The adapters use relative stimulus
+`1 + 48 × flash`, not measured scene luminance; Lot also applies dose-driven glare through its bloom before the
+single final exposure. Cost has not been isolated. Kit requested both as opt-ins; D-59 keeps Today's storm and
+parks the volumetric-cloud experiment on `weather-clouds-parked`.
+
 **Lightning as one event envelope.** A seeded stepped-leader channel with midpoint displacement, a return stroke and
 2–4 later strokes in the same channel inside half a second, and one scene-light pulse per strike that lights the
 ground, the fog, the cloud deck and the rain together. No white overlay and no exposure change. A flash limiter keeps

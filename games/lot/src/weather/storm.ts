@@ -4,6 +4,7 @@ import { BoltPass, BOLT_LOOK } from "@arcade/kit/weather/lightning-pass"
 import { FlashLimiter, makeStrike, pickStrikeLights, rng, strikeEnd, type BoltKind, type Strike, type StrikeLight, type StrikePlan } from "@arcade/kit/weather/lightning"
 import { LOT_WEATHER, type LotWeatherSettings } from "./settings"
 import { EAVES, SHELTER_RECTS } from "./shelter"
+import type { RainLightingSettings } from "@arcade/kit/weather/rain-lighting"
 
 /** Sky dome height: the channel disappears into the cloud below it. */
 const CEILING = 210
@@ -25,6 +26,7 @@ export type StormInput = {
   /** The lot's height fog: density (1/m), falloff (1/m). */
   fog: readonly [number, number]
   frame: Float32Array
+  rainLighting?: Readonly<RainLightingSettings>
 }
 
 /** A strike as the sound needs it: when its thunder arrives and from where. */
@@ -137,11 +139,11 @@ export class LotStorm {
     const st: WeatherFrameState = { ...state, flash: Math.min(1, flash) }
     const rain = Math.min(1, this.kit.intensity)
     const active = this.amount > 0.002 || this.strikes.length > 0
-    const lights = this.weatherLights(i.lamps)
+    const lights = this.weatherLights(i.lamps, i.rainLighting?.mode === "volume")
     const forward = [eye[0] + i.direction[0]! * 14, eye[2] + i.direction[2]! * 14] as const
     const weather: WeatherPrepareInput | null = rain > 0.005 ? {
       settings: kit, state: st, viewProj: i.frame, eye: i.eye, focusXZ: forward, viewportWidth: i.width, viewportHeight: i.height,
-      fovYRad: i.fovY, groundY: i.groundY, ambientLum: 0.06, lights, excludeRects: SHELTER_RECTS, eaves: EAVES, cameraDist: 10,
+      fovYRad: i.fovY, groundY: i.groundY, ambientLum: 0.06, lights, excludeRects: SHELTER_RECTS, eaves: EAVES, cameraDist: 10, rainLighting: i.rainLighting,
     } : null
     light = { ...light, scene: dark ? 0 : pick.sceneLight }
     const gust = evaluateWeatherGust(this.time, eye[0], eye[2], kit.windDir, kit.windGust)
@@ -173,14 +175,15 @@ export class LotStorm {
     this.thunder = [...this.thunder.filter(t => t.arrives > this.time - 30), { id: this.serial, kind: k.kind, distance: slant, bearing: p.bearing, arrives: k.t + slant / SPEED_OF_SOUND, power: p.power }]
   }
 
-  private weatherLights(lamps: readonly StormLamp[]) {
+  private weatherLights(lamps: readonly StormLamp[], volume = false) {
     const out = this.lights
     out.length = 0
     for (const l of lamps) {
       if (out.length >= 12) break
       const cone = l.axis && l.cosOuter !== undefined && Math.hypot(l.axis[0]!, l.axis[2]!) > 0.2
       out.push({ x: l.x, y: l.y, z: l.z, radius: Math.min(l.range, 26), r: l.color[0]!, g: l.color[1]!, b: l.color[2]!, power: l.power,
-        ...(cone ? { dx: l.axis![0]! / Math.hypot(l.axis![0]!, l.axis![2]!), dz: l.axis![2]! / Math.hypot(l.axis![0]!, l.axis![2]!), cosHalf: l.cosOuter, isCone: true } : {}) })
+        ...(cone ? { dx: l.axis![0]! / Math.hypot(l.axis![0]!, l.axis![2]!), dz: l.axis![2]! / Math.hypot(l.axis![0]!, l.axis![2]!), cosHalf: l.cosOuter, isCone: true } : {}),
+        ...(volume && l.axis ? { axis: [l.axis[0]!, l.axis[1]!, l.axis[2]!] as const, cosHalf: l.cosOuter } : {}) })
     }
     return out
   }
