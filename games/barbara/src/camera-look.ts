@@ -1,9 +1,9 @@
-import { BodycamRig } from "@arcade/kit/client/bodycam-rig"
+import { BodycamRig, type BodycamRigSettings } from "@arcade/kit/client/bodycam-rig"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { CAMERA_ARTIFACT_DEFAULTS, CameraArtifacts, cameraArtifactControls, type CameraArtifactFlicker, type CameraArtifactSettings, type CameraArtifactSource } from "@arcade/kit/gpu/post/camera-artifacts"
 import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CameraFilter, applyCameraFilterPreset, cameraFilterControls, createCameraFilterSettings, type CameraFilterSettings } from "@arcade/kit/gpu/post/camcorder"
-import { CAMERA_BLUR_DEFAULTS, CameraBlur } from "@arcade/kit/gpu/post/camera-blur"
+import { CAMERA_BLUR_DEFAULTS, CameraBlur, turnSpeed } from "@arcade/kit/gpu/post/camera-blur"
 import { FinalPassChain } from "@arcade/kit/gpu/post/final-chain"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { torchProfile } from "@arcade/kit/forest/settings"
@@ -42,8 +42,6 @@ export const CAMERA_LOOK_DEFAULTS = {
   /** Hold the right mouse button to zoom (a camcorder's motor zoom), to this much of the FOV at full tele. */
   zoom: false,
   zoomTele: 0.35,
-  /** While the map is up, the look eases off by this much so the sheet reads (0 keeps it all). */
-  mapClarity: 0.6,
 }
 export type CameraLookSettings = typeof CAMERA_LOOK_DEFAULTS
 
@@ -154,13 +152,25 @@ export type CameraLookFrame = {
   place: PlaceLights
   /** The spider's eyes, drawn whatever the look (`Eyeshine.drawSpider`). */
   spiderEyes?: readonly SpiderEye[]
-  /** How far your map is up (0…1): the blur and the look ease off while you read it. */
+  /** How far your map is up (0…1): the whole look fades off as it comes up, so the sheet (drawn before the look) stays sharp. */
   mapRaise: number
   /** The camera feel's motion blur (×) and reduce camera motion. */
   feelBlur: number
   reduced: boolean
   /** The zoom button is held (looks with a motor zoom). */
   zoomHeld: boolean
+  /** The view's vertical field of view (radians) and aspect, for how fast a turn sweeps the screen. */
+  fovY: number
+  aspect: number
+}
+
+/**
+ * The chest rig from the filter's settings with its sway, torso lag and step bob scaled by `motion` (0 under reduced
+ * motion); the lens and the chest mount stay, so the fisheye still matches the render.
+ */
+export function bodycamRig(fs: CameraFilterSettings, motion: number): BodycamRigSettings {
+  const m = Math.max(0, Math.min(1, motion))
+  return { lens: fs.bodyLens, mount: fs.bodyMount, sway: fs.bodySway * m, lag: fs.bodyLag * m, bob: fs.bodyBob * m }
 }
 
 /**
@@ -197,6 +207,7 @@ export class CameraLook {
   private readonly rig = new BodycamRig()
   private lastEye: readonly number[] = [0, 0, 0]
   private lastYaw = 0
+  private lastPitch = 0
   private lastT = 0
   private world: WoodsWorld | null = null
   private near: ReturnType<typeof treesNear> = []
@@ -214,7 +225,7 @@ export class CameraLook {
     this.chain = new FinalPassChain([this.blur, this.lens, this.filter, this.codec])
     renderer.setFinalPass(this.chain)
     const fs = this.filter.settings
-    camera.rig = (cam, dt, aspect) => this.rig.step(cam, dt, aspect, { lens: fs.bodyLens, mount: fs.bodyMount, sway: fs.bodySway, lag: fs.bodyLag, bob: fs.bodyBob }, fs.strength, fs.mode === "bodycam")
+    camera.rig = (cam, dt, aspect) => this.rig.step(cam, dt, aspect, bodycamRig(fs, this.filter.motion), fs.strength, fs.mode === "bodycam")
     const sync = () => queueMicrotask(() => panel.sync())
     panel.addControls(this.settings as unknown as Record<string, string | number | boolean>, this.lookControls(sync), { ...CAMERA_LOOK_DEFAULTS })
     panel.addControls(this.artifacts as unknown as Record<string, string | number | boolean>, cameraArtifactControls({ group: GROUP, prefix: "woods.artifacts.", subsection: "Realism" }), { ...CAMERA_ARTIFACT_DEFAULTS })
@@ -231,7 +242,6 @@ export class CameraLook {
       { key: "woods.cameraLookNote", label: "This look", group: GROUP, type: "readout", read: () => CAMERA_LOOKS[this.settings.look]?.note ?? "" },
       { key: "woods.lookBlur", field: "blur", label: "Motion blur on fast turns", group: GROUP, subsection: "Feel", min: 0, max: 2, step: 0.05, unit: "×" },
       { key: "woods.lookBob", field: "bob", label: "Extra head bob", group: GROUP, subsection: "Feel", min: 0, max: 2, step: 0.05, unit: "×" },
-      { key: "woods.mapClarity", field: "mapClarity", label: "Eases off while you read the map", group: GROUP, subsection: "Feel", min: 0, max: 1, step: 0.05, unit: "×" },
       { key: "woods.lookZoom", field: "zoom", label: "Motor zoom (hold right mouse)", group: GROUP, subsection: "Feel", type: "toggle" },
       { key: "woods.lookZoomTele", field: "zoomTele", label: "Full tele (× the FOV)", group: GROUP, subsection: "Feel", min: 0.15, max: 0.9, step: 0.01, unit: "×", visible: (s) => s["woods.lookZoom"] === true },
       { key: "woods.irAuto", field: "irAuto", label: "Infrared when your torch is off", group: GROUP, subsection: "World", type: "toggle" },
@@ -249,6 +259,11 @@ export class CameraLook {
     Object.assign(this.settings, CAMERA_LOOK_DEFAULTS, p.look ?? {}, { look: id })
     this.infrared = false
     this.dark = 0
+    // A look without a zoom must not keep the last one's tele.
+    this.zoomLevel = 0
+    this.fovScale = 1
+    this.zooming = false
+    this.filter.zoom = 0
     Object.assign(this.artifacts, CAMERA_ARTIFACT_DEFAULTS, p.artifacts ?? {})
     Object.assign(this.filter.settings, CAMERA_FILTER_DEFAULTS, p.filter ?? {})
     if (this.filter.settings.mode === "bodycam") applyCameraFilterPreset(this.filter.settings, "bodycam", this.filter.settings.bodyPreset)
@@ -306,6 +321,7 @@ export class CameraLook {
   frame(f: CameraLookFrame) {
     const s = this.settings, look = this.opts.forest.settings, cam = this.opts.forest.camera
     this.world = f.world
+    const prevYaw = this.lastYaw
     this.lastEye = f.eye; this.lastYaw = f.yaw; this.lastT = f.t
     const halfAngle = (look.torchAngle * Math.PI) / 180
     const profile = torchProfile(look)
@@ -331,10 +347,19 @@ export class CameraLook {
     this.zooming = this.zoomLevel !== wasZoom
     this.filter.zoom = this.zoomLevel
     this.filter.battery = Math.max(0.05, 1 - f.t / (60 * 60))
-    // Blur on fast turns: the look's share of the feel's, none while reading or under reduced motion.
+    // Reduced motion: no shake, rig sway or shutter blur in the filter, and no turn blur.
+    this.filter.motion = f.reduced ? 0 : 1
+    // The held map is drawn before the final passes, so every one of them fades off as it comes up; stamps and the
+    // viewfinder are drawn at full strength regardless.
+    const clear = Math.max(0, Math.min(1, 1 - f.mapRaise))
+    this.filter.strengthScale = clear
+    this.lens.strengthScale = clear
+    this.codec.strengthScale = clear
+    // Blur on fast turns: the look's share of the feel's, and only while the view is actually turning that fast.
     this.blur.settings.strength = s.blur * f.feelBlur
-    this.blur.scale = f.reduced ? 0 : 1 - f.mapRaise
-    this.filter.strengthScale = 1 - s.mapClarity * f.mapRaise
+    this.blur.scale = f.reduced ? 0 : clear
+    this.blur.speed = turnSpeed(f.yaw - prevYaw, f.pitch - this.lastPitch, f.dt, f.fovY, f.aspect)
+    this.lastPitch = f.pitch
     if (s.irLight || this.infrared) {
       f.place.scene.push({ id: 990, x: f.eye[0]!, y: f.eye[2]!, h: f.eye[1]! - 0.05, r: 16, color: [1, 1, 1], power: s.irPower, size: 0.03, unshadowed: true, beam: { axis, halfAngle: 0.55 } })
     }

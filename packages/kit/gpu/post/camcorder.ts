@@ -572,13 +572,6 @@ fn rgb(c: vec3f) -> vec3f {
   let col = u.v1.w * k;
   let a = 0.09 * col;
   iq = vec2f(cos(a) * iq.x - sin(a) * iq.y, sin(a) * iq.x + cos(a) * iq.y) * (1.0 + 0.4 * col) + vec2f(0.012, 0.0) * col;
-  // Burned-in stamp, soft as the tape, its colour late like everything else.
-  if (u.d.w > 0.5) {
-    let o = textureSampleLevel(overlay, samp, uv, 0.0);
-    y = y * (1.0 - o.a) + yiq(o.rgb).x;
-    let oc = textureSampleLevel(overlay, samp, uv - vec2f(cw * 0.35, 0.0), 0.0);
-    iq = iq * (1.0 - oc.a) + yiq(oc.rgb).yz;
-  }
   // Tape noise: streaks stretched along the line, low-frequency chroma noise.
   let nz = u.v0.z * k;
   let cx = px.x / (size.x / 220.0);
@@ -613,6 +606,11 @@ fn rgb(c: vec3f) -> vec3f {
   res.hist = vec4f(c, 1.0);
   // Interlace: every other line is still the previous field, so motion combs.
   if (u.b.w < 0.5 && ((lu + tick) & 1u) == 1u) { c = mix(c, textureLoad(hist, ip, 0).rgb, il); }
+  // The stamp and viewfinder last, at full strength and unwarped: the picture is the tape's, the text stays readable.
+  if (u.d.w > 0.5) {
+    let o = textureSampleLevel(overlay, samp, px / size, 0.0);
+    c = c * (1.0 - o.a) + o.rgb;
+  }
   res.color = vec4f(c, 1.0);
   return res;
 }
@@ -1136,7 +1134,9 @@ export class CameraFilter implements FinalPass {
     const seed = this.seed
     const body = mode === "body"
     const wave = (a: number, b: number, c: number, o: number) => Math.sin(time * a + o) * 0.6 + Math.sin(time * b + o * 1.7) * 0.3 + Math.sin(time * c + o * 2.3) * 0.1
-    const shake = mode === "phone" ? s.phoneShake * k * Math.max(0, Math.min(1, this.motion)) : 0
+    // `motion` (reduced motion, authored cameras) scales the shake and the shutter blur on pans.
+    const moving = Math.max(0, Math.min(1, this.motion))
+    const shake = mode === "phone" ? s.phoneShake * k * moving : 0
     const amp = 4 * shake * (height / 1080)
     const crop = mode === "phone" && s.phoneVertical ? Math.min(1, (height * 9) / 16 / width) : 1
     const x0 = 0.5 - crop / 2, x1 = 0.5 + crop / 2
@@ -1155,7 +1155,7 @@ export class CameraFilter implements FinalPass {
       ...rect,
       ...(body ? [0.3, s.bodySharpen, s.bodyNoise, 0.4] : [s.phoneHdr, s.phoneSharpen, s.phoneNoise, s.phoneDenoise]),
       ...(body ? [s.bodyExposure, 0.35, 0, rolling] : mode === "vhs" ? [s.vhsIris, 0, 0, rolling] : [s.phoneExposure, s.phoneWhiteBalance, s.phoneFocus, rolling]),
-      ...(body ? [s.bodyMotionBlur, s.bodyCompression, 0, 1 + 0.01 * k] : [s.phoneMotionBlur, s.phoneCompression, s.phoneFlare, 1 + 0.035 * k]),
+      ...(body ? [s.bodyMotionBlur * moving, s.bodyCompression, 0, 1 + 0.01 * k] : [s.phoneMotionBlur * moving, s.phoneCompression, s.phoneFlare, 1 + 0.035 * k]),
       x0, x1, 1 / (2 * fps), 0.012 * rolling * k,
       s.vhsSoftness, s.vhsChroma, s.vhsNoise, s.vhsDropouts,
       s.vhsTracking, s.vhsHeadSwitch, s.vhsInterlace, s.vhsColor,

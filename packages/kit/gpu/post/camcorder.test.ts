@@ -168,3 +168,41 @@ describe("camera filter lifecycle", () => {
     expect(state).toMatchObject({ valid: false, lastMode: "today" })
   })
 })
+
+describe("camera filter motion and map clearing", () => {
+  const packed = (filter: CameraFilter, mode: "phone" | "body" | "vhs") => {
+    const f = new Float32Array(20)
+    f.set(mat4.perspective(1, 16 / 9, 0.1, 100), 0)
+    ;(filter as unknown as { pack: (...a: unknown[]) => void }).pack(mode, f, 1, 1 / 60, false, false, 1600, 900)
+    return (filter as unknown as { data: Float32Array }).data
+  }
+
+  test("reduced motion (motion 0) stops the phone shake and both shutter blurs", () => {
+    for (const mode of ["phone", "body"] as const) {
+      const filter = new CameraFilter({} as GPUDevice, "bgra8unorm", { ...createCameraFilterSettings(), phoneShake: 1, phoneMotionBlur: 1, bodyMotionBlur: 1 })
+      const on = [...packed(filter, mode)]
+      filter.motion = 0
+      const off = packed(filter, mode)
+      // d: shake x, y, roll (12..14); p2.x: shutter blur (28).
+      expect(on[28]).toBe(1)
+      expect(off[28]).toBe(0)
+      expect([off[12], off[13], off[14]].map(Math.abs)).toEqual([0, 0, 0])
+      if (mode === "phone") expect(Math.abs(on[12]!) + Math.abs(on[13]!)).toBeGreaterThan(0)
+    }
+  })
+
+  test("a cleared picture (strengthScale 0) still draws its stamp", () => {
+    const filter = new CameraFilter({} as GPUDevice, "bgra8unorm", createCameraFilterSettings())
+    filter.strengthScale = 0
+    const u = packed(filter, "vhs")
+    expect(u[5]).toBe(0)
+    expect(u[15]).toBe(1)
+  })
+
+  test("the VHS stamp is composited after the tape, unwarped and at full alpha", () => {
+    const vhs = CAMERA_FILTER_WGSL.vhs
+    const body = vhs.slice(vhs.indexOf("@fragment"))
+    expect(body.indexOf("textureSampleLevel(overlay")).toBeGreaterThan(body.indexOf("Interlace"))
+    expect(body).toContain("c = c * (1.0 - o.a) + o.rgb")
+  })
+})

@@ -17,6 +17,14 @@ export type CameraBlurSettings = {
 export const CAMERA_BLUR_DEFAULTS: CameraBlurSettings = { strength: 0, threshold: 0.35, maxLength: 0.04 }
 
 const SHUTTER = 1 / 50
+
+/** Turn speed in screen widths per second for `CameraBlur.speed`: the view's angular rate over its horizontal field of view. */
+export function turnSpeed(dYaw: number, dPitch: number, dt: number, fovY: number, aspect: number): number {
+  if (!(dt > 1e-5)) return 0
+  const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
+  const fovX = 2 * Math.atan(Math.tan(fovY / 2) * aspect)
+  return Math.hypot(wrap(dYaw), dPitch * aspect) / dt / Math.max(fovX, 0.05)
+}
 const UNIFORM_FLOATS = 24
 
 /**
@@ -69,6 +77,12 @@ export class CameraBlur implements FinalPass {
   readonly settings: CameraBlurSettings
   /** Multiplies `strength` for this frame (a raised map, reduced motion). */
   scale = 1
+  /**
+   * How fast the view is turning, in screen widths per second (`turnSpeed`), from the game each frame. The pass only
+   * runs (and only allocates its texture) while that is near `threshold`; at rest it costs nothing. Infinity, the
+   * default, leaves it on whenever `strength` is.
+   */
+  speed = Infinity
   private targets: { width: number; height: number; source: GPUTexture; view: GPUTextureView } | null = null
   private pipe: GPURenderPipeline | null = null
   private group: GPUBindGroup | null = null
@@ -85,7 +99,8 @@ export class CameraBlur implements FinalPass {
   }
 
   get active(): boolean {
-    const on = this.settings.strength * this.scale > 0.001
+    // A little under the threshold, so the first frames of a whip turn already have last frame's matrix.
+    const on = this.settings.strength * this.scale > 0.001 && this.speed > this.settings.threshold * 0.7
     if (!on) this.valid = false
     return on
   }

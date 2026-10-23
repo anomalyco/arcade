@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "../test-naga"
-import { CAMERA_BLUR_DEFAULTS, CAMERA_BLUR_WGSL, CameraBlur, rotationReprojection } from "./camera-blur"
+import { CAMERA_BLUR_DEFAULTS, CAMERA_BLUR_WGSL, CameraBlur, rotationReprojection, turnSpeed } from "./camera-blur"
 
 /** The renderer's frame layout: viewProj at 0..15, eye at 16..18, time at 19. */
 function frame(eye: [number, number, number], yaw: number, time = 0): Float32Array {
@@ -38,4 +38,26 @@ describe("camera blur", () => {
   })
 
   test("its shader validates", () => validateWgsl(CAMERA_BLUR_WGSL))
+})
+
+describe("camera blur at rest", () => {
+  test("on but still: inactive, so nothing is allocated or drawn; a whip turn switches it on", () => {
+    const blur = new CameraBlur({} as GPUDevice, "bgra8unorm", { ...CAMERA_BLUR_DEFAULTS, strength: 0.25 })
+    blur.speed = 0
+    expect(blur.active).toBe(false)
+    expect((blur as unknown as { targets: unknown }).targets).toBeNull()
+    blur.speed = CAMERA_BLUR_DEFAULTS.threshold * 2
+    expect(blur.active).toBe(true)
+    blur.scale = 0
+    expect(blur.active).toBe(false)
+  })
+
+  test("turn speed: a quarter turn a second over a 90° view sweeps one screen width a second", () => {
+    const fovX = Math.PI / 2, aspect = 16 / 9
+    const fovY = 2 * Math.atan(Math.tan(fovX / 2) / aspect)
+    expect(turnSpeed(Math.PI / 2 / 60, 0, 1 / 60, fovY, aspect)).toBeCloseTo(1, 5)
+    expect(turnSpeed(0, 0, 1 / 60, fovY, aspect)).toBe(0)
+    // Across ±π the shortest way round counts.
+    expect(turnSpeed(2 * Math.PI - 0.01, 0, 1 / 60, fovY, aspect)).toBeCloseTo(0.01 * 60 / fovX, 5)
+  })
 })

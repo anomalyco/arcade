@@ -7,7 +7,9 @@ import { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
 import { ForestStorm, forestRainLightControls, forestStormControls, forestStormEyeControls } from "@arcade/kit/forest/storm"
-import type { ForestTorch } from "@arcade/kit/forest/view"
+import type { ForestTorch, ForestGlow } from "@arcade/kit/forest/view"
+import type { Particles } from "@arcade/kit/fx/particles"
+import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { createGameShell, createShellQuality } from "@arcade/kit/shell"
 import { hasSpider, planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { answerCall, DISTANT_SOUNDS, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
@@ -208,6 +210,8 @@ async function main() {
   const feel = new CameraFeel()
   camera.feel = feel
   const juice = new Juice()
+  /** What the forest gets from the flares each frame: their glows, and the particle pool lit by them and your torch. */
+  const flareFrame: { glows: readonly ForestGlow[]; particles: { pool: Particles; lights: readonly SceneLight[] } } = { glows: [], particles: { pool: flares.pool, lights: [] } }
   const spawn = world.camp.spawn
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
@@ -756,8 +760,8 @@ async function main() {
     place.scene.push(...lit.scene)
     place.fog.push(...lit.fog)
     // Your breath and kicked leaves, in the same particle pool, lit by your torch.
-    const torchLight = juice.frame({ dt, pool: flares.pool, eye: camera.eye, yaw: camera.yaw, vx: camera.body.vx, vz: camera.body.vy, walkSpeed: settings.walkSpeed, ground: standHeight(world, at.x, at.z), steps: camera.walk.events, litter, torch: level > 0 ? { pos: ownOrigin, dir: ownAxis, level: ownLevel } : null, settings: feel.settings, playing })
-    if (torchLight.length) lit.particles = { ...lit.particles, lights: [...lit.particles.lights, ...torchLight] }
+    flareFrame.glows = lit.glows
+    flareFrame.particles.lights = juice.frame({ dt, pool: flares.pool, flareLights: lit.particles.lights, eye: camera.eye, yaw: camera.yaw, vx: camera.body.vx, vz: camera.body.vy, walkSpeed: settings.walkSpeed, ground: standHeight(world, at.x, at.z), steps: camera.walk.events, litter, torch: level > 0 ? { pos: ownOrigin, dir: ownAxis, level: ownLevel } : null, settings: feel.settings, playing })
     flares.draw(fp, state, world)
     if (session.self.flares !== pocketFlares) { pocketFlares = session.self.flares; controlsHud() }
     // Every torch is a photometric beam: the forest renderer lights, shadows and scatters it (your own gets the
@@ -766,7 +770,7 @@ async function main() {
     debug.beams = beams.length
     if (torchTrace && level > 0) torchTrace.push({ origin: [...ownOrigin], aim: [...axis], axis: [...ownAxis], eye: [...camera.eye], vp: [...vp] })
     const spiderBatches = spider.frame(session.spider, dt)
-    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place, spiderEyes: spider.eyes(), mapRaise: p.mapRaise, feelBlur: feel.settings.blur, reduced: settings.reduceMotion, zoomHeld: playing && keys.has("Mouse2") })
+    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place, spiderEyes: spider.eyes(), mapRaise: p.mapRaise, feelBlur: feel.settings.blur, reduced: settings.reduceMotion, zoomHeld: playing && keys.has("Mouse2"), fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, aspect: width / Math.max(1, height) })
     if (cameraLook.settings.zoom !== zoomPrompt) { zoomPrompt = cameraLook.settings.zoom; controlsHud() }
     audio.body(feel.fear < 0.15 ? 0 : Math.min(1, (feel.fear - 0.15) / 0.85), cameraLook.zooming)
     if (trace) {
@@ -787,7 +791,7 @@ async function main() {
     audio.storm(sf)
     feel.storm(sf.thunder, sf.clock)
     groundWet = sf.rain
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: [...creatures.frame(world, time), ...spiderBatches], flares: lit, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: [...creatures.frame(world, time), ...spiderBatches], flares: flareFrame, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
     const atRadio = playing && canVote(state.night, p)

@@ -421,6 +421,8 @@ export class CameraArtifacts implements FinalPass {
   private af = { lens: 0.1, v: 0, aim: 0.1, off: 0, hunt: 0 }
   /** Bitrate envelope: how starved the encoder is (fast attack on motion, slow recovery). */
   private starve = 0
+  /** Multiplies every effect's amount this frame (a game clearing the picture while you read a map), leaving the knobs alone. */
+  strengthScale = 1
 
   constructor(private readonly device: GPUDevice, private readonly format: GPUTextureFormat, readonly settings: CameraArtifactSettings, readonly stage: CameraArtifactStage, private readonly seed = 7) {}
 
@@ -509,9 +511,10 @@ export class CameraArtifacts implements FinalPass {
   private pack(frame: Float32Array, time: number, dt: number, reset: boolean, width: number, height: number) {
     const s = this.settings, u = this.data, inp = this.input
     const codec = this.stage === "codec"
+    const k = Math.max(0, Math.min(1, this.strengthScale))
     const sc = height / 1080
     // Focus.
-    const fa = s.focusHunt && !codec ? s.focusAmount : 0
+    const fa = s.focusHunt && !codec ? s.focusAmount * k : 0
     this.stepFocus(dt, inp.focus, fa)
     const subject = 1 / Math.max(0.3, inp.focus)
     const blur = fa > 0 ? Math.max(-14, Math.min(14, (this.af.lens - subject) * 10 * fa)) * sc : 0
@@ -561,8 +564,8 @@ export class CameraArtifacts implements FinalPass {
       width, height, time, dt,
       this.flow[0], this.flow[1], reset ? 1 : 0, this.seed,
       blur, breath, Math.max(0, inp.gain), index / fps,
-      lens && s.flare ? s.flareAmount : 0, lens && s.dirt ? s.dirtAmount : 0, lens && s.condensation ? 1 : 0, lens && s.pwm ? s.pwmAmount : 0,
-      lens && s.sensorGain ? s.gainAmount : 0, lens && s.infrared ? 1 : 0, codec && s.compression ? s.compressionAmount : 0, ns,
+      lens && s.flare ? s.flareAmount * k : 0, lens && s.dirt ? s.dirtAmount * k : 0, lens && s.condensation ? k : 0, lens && s.pwm ? s.pwmAmount * k : 0,
+      lens && s.sensorGain ? s.gainAmount * k : 0, lens && s.infrared ? k : 0, codec && s.compression ? s.compressionAmount * k : 0, ns,
       nf, s.condensationAmount, 1 / 32, pump,
       s.gainSmear, s.infraredBloom, index, index % fps === 0 ? 1 : 0,
     ], 0)
