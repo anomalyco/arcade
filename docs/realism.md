@@ -243,7 +243,9 @@ cross-fades, re-rendering only on change, and a fixed 3×3 hardware PCF (no per-
 - Cost: +0.37 ms for two slots sampling (`mini`); each slot change renders one 1024² layer.
 - Pitfalls: cutout foliage isn't a caster, so ferns cast nothing (woods research). Fade a slot by camera distance near
   the pool's edge (`SpotSlot.reach`), not only on hand-over. Rendering a moving torch's map every frame is a separate
-  cost from sampling; budget it separately.
+  cost from sampling; budget it separately. A caster the GPU writes (skinned people) must bring its buffer up to this
+  frame in the shadow encoder (`SpotShadowCaster.prepare`): maps render before the scene's passes, and one drawn from
+  last frame's pose leaves black slivers beside every moving edge (m05's vest zip in Barbara).
 
 **Soft character shadows from capsules.** Each body is 14 bone capsules; every fragment gets a contact term and a
 soft shadow from each of its four strongest lights, sharp at the feet and widening up the body. It exists only where

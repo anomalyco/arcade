@@ -6,6 +6,7 @@
 // ffmpeg. --gpu times the GPU frame
 // (timestamp queries, median of 48) with the five friends in view, realistic against blocky, alternating three times.
 // --past 4,10: one friend walking across your beam at each distance (m), you standing still: past-<m>.mp4.
+// --query a=b&c=d: extra page parameters (debug views such as peopleDebug=light).
 // --cast makehuman,rocketbox: every shot and clip once per people model, named <shot>-<cast> (Barbara's `?cast=`).
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
@@ -18,6 +19,7 @@ const only = arg("--shots", "")
 const clip = process.argv.includes("--clip"), gpu = process.argv.includes("--gpu")
 const past = arg("--past", "").split(",").filter(Boolean).map(Number)
 const casts = arg("--cast", "").split(",").filter(Boolean)
+const query = arg("--query", "")
 const FRIENDS = 5
 mkdirSync(out, { recursive: true })
 const root = resolve("dist/arcade/barbara"), prefix = "/arcade/barbara/"
@@ -113,7 +115,7 @@ const page = await browser.newPage({ viewport: { width: w, height: h } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
-await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=high&people=real${casts[0] ? `&cast=${casts[0]}` : ""}`, { waitUntil: "load" })
+await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=high&people=real${casts[0] ? `&cast=${casts[0]}` : ""}${query ? `&${query}` : ""}`, { waitUntil: "load" })
 await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 180000 }).catch((e) => { console.log(errors.join("\n")); throw e })
 await page.evaluate((n) => {
   for (const el of document.querySelectorAll<HTMLElement>("#start, .arcade-shell, #hud, #prompt, #objective, #subs, #goal")) el.style.display = "none"

@@ -6,13 +6,20 @@ import {
   SPOT_SHADOW_DEFAULTS,
   SPOT_SHADOW_UNIFORM_FLOATS,
   SpotShadowPicker,
+  SpotShadows,
   packSpotShadows,
   spotShadowReach,
   spotShadowControls,
   spotViewProj,
   type SpotCandidate,
+  type SpotShadowCaster,
   type Vec3,
 } from "./spot-shadows"
+
+const g = globalThis as Record<string, unknown>
+g.GPUShaderStage ??= { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 }
+g.GPUBufferUsage ??= { VERTEX: 32, UNIFORM: 64, COPY_DST: 8 }
+g.GPUTextureUsage ??= { RENDER_ATTACHMENT: 16, TEXTURE_BINDING: 4 }
 
 const lamp = (id: number, x: number, z: number, intensity = 1000): SpotCandidate => ({ id, pos: [x, 7, z], axis: [0, -1, 0], cosOuter: Math.cos(1.1), range: 40, intensity })
 const apply = (m: Float32Array, p: Vec3) => {
@@ -89,6 +96,30 @@ describe("spot shadow picker", () => {
     expect(p.update([lamp(1, 0, 6)], [0, 1.7, 0], 1 / 60)).toEqual([])
     expect(SPOT_SHADOW_DEFAULTS.count).toBe(0)
     expect(spotShadowControls()[0]).toMatchObject({ key: "count", min: 0 })
+  })
+})
+
+describe("spot shadow maps", () => {
+  test("GPU-written casters (skinned people) are brought up to this frame before a map draws them, once each", () => {
+    const log: string[] = []
+    const stub = (): unknown => new Proxy(() => stub(), { get: (_t, k) => (k === "width" ? 1024 : stub()) })
+    const device = new Proxy({}, { get: (_t, k) => (k === "queue" ? { writeBuffer: () => {} } : () => stub()) }) as GPUDevice
+    const enc = {
+      beginRenderPass: () => {
+        log.push("map")
+        return { setBindGroup() {}, setPipeline() {}, setVertexBuffer() {}, draw: () => log.push("draw"), end() {} }
+      },
+    } as unknown as GPUCommandEncoder
+    const skin = () => log.push("skin")
+    const people: SpotShadowCaster = { buffer: {} as GPUBuffer, count: 3, stride: 32, prepare: skin }
+    const world: SpotShadowCaster = { buffer: {} as GPUBuffer, count: 3, stride: 32 }
+    const spots = new SpotShadows(device, { count: 2 })
+    const update = () => spots.update(enc, [lamp(1, 0, 6), lamp(2, 6, 0)], [0, 1.7, 0], 1 / 60, (id) => id, [world, people, { ...people }])
+    update()
+    expect(log).toEqual(["skin", "map", "draw", "draw", "draw", "map", "draw", "draw", "draw"])
+    log.length = 0
+    update()
+    expect(log).toEqual([])
   })
 })
 

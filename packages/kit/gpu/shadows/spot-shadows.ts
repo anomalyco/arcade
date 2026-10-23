@@ -389,7 +389,20 @@ export type SpotShadowMask = { view: GPUTextureView; cutoff: number; layer?: num
 export type SpotShadowInstances = { buffer: GPUBuffer; count: number; first?: number }
 
 /** Geometry to draw into the maps: a vertex buffer with float32x3 position at offset 0, optionally cut-out or instanced. */
-export type SpotShadowCaster = { buffer: GPUBuffer; count: number; stride: number; firstVertex?: number; mask?: SpotShadowMask; instances?: SpotShadowInstances }
+export type SpotShadowCaster = {
+  buffer: GPUBuffer
+  count: number
+  stride: number
+  firstVertex?: number
+  mask?: SpotShadowMask
+  instances?: SpotShadowInstances
+  /**
+   * Brings `buffer` up to this frame in `enc` before any map draws it, for casters the GPU writes (skinned people):
+   * otherwise a map rendered before the scene's own passes shadows last frame's pose. Called once per distinct
+   * function per update, and only when a map re-renders.
+   */
+  prepare?: (enc: GPUCommandEncoder) => void
+}
 
 const INSTANCE_LAYOUT: GPUVertexBufferLayout = { arrayStride: 32, stepMode: "instance", attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }, { shaderLocation: 4, offset: 16, format: "float32x4" }] }
 
@@ -518,6 +531,7 @@ export class SpotShadows {
     packSpotShadows(this.data, slots, frameIndexOf, this.settings)
     this.device.queue.writeBuffer(this.uniform, 0, this.data)
     this.rendered = 0
+    if (slots.some((s) => s.dirty && s.light)) for (const prepare of new Set(casters.map((c) => c.prepare))) prepare?.(enc)
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]!
       if (!s.dirty || !s.light) continue
