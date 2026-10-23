@@ -3,6 +3,10 @@
  * only when their iteration order is irrelevant to the simulation. No implicit omissions.
  */
 export function replayHash(value: unknown): string {
+  return hashValue(value)
+}
+
+function hashValue(value: unknown, normalizeNumber?: (value: number) => number): string {
   let hash = 0x811c9dc5
   const bytes = new DataView(new ArrayBuffer(8))
   const parents = new Set<object>()
@@ -20,9 +24,10 @@ export function replayHash(value: unknown): string {
       case "boolean": word(v ? 3 : 2); return
       case "number":
         word(4)
+        const number = normalizeNumber ? normalizeNumber(v) : v
         // A single canonical NaN; preserve infinities, signed zero and every finite bit.
-        if (Number.isNaN(v)) { word(0); word(0x7ff80000); return }
-        bytes.setFloat64(0, v, true)
+        if (Number.isNaN(number)) { word(0); word(0x7ff80000); return }
+        bytes.setFloat64(0, number, true)
         word(bytes.getUint32(0, true)); word(bytes.getUint32(4, true))
         return
       case "string": word(5); text(v); return
@@ -77,6 +82,11 @@ export type ReplaySim<S, I> = {
    * Read synchronously; no clone is needed. Do not include wall clocks or render state.
    */
   fields(state: S): Record<string, unknown>
+  /** Optional snapshot-only numeric projection for cross-runtime math drift.
+   * Must be pure; never changes sim state or the exact input/recording hash.
+   * Document precision and bump `version` whenever this policy changes.
+   */
+  normalizeNumber?(value: number): number
 }
 
 export type ReplayGolden = {
@@ -101,7 +111,7 @@ function capture<S, I>(sim: ReplaySim<S, I>, state: S, trace: ReplayGolden): voi
   const hashes: Record<string, string> = Object.create(null)
   const tick = trace.hashes.length
   for (const key of Object.keys(fields)) {
-    hashes[key] = replayHash(fields[key])
+    hashes[key] = hashValue(fields[key], sim.normalizeNumber)
     // Empty string means absent, distinct from a field whose value is undefined.
     trace.fields[key] ??= Array<string>(tick).fill("")
   }

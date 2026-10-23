@@ -30,6 +30,28 @@ test("recorded multiplayer inputs survive JSON and replay every tick", () => {
   expect(() => assertReplayMatches(trace, golden)).not.toThrow()
 })
 
+test("numeric projection only affects state hashes, retaining exact simulation and input values", () => {
+  const { recording, golden } = recorded()
+  const projected = { ...sim, normalizeNumber: Math.round }
+  const states: number[] = []
+  const trace = replay({ ...projected, fields(s) {
+    states.push(s.x)
+    return { nested: [sim.fields(s)] }
+  } }, recording)
+  const exact: number[] = []
+  replay({ ...sim, fields(s) { exact.push(s.x); return sim.fields(s) } }, recording)
+  expect(states).toEqual(exact)
+  expect(states[1]).not.toBe(Math.round(states[1]!))
+  expect(trace.recordingHash).toBe(golden.recordingHash)
+  expect(replay(projected, recording).hashes).not.toEqual(golden.hashes)
+  expect(trace.hashes).toEqual(replay({ ...sim, fields(s) {
+    return { nested: [{ "player.x": Math.round(s.x), "player.health": Math.round(s.health) }] }
+  } }, recording).hashes)
+  const changed = structuredClone(recording)
+  changed.inputs[0]![0]!.dx += 1e-10
+  expect(replay(projected, changed).recordingHash).not.toBe(trace.recordingHash)
+})
+
 test("a transient regression reports the first divergent tick and field, even if the final state agrees", () => {
   const { recording, golden } = recorded()
   let tick = 0

@@ -6,8 +6,8 @@ streaming, 60 Hz movement, difficulty bands and bot decision rules keep their fo
 
 | Tape | Players | Covered behavior | Compressed size |
 | --- | --- | --- | --- |
-| `scavenging.json.gz` | 4 | Seed-7 Skilled bots recorded once: movement, container search, shared inventory/world | 162 KB |
-| `combat.json.gz` | 2 | Pistol shots, bat swings, reload, sprint, crouch, flashlight toggles, squad ping | 49 KB |
+| `scavenging.json.gz` | 4 | Seed-7 Skilled bots recorded once: movement, container search, shared inventory/world | 155 KB |
+| `combat.json.gz` | 2 | Pistol shots, bat swings, reload, sprint, crouch, flashlight toggles, squad ping | 44 KB |
 
 Tests also assert that search/movement and combat actions actually occur, so an inert tape cannot become a golden.
 The golden hashes every `SimState` field, including RNG, feature state and rewind history. Survivor fields get
@@ -42,22 +42,39 @@ returns a recording and golden; `replay(sim, recording)` returns per-tick hashes
 Record JSON-safe inputs in a fixed player order. State hashes support plain objects, arrays, numbers (including
 infinities, NaN and signed zero), strings, booleans, undefined and numeric typed arrays. Object key order does
 not matter; array order does. Project Maps/Sets explicitly, sorting only when iteration order is irrelevant.
-Numbers use IEEE-754 bits, without decimal rounding; simulation math must itself be deterministic on the target
-Bun runtimes. These fixtures were recorded and replayed on Mac arm64 with Bun 1.4.2 and 1.4.4.
+`replayHash` uses exact IEEE-754 bits. An adapter may provide a pure `normalizeNumber` for state hashing;
+input/recording hashes stay exact. Its policy is part of the adapter version.
+
+Outbreak's v2 adapters round finite fractional snapshot values to **nine decimal places** while preserving
+integers, signed zero, infinities and NaN. This affects comparison only, never sim state or input tapes.
+Differences below that resolution may be hidden; rounding boundaries can still produce a mismatch.
+Do not use this policy for simulations that need sub-nanounit checks.
+
+Why: Bun 1.4.2 on Linux x64 first differed from Mac arm64 at tick 4, in a zombie's aim:
+`-0.25617535999319324` versus `-0.2561753599931933`. An isolated CI run reproduced it, ruling out test order.
+Comparing all 601 scavenging snapshots found 1,877 numeric differences, largest `2.85e-13`, with no structural
+differences. Nine-decimal projection removed every observed discrepancy; tests retain the measured counterexample
+and check that a `1e-8` change still differs. Shared hashing remains bit-exact by default.
 
 ## Timing
 
 `hivemind run --kind cargo --worker mini -- bun games/outbreak/scripts/bench-replays.ts` compares the old
 90-second three-pass determinism test plus 60-second squad run against both goldens plus the retained 3-second
-runner contracts. One warmup and five alternating samples on mini/M4 Pro, Bun 1.4.2:
+runner contracts. Final v2 measurement: one warmup and nine alternating samples on Studio/M5 Max, Bun 1.4.4
+(the mini was occupied; use `--worker studio` to reproduce this run):
 
 | Path | Median | Range |
 | --- | --- | --- |
-| Old runner loops | 856.7 ms | 832.4–878.7 ms |
-| Goldens + short runner contracts | 715.5 ms | 714.0–727.2 ms |
-| Both goldens alone | 675.6 ms | 673.1–681.4 ms |
+| Old runner loops | 635.3 ms | 562.1–1333.7 ms |
+| Goldens + short runner contracts | 555.9 ms | 509.8–1145.9 ms |
+| Both goldens alone | 525.7 ms | 480.5–1635.5 ms |
 
-The combined replacement is 16% faster and checks every tick against committed state, rather than comparing
-two current runs' summaries and final playback time. The targeted `bun test` process took 1.22 s including
-imports and fixture reads. Queue and install time are excluded. Initial byte-at-a-time hashing was slower;
+The combined replacement's median is 12.5% faster and checks every tick against committed state, rather than
+comparing two current runs' summaries and final playback time. Studio was shared and samples were noisy; this
+is not a dedicated-worker performance guarantee. The nine targeted helper/Outbreak tests took 981 ms including
+imports and fixture reads. Queue and install time are excluded.
+
+Earlier experiments: exact v1 hashing measured 857 → 716 ms on mini/M4 Pro (five samples), but failed on Linux
+math drift. A separate rounded snapshot copy made the Studio replacement slower than the old loops (746 vs
+693 ms), so v2 projects numbers during the hash traversal instead. Initial byte-at-a-time hashing was also slower;
 word-wise hashing cut a two-tape trial from 568 to 501 ms before expanding scavenging to four players.

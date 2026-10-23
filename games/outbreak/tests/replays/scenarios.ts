@@ -5,8 +5,17 @@ import type { Command } from "../../shared/session"
 /** Same 20 Hz integration step as the existing bot-runner regression tests. */
 export const REPLAY_DT = 1 / 20
 
+/** Snapshot-only projection: math differs by a few ULPs across Bun's Mac/Linux builds.
+ * Preserve discrete values and special numbers; compare fractions to 1e-9 game units.
+ * Never write these rounded values back into the simulation or recorded inputs.
+ */
+export function replayNumber(value: number): number {
+  return Number.isFinite(value) && !Number.isInteger(value) ? Math.round(value * 1e9) / 1e9 : value
+}
+
 export const scavenging: ReplaySim<CoopSim, Command> = {
-  version: "outbreak-scavenging-v1",
+  version: "outbreak-scavenging-v2",
+  normalizeNumber: replayNumber,
   init(recording) {
     const sim = new CoopSim(recording.seed, recording.seed, 0.22, undefined, undefined, "classic")
     recording.players.forEach((id, i) => sim.addSurvivor(id, i))
@@ -34,7 +43,7 @@ export const scavenging: ReplaySim<CoopSim, Command> = {
 /** A small street encounter: one pistol, one bat, two nearby attackers. */
 export const combat: ReplaySim<CoopSim, Command> = {
   ...scavenging,
-  version: "outbreak-combat-v1",
+  version: "outbreak-combat-v2",
   init(recording) {
     const sim = new CoopSim(recording.seed, recording.seed, 0.22, { zombieCount: 0, directorPacing: 0, openingCalm: 0 }, undefined, "classic")
     recording.players.forEach((id, i) => {

@@ -1,8 +1,19 @@
 import { expect, test } from "bun:test"
-import { assertReplayMatches, replay, type ReplayGolden, type ReplayRecording } from "@arcade/kit/sim/replay"
+import { assertReplayMatches, replay, replayHash, type ReplayGolden, type ReplayRecording } from "@arcade/kit/sim/replay"
 import { gunzipSync } from "node:zlib"
 import type { Command } from "../shared/session"
-import { combat, scavenging } from "./replays/scenarios"
+import { combat, replayNumber, scavenging } from "./replays/scenarios"
+
+test("snapshot projection absorbs measured platform drift but preserves gameplay changes", () => {
+  // Actual first divergence at tick 4 on Mac arm64 versus Linux x64, Bun 1.4.2.
+  const mac = -0.2561753599931933
+  const linux = -0.25617535999319324
+  expect(replayHash(mac)).not.toBe(replayHash(linux))
+  expect(replayNumber(mac)).toBe(replayNumber(linux))
+  expect(replayNumber(mac)).not.toBe(replayNumber(linux + 1e-8))
+  const exact = [0xffffffff, 100, -0, Infinity, -Infinity, NaN]
+  expect(replayHash(exact.map(replayNumber))).toBe(replayHash(exact))
+})
 
 for (const [name, sim] of [["scavenging", scavenging], ["combat", combat]] as const) {
   test(`30 seconds of recorded Outbreak ${name} match every golden tick`, async () => {

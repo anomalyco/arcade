@@ -29,8 +29,8 @@ function squad(seconds: number): void {
 }
 const cases = { before: () => { runner(90); squad(60) }, after: () => { runner(3); squad(3); goldens() }, goldens }
 const times: Record<string, number[]> = {}
-// One warmup, five alternating samples; no browser, queue or install time in these measurements.
-for (let round = -1; round < 5; round++) {
+// One warmup, nine alternating samples; no browser, queue or install time in these measurements.
+for (let round = -1; round < 9; round++) {
   for (const [name, fn] of Object.entries(cases)) {
     const start = performance.now()
     fn()
@@ -40,5 +40,5 @@ for (let round = -1; round < 5; round++) {
 }
 for (const [name, values] of Object.entries(times)) {
   values.sort((a, b) => a - b)
-  console.log(`METRIC ${name}_median_ms=${values[2]!.toFixed(1)} min_ms=${values[0]!.toFixed(1)} max_ms=${values[4]!.toFixed(1)}`)
+  console.log(`METRIC ${name}_median_ms=${values[4]!.toFixed(1)} min_ms=${values[0]!.toFixed(1)} max_ms=${values.at(-1)!.toFixed(1)}`)
 }
