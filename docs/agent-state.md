@@ -28,11 +28,11 @@ Live operational state for agents working in `anomalyco/arcade`. Read this file 
 - **Default check (`browser_proofs_default: off`)**: Run `hivemind run --kind cargo -- bun run verify`. For explicit single-game smoke at PR pitch time, run `hivemind run --kind browser -- bun run verify:smoke --game <name>`. Do not run multi-minute Playwright video/screenshot capture scripts unless:
   1. Your brief explicitly requests a visual screenshot, video, or Gallery comparison, or
   2. You changed WGSL shaders, post-processing, lighting, camera framing, or HUD layout.
-- **Gallery links**: Before posting any `https://arcade.lwoyjcaeyxv6.opentunnel.xyz/captures/<slug>/compare.html` link, run `bun scripts/agent-ops.ts gallery-link <capture-dir> <slug>` so the symlink in `/Users/kit/worktrees/arcade/release-4/captures/<slug>` is created and verified with HTTP 200.
+- **Gallery links**: Before posting any `https://studio.taila8e7c7.ts.net:5187/captures/<slug>/compare.html` link, run `bun scripts/agent-ops.ts gallery-link <capture-dir> <slug>` so the symlink in `/Users/kit/worktrees/arcade/release-4/captures/<slug>` is created and verified with HTTP 200.
 
 ## Shared Preview Worktree
 
-- `/Users/kit/worktrees/arcade/release-4` backs the live `:5187` Dev Hub (`https://arcade.lwoyjcaeyxv6.opentunnel.xyz`).
+- `/Users/kit/worktrees/arcade/release-4` backs the live `:5187` Dev Hub, tailnet only at `https://studio.taila8e7c7.ts.net:5187/` (launchd job `dev.kitlangton.arcade-devhub`, published with `tailscale serve`). It has no public link (Kit, Oct 23).
 - Never use `/Users/kit/worktrees/arcade/release-4` as a feature worktree or leave uncommitted edits in it.
 - After merging a PR to `main`, fast-forward it cleanly:
   ```sh

@@ -15,7 +15,7 @@ const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
-const base = opt("base", "https://carrier.lwoyjcaeyxv6.opentunnel.xyz/")
+const base = opt("base", "https://studio.taila8e7c7.ts.net:5187/arcade/carrier/")
 const out = opt("out", "/tmp/carrier-drive/out")
 const seed = opt("seed", "7")
 const evalJs = opt("eval", "")

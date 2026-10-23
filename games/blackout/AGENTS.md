@@ -2,8 +2,8 @@
 
 - Style: TBD (Kit). Visual work follows [quality-checklist.md](../../docs/quality-checklist.md) and the `arcade-quality` skill.
 - Run `bun run check` before pushing; pushing to `main` deploys https://anoma.ly/arcade/blackout/ (follow `../../docs/agent-state.md` for deploy and branch rules).
-- WebGPU only runs in secure contexts: test via the deployed URL, the opentunnel dev URL or `localhost`, never a bare LAN hostname.
-- `TUNNEL=1 bun run dev` runs Wrangler (rooms, :8788) and Vite (:5191); opentunnel route `blackout` exposes it at https://blackout.lwoyjcaeyxv6.opentunnel.xyz.
+- WebGPU only runs in secure contexts: test via the deployed URL, the tailnet Dev Hub (https://studio.taila8e7c7.ts.net:5187/arcade/blackout/) or `localhost`, never a bare LAN hostname.
+- `TUNNEL=1 bun run dev` runs Wrangler (rooms, :8788) and Vite (:5191). Over the tailnet, use the Dev Hub at https://studio.taila8e7c7.ts.net:5187/arcade/blackout/.
 - The game is a plain top-down shooter: everyone sees everyone, three guns (rifle, shotgun, sniper), health with regen, respawns, a new procedural office floor every match. No progression, no bots online (only the dev `?practice` mode has bots; `?practice&mode=dom` picks a mode).
 - Modes (`shared/sim/modes.ts`, placements from the map in `shared/sim/places.ts`): free for all, team deathmatch, domination, search and destroy. Create game picks the first mode (`?mode=` on the first socket); quick rooms start as FFA; the end screen votes on the next.
 - Kill confirmed, hardpoint and capture the flag live in `shared/sim/modes-objective.ts` (zones and flag bases from `places.ts`; sprites in `src/game/objective-fx.ts`). Modes in other files register in `MODE_FACTORIES` (modes.ts can't import them: cycle) and World imports the file. The end screen offers the current mode plus three random others (`voteOptions`, world rng, sent in the snapshot); per-mode scoreboard counts go in `Player.stats`.
