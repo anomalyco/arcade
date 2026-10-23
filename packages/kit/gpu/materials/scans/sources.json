@@ -1,0 +1,80 @@
+[
+ {
+  "scan": "bark",
+  "id": "bark_brown_02",
+  "url": "https://polyhaven.com/a/bark_brown_02",
+  "authors": {
+   "Rob Tuytel": "All"
+  },
+  "licence": "CC0 1.0",
+  "use": "wet bark",
+  "file": "bark.webp",
+  "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_diff_1k.jpg",
+  "sha256": "920fa0bed0c9d78c1d530e99795113afd532d7db746de440f4a85d7c83ed0f1a"
+ },
+ {
+  "scan": "concrete-block",
+  "id": "rough_concrete",
+  "url": "https://polyhaven.com/a/rough_concrete",
+  "authors": {
+   "Dimitrios Savva": "All"
+  },
+  "licence": "CC0 1.0",
+  "use": "damp cinderblock (block faces; joints come from the geometry)",
+  "file": "concrete-block.webp",
+  "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_concrete/rough_concrete_diff_1k.jpg",
+  "sha256": "dd7fc03e152eb8c2fd511248aa2e9bf7428a645bd0e0b74ac1d887ad136cb0bc"
+ },
+ {
+  "scan": "old-wood",
+  "id": "fine_grained_wood",
+  "url": "https://polyhaven.com/a/fine_grained_wood",
+  "authors": {
+   "Rob Tuytel": "All"
+  },
+  "licence": "CC0 1.0",
+  "use": "old wood grain",
+  "file": "old-wood.webp",
+  "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/fine_grained_wood/fine_grained_wood_col_1k.jpg",
+  "sha256": "d171f45ef01bc6e239b00dfaa4961bcd27f7d8e93e3962da3bd3d0ce703d802c"
+ },
+ {
+  "scan": "painted-steel",
+  "id": "green_metal_rust",
+  "url": "https://polyhaven.com/a/green_metal_rust",
+  "authors": {
+   "Rob Tuytel": "All"
+  },
+  "licence": "CC0 1.0",
+  "use": "chipped painted steel",
+  "file": "painted-steel.webp",
+  "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/green_metal_rust/green_metal_rust_diff_1k.jpg",
+  "sha256": "4509ab0cb1cf6bf9b9f970450a41f83ebd9bff178006deae568ff34b404856fc"
+ },
+ {
+  "scan": "stone",
+  "id": "lichen_rock",
+  "url": "https://polyhaven.com/a/lichen_rock",
+  "authors": {
+   "Rico Cilliers": "All"
+  },
+  "licence": "CC0 1.0",
+  "use": "weathered stone",
+  "file": "stone.webp",
+  "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_diff_1k.jpg",
+  "sha256": "780128a5757920a7e30c50042e8975e8333ef4ae5809b30bb5be6a2f9fec3ec5"
+ },
+ {
+  "scan": "worn-metal",
+  "id": "rusty_metal_02",
+  "url": "https://polyhaven.com/a/rusty_metal_02",
+  "authors": {
+   "Rob Tuytel": "All"
+  },
+  "licence": "CC0 1.0",
+  "use": "worn lab metal, scratches and rust blooms",
+  "file": "worn-metal.webp",
+  "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_02/rusty_metal_02_diff_1k.jpg",
+  "sha256": "adaf094391518b6afe787a123942110aa88ef521c844f970b124420f5ed5d3d9"
+ }
+]

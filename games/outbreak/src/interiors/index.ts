@@ -1,5 +1,6 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { WEAR_DEFAULTS, wearControls, type WearSettings } from "@arcade/kit/gpu/materials/wear"
+import { FINISH_SCAN_URLS } from "@arcade/kit/gpu/materials/wear-scans"
 import { defaultTextureBaseUrl } from "@arcade/kit/textures/manifest"
 import { distToRect } from "@arcade/kit/sim/geom"
 import type { Building } from "../../shared/map"
@@ -143,6 +144,9 @@ const THEME_PLATES: Record<InteriorTheme, readonly { url: string; gain: number }
 /** The 4×4 floor decal atlas (gpt-image-2 on a green screen, keyed to alpha); kinds are listed in `wgsl.ts`. */
 const DECAL_URL = new URL("./decals/floor-decals.webp", import.meta.url).href
 
+/** The kitchen timber's wood-grain scan (kit wear looks, triplanar): one pool layer while finished props are on. */
+const WOOD_SCAN_URL = FINISH_SCAN_URLS["old-wood"]()
+
 /** The library plate a building's floor uses, or null for themes that keep procedural floors. */
 export function floorPlateFor(b: Building, houseSeed: number): { url: string; gain: number } | null {
   const plan = planInterior(b, houseSeed)
@@ -227,13 +231,14 @@ export class InteriorPresenter {
       }
       this.lastBuildingsIds = ids
     }
-    const key = `${houseSeed}|${this.lastBuildingsIds}|${Math.round(px / 3)},${Math.round(py / 3)}|${this.settings.rugSource}|${interiorSettings.rugSeed}|${interiorSettings.theme}|${this.settings.paintedPlate}|${this.settings.floorPlates}|${this.settings.decalDensity > 0}`
+    const key = `${houseSeed}|${this.lastBuildingsIds}|${Math.round(px / 3)},${Math.round(py / 3)}|${this.settings.rugSource}|${interiorSettings.rugSeed}|${interiorSettings.theme}|${this.settings.paintedPlate}|${this.settings.floorPlates}|${this.settings.decalDensity > 0}|${this.woodScan}`
     if (key !== this.lastKey || (!deferStep && now - this.lastPlan > 1000)) {
       this.lastKey = key
       this.lastPlan = now
       const reqs: RugRequest[] = []
       if (this.settings.paintedPlate) reqs.push({ dirKey: -1, priority: -1, imageUrl: PLATE_URL })
       if (this.settings.decalDensity > 0) reqs.push({ dirKey: -1, priority: -1, imageUrl: DECAL_URL, keepAlpha: true })
+      if (this.woodScan) reqs.push({ dirKey: -1, priority: -1, imageUrl: WOOD_SCAN_URL })
       if (this.settings.floorPlates) {
         // A plate floors the whole house, so it outranks that house's rugs; one request per distinct plate.
         const plates = new Map<string, number>()
@@ -264,6 +269,18 @@ export class InteriorPresenter {
       this.pool.step()
     }
   }
+
+  private get woodScan(): boolean {
+    return this.settings.propFinish > 0 && this.settings.finishWear && this.settings.finishScan > 0
+  }
+
+  /** Detail-array layer of the wear looks' scans that are resident (for kit `packWear`'s `scanLayers`). */
+  get scanLayers(): { "old-wood": number } {
+    const layer = this.woodScan ? this.pool.layerOf(WOOD_SCAN_URL) : 0
+    this.scans["old-wood"] = layer > 0 ? layer : -1
+    return this.scans
+  }
+  private readonly scans = { "old-wood": -1 }
 
   private handmadeUrl(style: string, room: string, seed: number): string {
     const file = room === "hall" || room === "kitchen" ? HANDMADE.runner : style === "persian" && seed & 1 ? HANDMADE.persian : HANDMADE.sage

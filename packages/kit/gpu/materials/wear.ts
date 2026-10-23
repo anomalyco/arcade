@@ -66,7 +66,7 @@ export function clampAlbedo(albedo: Rgb, cls: AlbedoClass = "dielectric"): Rgb {
 export const FINISH_SCANS = {
   "worn-metal": { source: "polyhaven", id: "rusty_metal_02", use: "worn lab metal, scratches and rust blooms" },
   "painted-steel": { source: "polyhaven", id: "green_metal_rust", use: "chipped painted steel" },
-  "concrete-block": { source: "polyhaven", id: "concrete_block_wall_02", use: "damp cinderblock" },
+  "concrete-block": { source: "polyhaven", id: "rough_concrete", use: "damp cinderblock (block faces; joints come from the geometry)" },
   "old-wood": { source: "polyhaven", id: "fine_grained_wood", use: "old wood grain" },
   bark: { source: "polyhaven", id: "bark_brown_02", use: "wet bark" },
   stone: { source: "polyhaven", id: "lichen_rock", use: "weathered stone" },

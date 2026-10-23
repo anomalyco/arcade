@@ -693,7 +693,7 @@ export class OutbreakFrameLighting {
     const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
     interiors.update(activeBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
     interiors.pack(this.lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, activeBuildings, town.houseSeed)
-    packWear(this.lightingUniforms, OUTBREAK_FINISH_UNIFORM_OFFSET, OUTBREAK_WEAR_LOOKS, interiors.settings)
+    packWear(this.lightingUniforms, OUTBREAK_FINISH_UNIFORM_OFFSET, OUTBREAK_WEAR_LOOKS, interiors.settings, { scanLayers: interiors.scanLayers })
     renderer.setCustomUniforms(this.lightingUniforms)
     this.lastSightX = sightX
     this.lastSightY = sightY

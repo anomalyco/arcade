@@ -6,7 +6,8 @@ import { interiorSettings } from "./plan"
 /**
  * Finished props indoors (`@arcade/kit/gpu/finish`): the fitted kitchen is built with chamfered edges and tagged with a
  * wear look, the level bakes AO and curvature into the spare vertex bytes before packing, and the scene shader wears
- * the walnut from them: rubbed edges, grime in the reveals, dust on the tops. Lab › Rugs & interiors › Finished props;
+ * the walnut from them: rubbed edges, grime in the reveals, dust on the tops, and a CC0 wood-grain scan projected
+ * triplanar on top. Lab › Rugs & interiors › Finished props;
  * off is Today's square boxes.
  */
 
@@ -42,7 +43,14 @@ var<private> wearDpy: vec3f;
 /** The albedo validator view is on: the surface shows its false colour (\`outbreakCheckCol\`). */
 var<private> outbreakCheck: bool = false;
 var<private> outbreakCheckCol: vec3f;
-${wearWgsl({ looks: OUTBREAK_WEAR_LOOKS, params: "OL.finish", ground: () => FLOOR.toFixed(2) })}
+${wearWgsl({
+  looks: OUTBREAK_WEAR_LOOKS,
+  params: "OL.finish",
+  ground: () => FLOOR.toFixed(2),
+  // The scans ride in the rug pool's detail array (\`InteriorPresenter.scanLayers\`), wrapped by the repeat sampler.
+  sample: (layer, uv, dx, dy) => `textureSampleGrad(detailTex, materialSampler, ${uv}, ${layer}, ${dx}, ${dy}).rgb`,
+  sampleMean: layer => `textureSampleLevel(detailTex, materialSampler, vec2f(0.5), ${layer}, f32(textureNumLevels(detailTex) - 1u)).rgb`,
+})}
 `
 
 export const finishFragmentStartWgsl = "wearDpx = dWorldX; wearDpy = dWorldY;"
