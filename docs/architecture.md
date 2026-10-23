@@ -84,6 +84,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/reflections/{ssr,surface,wet}` | Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term | — | — | — | — | — | — | — |
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | Yes | — |
+| `gpu/finish` & `gpu/materials/wear` | Finishing pass: chamfers, baked vertex AO/curvature/exposure, wear looks, CC0 scans, albedo validator | — | — | Yes | — | — | — | — |
 | `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | Yes | Yes |
 | `sim/creature-motion` | Lamplight's creature root: deterministic planar momentum, brake/plant/pivot phases, `SecondOrder` springs, Froude scaling | — | — | — | — | Yes | — | — |

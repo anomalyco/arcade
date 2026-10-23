@@ -209,6 +209,14 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s.startsWith("@arcade/kit/textures/"),
   },
   {
+    area: "`gpu/finish` & `gpu/materials/wear`",
+    description: "Finishing pass: chamfers, baked vertex AO/curvature/exposure, wear looks, CC0 scans, albedo validator",
+    match: (s) =>
+      s === "@arcade/kit/gpu/finish" ||
+      s === "@arcade/kit/gpu/materials/wear" ||
+      s === "@arcade/kit/gpu/materials/wear-scans",
+  },
+  {
     area: "`props/*`",
     description: "Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement",
     match: (s) => s.startsWith("@arcade/kit/props/"),
