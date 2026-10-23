@@ -47,6 +47,10 @@ export const WOODS_SOUND_SPECS: WoodsSoundSpec[] = [
   { id: "far.radio", prompt: "Short burst of walkie-talkie radio squelch, a click, a crackle of static hiss and a click off, no voice", duration: 2, influence: 0.55, takes: 5, keep: 3, target: -18, range: [0.3, 2.2] },
   { id: "far.cardoor", prompt: "A car door slamming shut once, outdoors at night, solid metallic thunk", duration: 2, influence: 0.55, takes: 5, keep: 3, target: -18, range: [0.3, 2.2] },
   { id: "far.screendoor", prompt: "A wooden screen door on a spring snapping shut against its wooden frame, a hollow wooden slap and a short rattle as it bounces, outdoors at night", duration: 2, influence: 0.55, takes: 9, keep: 3, target: -18, range: [0.3, 2.2], picks: [2, 3, 1] },
+  // ── road flares (`src/audio/flares.ts`) ──────────────────────────────────────────────────────────────────────────
+  { id: "flare.strike", prompt: "Striking a highway road flare to light it: the plastic striker cap scraped hard across the rough end of the flare, one dry gritty scratch, close, no ignition, no fire, no music", duration: 1.2, influence: 0.6, takes: 6, keep: 3, target: -18, range: [0.25, 1.3], picks: [3, 4, 2] },
+  { id: "flare.ignite", prompt: "A red road flare igniting: a sharp fizzing pop and a hissing whoosh as it catches and flares up into a fierce sputtering burn, close, outdoors at night, no music", duration: 2, influence: 0.55, takes: 6, keep: 3, target: -18, range: [0.8, 2.2], picks: [4, 3, 1] },
+  { id: "flare.burn", prompt: "Close steady fierce hiss of a burning red road flare lying on the ground, a rough sizzling roar with small irregular pops and sputters, constant, no wind, no music", duration: 10, influence: 0.45, takes: 4, keep: 1, target: -24, loop: true, range: [6, 11], picks: [2], cuts: { 2: [0.2, 7.6] } },
 ]
 
 /**

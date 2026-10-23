@@ -1,15 +1,15 @@
 import { type Activity, type IdleState, RoomCore } from "@arcade/kit/net/room-core"
 import { BUILD } from "../shared/build.gen"
 import {
-  decodeClient, encodeServer, GRACE_MS, intentOps, MAX_PLAYERS, nightWire, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
+  decodeClient, encodeServer, flareRow, GRACE_MS, intentOps, MAX_PLAYERS, nightWire, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
   type ClientMsg, type Hello, type MapDelta, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot,
 } from "../shared/protocol"
 import { addHuman, createWoods, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import { makeWorld, type WoodsWorld } from "../shared/world"
 
 /** What a seat has already been sent, so a snapshot carries only what changed (the socket is reliable and ordered). */
-type Sent = { found: number; names: string; trail: number; tapes: Set<number>; markers: number; clues: number; heard: Map<number, { serial: number; len: number }>; seed: number; night: number }
-const fresh = (seed = NaN): Sent => ({ found: -1, names: "", trail: 0, tapes: new Set(), markers: -1, clues: -1, heard: new Map(), seed, night: -1 })
+type Sent = { found: number; names: string; trail: number; tapes: Set<number>; markers: number; clues: number; flares: number; seen: number; heard: Map<number, { serial: number; len: number }>; seed: number; night: number }
+const fresh = (seed = NaN): Sent => ({ found: -1, names: "", trail: 0, tapes: new Set(), markers: -1, clues: -1, flares: -1, seen: 0, heard: new Map(), seed, night: -1 })
 
 const HOLD_TICKS = 9
 
@@ -25,6 +25,7 @@ function mapDelta(m: MapKnowledge, sent: Sent, reset: boolean): MapDelta | null 
   sent.tapes = known
   if (m.markers.length !== sent.markers) { sent.markers = m.markers.length; d.markers = m.markers.slice() }
   if (m.clues.length !== sent.clues) { sent.clues = m.clues.length; d.clues = m.clues.slice() }
+  if (m.flares.length !== sent.seen) { sent.seen = m.flares.length; d.flares = m.flares.slice() }
   const heard: NonNullable<MapDelta["heard"]> = []
   for (const h of m.heard) {
     const was = sent.heard.get(h.from)
@@ -38,7 +39,7 @@ function mapDelta(m: MapKnowledge, sent: Sent, reset: boolean): MapDelta | null 
   for (const from of unheard) sent.heard.delete(from)
   if (heard.length) d.heard = heard
   if (unheard.length) d.unheard = unheard
-  return reset || d.trail.length || d.tapes || d.gone || d.markers || d.clues || d.heard || d.unheard ? d : null
+  return reset || d.trail.length || d.tapes || d.gone || d.markers || d.clues || d.flares || d.heard || d.unheard ? d : null
 }
 
 /** Room seed from its code, so each room's bots and flicker differ while the forest stays the printed one. */
@@ -135,7 +136,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     this.acks.set(pid, seq)
   }
   protected activity(intent: PlayerInput, a: Activity) {
-    const moved = intent.mx !== 0 || intent.mz !== 0 || intent.tie || intent.map || Math.abs(intent.yaw - a.aim) > 0.01
+    const moved = intent.mx !== 0 || intent.mz !== 0 || intent.tie || intent.map || intent.flare || Math.abs(intent.yaw - a.aim) > 0.01
     a.aim = intent.yaw
     return moved
   }
@@ -191,10 +192,11 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     const sent = this.sent.get(id)!
     const me = s.players.find((p) => p.id === pid)
     const snap: Snapshot = { type: "s", t: Math.round(s.t * 1000) / 1000, ack: this.acks.get(pid) ?? -1, me: pid, p: ents ?? this.entities() }
-    if (me) snap.you = [me.x, me.z, me.vx, me.vz, me.mapRaise].map((v) => Math.round(v * 1e5) / 1e5)
+    if (me) snap.you = [...[me.x, me.z, me.vx, me.vz, me.mapRaise].map((v) => Math.round(v * 1e5) / 1e5), me.flares]
     const names = s.players.map((p) => `${p.id}:${p.name}`).join("|")
     if (names !== sent.names) { sent.names = names; snap.names = Object.fromEntries(s.players.map((p) => [p.id, p.name])) }
     if (s.rev.found !== sent.found) { sent.found = s.rev.found; snap.found = s.found }
+    if (s.flares.rev !== sent.flares) { sent.flares = s.flares.rev; snap.fl = { spares: s.flares.spares, rows: s.flares.list.map(flareRow) } }
     if (reset) { snap.tapes = s.tapes.map(tapeRow); snap.distant = { ...s.distant, rng: { ...s.distant.rng }, recent: [...s.distant.recent] } }
     if (s.night.rev !== sent.night) { sent.night = s.night.rev; snap.night = nightWire(s.night) }
     if (me) {

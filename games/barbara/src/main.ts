@@ -12,6 +12,7 @@ import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from 
 import { answerCall, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
 import { VOICE_LINES } from "../shared/lines.gen"
 import { CLUE_NAMES, dawnShare, leadText, nextStep } from "../shared/night"
+import { flareSources, heldFlare, layFlare } from "../shared/flares"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
 import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
@@ -20,6 +21,7 @@ import { WoodsCamera } from "./camera"
 import { CameraLook, stageCameraLab } from "./camera-look"
 import { CreatureView } from "./creature-view"
 import { FEEL_CONTROLS } from "./feel-controls"
+import { FlareView } from "./flare-view"
 import { FriendsView } from "./friends-view"
 import { HeldMap, heldMapControls } from "./held-map"
 import { PaperMap } from "./map"
@@ -43,8 +45,10 @@ const WALK_CONTROLS: LabControl[] = [
 const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", "beamPresence", "ownHaze", "beamLength", "mist", "mistFalloff", "mistBank", "ambient", "exposure", "trunkShadows", "tapeShine"])
 /** Your own beam's light id (friends and bots are never 0 in a room; solo you are 0). */
 const OWN = 0
-const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
-const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG"])
+/** Road flares in your pocket: the controls line offers Q only while you have one. */
+let pocketFlares = 1
+const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare")] : []), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG", "KeyQ"])
 /** Solo nights played in this browser: the next night's layout (`?night=` replays one). */
 const NIGHT_KEY = "barbara.night"
 /** A solo night's seed from its number (rooms seed theirs from the room code the same way). */
@@ -125,6 +129,7 @@ async function main() {
   const fp = new FrameParts()
   const nightView = new NightView(renderer)
   const dawn = new DawnSky()
+  const flares = new FlareView(renderer)
 
   // Solo: this browser's next night, or the one `?night=N` names (the end card's "Night N"; the same N is the same night).
   // `night` counts from 0.
@@ -181,6 +186,10 @@ async function main() {
   panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
   panel.addControls({}, UNCANNY_SOUNDS.map((s) => ({ key: `uncanny.${s}`, label: `Trigger ${s.slice(4)}`, group: "Sound", subsection: "Uncanny", type: "action" as const, run: () => { void uncanny.trigger(s) } })))
   panel.addControls(held.settings as unknown as Record<string, number | string | boolean>, heldMapControls())
+  // Road flares: the flame and smoke (kit settings), the light on the woods, and Throw one now.
+  panel.addControls(flares.settings as unknown as Record<string, number>, flares.controls("Road flare"))
+  panel.addControls(flares.look as unknown as Record<string, number | boolean>, flares.lookControls("Road flare"))
+  panel.addControls({}, [{ key: "woods.trigger.flare", label: "Throw a flare", group: "Road flare", type: "action", run: () => { flareTrigger() } }])
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
   audio.bindControls(panel)
@@ -276,6 +285,14 @@ async function main() {
   let trace: { now: number; id: number; x: number; z: number; yaw: number; axis: [number, number, number] | null; level: number }[] | null = null
   /** Automation: walk towards a point (cleared on arrival). */
   let autopilot: { x: number; z: number } | null = null
+  /** Ticks left of a tapped flare key (the Lab's Throw a flare, automation). */
+  let flareTap = 0
+  /** The Lab's Throw a flare: a tap of Q (solo hands you one if your pocket is empty). */
+  function flareTrigger() {
+    audio.begin()
+    if (session instanceof SoloSession && session.self.flares === 0 && !heldFlare(session.state.flares, 0)) session.self.flares = 1
+    flareTap = 2
+  }
 
   /** This tick's controls: WASD relative to where you look, the light, the held tie and map keys. */
   function intent(): PlayerInput {
@@ -291,7 +308,9 @@ async function main() {
     }
     const len = Math.hypot(mx, mz)
     if (len > 1) { mx /= len; mz /= len }
-    return { yaw: camera.yaw, pitch: camera.pitch, light: camera.flashlight, tie: keys.has("KeyE"), map: keys.has("KeyG"), mx, mz, sprint: !!k("ShiftLeft", "ShiftRight") }
+    const flare = keys.has("KeyQ") || flareTap > 0
+    if (flareTap > 0) flareTap--
+    return { yaw: camera.yaw, pitch: camera.pitch, light: camera.flashlight, tie: keys.has("KeyE"), map: keys.has("KeyG"), mx, mz, sprint: !!k("ShiftLeft", "ShiftRight"), flare }
   }
 
   // The room's roster: who is here, who dropped, who just walked in.
@@ -355,7 +374,8 @@ async function main() {
       const state = session instanceof SoloSession ? session.state : session.view
       let e: CreatureEvent | null = null
       if (session instanceof SoloSession) {
-        e = triggerCreature(session.state.distant, world, session.state.players, session.state.t, settings, SIGNAL_HOLD_SECONDS)
+        const st = session.state
+        e = triggerCreature(st.distant, world, st.players, st.t, settings, SIGNAL_HOLD_SECONDS, flareSources(st.flares, world, st.players, st.t, settings))
         if (e) session.inject(e)
       } else {
         const plan = planCreature(world, state.players.map((p) => (p.id === session.me ? { ...p, yaw: camera.yaw, pitch: camera.pitch } : p)), settings, { seed: (time * 1000) | 0 }, SIGNAL_HOLD_SECONDS, true)
@@ -469,6 +489,7 @@ async function main() {
         }
         if (e.kind === "signal" && !mine) say(`${nameOf(e.by)} is signalling.`, 2.5)
         if (e.kind === "signal" && mine && state.players.length > 1) say("Friends reply and head your way.", 3)
+        if (e.kind === "flare-picked" && mine) say(`You take a road flare from the table.${e.spares ? ` ${e.spares} left.` : " That was the last one."}`, 3.5)
       }
     }
 
@@ -519,6 +540,12 @@ async function main() {
     if (level > 0) beams.unshift({ id: OWN, origin: ownOrigin, axis: ownAxis, level: ownLevel })
 
     const place = view.lights(world, state.t, settings)
+    // Road flares: fire and smoke on the page's clock, their light on the woods and in the mist.
+    const lit = flares.update(state, world, meId, session.roomTime(), dt, camera.eye, { yaw: camera.yaw, pitch: camera.pitch }, settings, view.forest.settings, quality.tier === "low" ? 1 : quality.tier === "balanced" ? 2 : 3)
+    place.scene.push(...lit.scene)
+    place.fog.push(...lit.fog)
+    flares.draw(fp, state, world)
+    if (session.self.flares !== pocketFlares) { pocketFlares = session.self.flares; controlsHud() }
     // Every torch is a photometric beam: the forest renderer lights, shadows and scatters it (your own gets the
     // shadow map, the exposure and the bounce).
     const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level, ...(b.id === OWN && heldUp > 0.3 ? { shadowNear: 0.04 } : {}) }))
@@ -536,7 +563,7 @@ async function main() {
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
     creature.frame()
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time) }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time), flares: lit }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
     const target = playing && p.mapRaise < 0.3 ? tieTarget(world, p, settings.tapeReach) : null
@@ -544,7 +571,11 @@ async function main() {
       const has = !!tapeOnTree(state, target.id)
       const progress = p.tie && p.tie.tree === target.id && keys.has("KeyE") ? p.tie.progress : 0
       prompt.innerHTML = keyPromptHtml("KeyE", has ? "Untie tape" : "Tie tape", { hold: true, progress })
-    } else prompt.innerHTML = ""
+    } else {
+      // A flare in your hand: Q held keeps it, letting go throws it.
+      const own = playing ? heldFlare(state.flares, meId) : undefined
+      prompt.innerHTML = own ? keyPromptHtml("KeyQ", state.t < own.lit ? "Striking" : "Let go to throw", { hold: true }) : ""
+    }
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
     map.frame(state, meId, held.held ? 0 : p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
@@ -566,6 +597,7 @@ async function main() {
     endCard.label = online ? `Room ${roomCode}` : `Night ${night + 1}`
     endCard.frame(state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
+    audio.flareBurn = settings.flareBurn
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
     frames++
@@ -577,7 +609,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard,
+      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard,
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */
       get night() { return session.view.night }, nextNight,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
@@ -596,6 +628,14 @@ async function main() {
       face(x: number, z: number, pitch = 0) { const s = session.self; camera.yaw = Math.atan2(-(x - s.x), -(z - s.z)); camera.pitch = pitch },
       /** Automation: cut the room socket (it reconnects with the held seat). */
       drop() { if (session instanceof OnlineSession) session.drop() },
+      /** Automation: a tap of the flare key (strike, flare up, throw). */
+      throwFlare() { flareTrigger() },
+      /** Automation (solo): a flare burning on the ground at (x, z), struck `age` seconds ago. */
+      layFlare(x: number, z: number, age = 20, yaw = 0.6) {
+        if (!(session instanceof SoloSession)) return
+        const st = session.state, f = layFlare(st, world, x, z, age, yaw)
+        return f.id
+      },
       /** Automation: hold or release a game key (KeyE, KeyG) without pointer lock. */
       hold(code: string, down: boolean) { if (down) keys.add(code); else keys.delete(code) },
       /** Automation: step the sim and draw `ms` later on a synthetic clock even without pointer lock. */

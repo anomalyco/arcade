@@ -8,7 +8,7 @@ import { rng, SHEET, worldToSheet } from "./sheet"
  * The pencil layer: what this player's map knows, drawn as graphite on a persistent canvas, appended to as it grows.
  * Your own path is a soft HB line with a slight wobble; paths copied from friends are in blue pencil in a looser,
  * dashed hand; tapes are fluorescent pink crayon crosses (the flagging tape's colour); found markers a circled
- * triangle with the number; the night's clues in red pencil with their bearings ruled out; a hand-lettered note in the
+ * triangle with the number; the night's clues in red pencil with their bearings ruled out; a flare seen burning a red crayon star; a hand-lettered note in the
  * top margin. The alpha is graphite coverage (the shader adds the
  * paper's tooth and a dull metallic sheen). It never marks where you are.
  */
@@ -25,6 +25,7 @@ const TAPE = "230,40,135"
 /** Clues and their bearings go on in red pencil, so they stand off the graphite. */
 const CLUE_RED = "176,34,30"
 const CLUE_WORDS: Record<ClueKind, string> = { car: "her car (unlocked!)", page: "diary page", badge: "ID badge (creek)", cassette: "tape recorder", strip: "one strip (Walt's knot?)" }
+const FLARE = "200,30,28"
 
 const hash = (a: number, b: number) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s) }
 
@@ -40,6 +41,8 @@ export class PencilLayer {
   private clues = new Set<number>()
   /** The night the clue marks belong to (a new night clears the sheet). */
   private seed = NaN
+  /** Flare marks drawn (pairs in `MapKnowledge.flares`). */
+  private flares = 0
   private dirty: [number, number, number, number] | null = null
 
   constructor(longSide: number) {
@@ -51,7 +54,7 @@ export class PencilLayer {
 
   /** Draws what this map learned since the last call. Returns the changed area in canvas pixels, or null. */
   update(world: WoodsWorld, m: MapKnowledge, state: WoodsState): Rect | null {
-    const shrank = m.trail.length / 2 < this.own.count || m.heard.some((h) => { const d = this.heard.get(h.from); return !!d && (h.trail.length / 2 < d.count || d.serial !== h.serial) }) || [...this.heard.keys()].some((k) => !m.heard.some((h) => h.from === k)) || [...this.tapes].some((t) => !m.tapes.includes(t)) || [...this.markers].some((t) => !m.markers.includes(t)) || [...this.clues].some((t) => !m.clues.includes(t)) || state.night.seed !== this.seed
+    const shrank = m.trail.length / 2 < this.own.count || m.heard.some((h) => { const d = this.heard.get(h.from); return !!d && (h.trail.length / 2 < d.count || d.serial !== h.serial) }) || [...this.heard.keys()].some((k) => !m.heard.some((h) => h.from === k)) || [...this.tapes].some((t) => !m.tapes.includes(t)) || [...this.markers].some((t) => !m.markers.includes(t)) || [...this.clues].some((t) => !m.clues.includes(t)) || m.flares.length / 2 < this.flares || state.night.seed !== this.seed
     if (world !== this.world || shrank) { this.reset(world); this.seed = state.night.seed }
     this.dirty = null
     const g = this.g
@@ -95,6 +98,16 @@ export class PencilLayer {
       this.clues.add(id)
       this.clue(world, c, state.night.layout)
     }
+    for (; this.flares * 2 < m.flares.length; this.flares++) {
+      const [x, y] = worldToSheet(world, m.flares[this.flares * 2]!, m.flares[this.flares * 2 + 1]!)
+      const r = rng(this.flares * 29 + 3)
+      // Four quick strokes crossing at the spot, a rough red asterisk.
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI + (r() - 0.5) * 0.3, l = 1.6 + r() * 0.5
+        this.line([[x - Math.cos(a) * l, y - Math.sin(a) * l], [x + Math.cos(a) * l, y + Math.sin(a) * l]], { color: FLARE, width: 0.55, alpha: 0.9, wobble: 0.08, seed: this.flares * 5 + k })
+      }
+      this.grow(x - 2.6, y - 2.6, x + 2.6, y + 2.6)
+    }
     const d = this.dirty
     if (!d) return null
     const x0 = Math.max(0, Math.floor(d[0] * this.k)), y0 = Math.max(0, Math.floor(d[1] * this.k))
@@ -105,7 +118,7 @@ export class PencilLayer {
   private reset(world: WoodsWorld) {
     this.world = world
     this.own = { count: 0, along: 0, last: null }
-    this.heard.clear(); this.tapes.clear(); this.markers.clear(); this.clues.clear()
+    this.heard.clear(); this.tapes.clear(); this.markers.clear(); this.clues.clear(); this.flares = 0
     const g = this.g
     g.setTransform(1, 0, 0, 1, 0, 0)
     g.clearRect(0, 0, this.canvas.width, this.canvas.height)

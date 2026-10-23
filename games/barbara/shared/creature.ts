@@ -11,8 +11,8 @@ import type { DistantState } from "./distant"
  * moment. Only + − × ÷ √ and `nextRandom`, so any machine that steps the sim places it the same.
  *
  * It only comes when it has something bright to cross, because a black figure reads only where it covers light: a person
- * looking towards a friend's signal, a friend's beam aimed back at them, or a lit camp window or porch seen from outside
- * camp, 49 m or more away with a clear line of sight. A beam aimed across the view doesn't count: at 45–80 m its lit mist
+ * looking towards a friend's signal, a friend's beam aimed back at them, a burning road flare (`Beacon`), or a lit camp
+ * window or porch seen from outside camp, 49 m or more away with a clear line of sight. A beam aimed across the view doesn't count: at 45–80 m its lit mist
  * is too faint for the figure to read (scripts/creature-visibility.ts measures it from the rendered frames). If nobody
  * has such a light, nothing comes. It crosses in front of that light 45–80 m from them, never within 35 m of anyone,
  * starting and ending where a trunk hides it if it can.
@@ -74,7 +74,9 @@ export function createCreature(seed: number): CreatureState {
 
 export type Watcher = { x: number; z: number; yaw: number; pitch: number; light: boolean; bot: boolean; id: number; signal: number }
 /** A bright thing seen from far off: its plan point and how much it is worth crossing. */
-type Shaft = { x: number; z: number; owner: number; weight: number; kind: "signal" | "beam" | "lamp"; /** A beam's plan direction. */ dir?: [number, number] }
+type Shaft = { x: number; z: number; owner: number; weight: number; kind: "signal" | "beam" | "lamp" | "flare"; /** A beam's plan direction. */ dir?: [number, number] }
+/** A lit road flare (`shared/flares.ts` `flareSources`): its red glow in the mist is a backdrop from any side. */
+export type Beacon = { x: number; z: number; by: number; held: boolean; level: number }
 
 /** A beam backs a crossing only when it points at the watcher within about this (cos 35°), lens and glare behind it. */
 const AIMED_BACK = 0.82
@@ -101,8 +103,10 @@ export function trunkBetween(world: WoodsWorld, ax: number, az: number, bx: numb
   return false
 }
 
-function shafts(world: WoodsWorld, players: readonly Watcher[], signalHold: number): Shaft[] {
+function shafts(world: WoodsWorld, players: readonly Watcher[], signalHold: number, beacons: readonly Beacon[]): Shaft[] {
   const out: Shaft[] = []
+  // A flare lights the mist round it like a signal does; one in someone's hand is theirs (they don't see it from 49 m).
+  for (const b of beacons) if (b.level > 0.3) out.push({ x: b.x, z: b.z, owner: b.held ? b.by : -1, weight: 3 * Math.min(1, b.level), kind: "flare" })
   for (const p of players) {
     if (!p.light) continue
     if (p.signal > signalHold || p.pitch > 1.1) {
@@ -135,7 +139,7 @@ export type CreaturePlan = Omit<CreatureEvent, "kind" | "seq" | "at"> & { watche
  * A crossing for now, or null if nobody is looking at a light it could cross. `rng` draws the choices; `relaxed` (the
  * Lab's Trigger now) widens the watcher's gaze to about 75°.
  */
-export function planCreature(world: WoodsWorld, players: readonly Watcher[], feel: CreatureFeel, rng: { seed: number }, signalHold: number, relaxed = false): CreaturePlan | null {
+export function planCreature(world: WoodsWorld, players: readonly Watcher[], feel: CreatureFeel, rng: { seed: number }, signalHold: number, relaxed = false, beacons: readonly Beacon[] = []): CreaturePlan | null {
   const people = players.filter((p) => !p.bot)
   if (!people.length) return null
   const near = Math.max(CREATURE_MIN + 5, feel.creatureNear), far = Math.max(near + 5, feel.creatureFar)
@@ -143,7 +147,7 @@ export function planCreature(world: WoodsWorld, players: readonly Watcher[], fee
   const scratch: Tree[] = []
   const half = world.params.half - 4
   const options: { plan: CreaturePlan; weight: number }[] = []
-  const lights = shafts(world, players, signalHold)
+  const lights = shafts(world, players, signalHold, beacons)
   for (const w of people) {
     const fx = -sinApprox(w.yaw), fz = -cosApprox(w.yaw)
     const cdx = w.x - world.camp.x, cdz = w.z - world.camp.z
@@ -220,19 +224,19 @@ export function segmentDistance(px: number, pz: number, ax: number, az: number, 
  * Advances the creature's schedule to sim time `t` (once a tick, with every walker: bots carry beams too). Returns the
  * sighting that starts now, if any. Waits for a distant sound to finish and keeps the next one off it for a few seconds.
  */
-export function stepCreature(ds: DistantState, world: WoodsWorld, players: readonly Watcher[], t: number, feel: CreatureFeel, signalHold: number): CreatureEvent | null {
+export function stepCreature(ds: DistantState, world: WoodsWorld, players: readonly Watcher[], t: number, feel: CreatureFeel, signalHold: number, beacons: readonly Beacon[] = []): CreatureEvent | null {
   const cs = ds.creature
   if (!feel.creature || feel.creatureRate <= 0 || t < cs.next || t < cs.tryAt || t < ds.busyUntil) return null
   // Look for a light to cross about once a second while due.
   cs.tryAt = t + 1
-  const plan = planCreature(world, players, feel, cs.rng, signalHold)
+  const plan = planCreature(world, players, feel, cs.rng, signalHold, false, beacons)
   if (!plan) return null
   return fire(ds, plan, t, feel)
 }
 
 /** The Lab's Trigger now: the same placement, now, with the watcher's gaze and the timing rules let off. */
-export function triggerCreature(ds: DistantState, world: WoodsWorld, players: readonly Watcher[], t: number, feel: CreatureFeel, signalHold: number): CreatureEvent | null {
-  const plan = planCreature(world, players, feel, ds.creature.rng, signalHold, false) ?? planCreature(world, players, feel, ds.creature.rng, signalHold, true)
+export function triggerCreature(ds: DistantState, world: WoodsWorld, players: readonly Watcher[], t: number, feel: CreatureFeel, signalHold: number, beacons: readonly Beacon[] = []): CreatureEvent | null {
+  const plan = planCreature(world, players, feel, ds.creature.rng, signalHold, false, beacons) ?? planCreature(world, players, feel, ds.creature.rng, signalHold, true, beacons)
   return plan ? fire(ds, plan, t, feel) : null
 }
 

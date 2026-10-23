@@ -65,7 +65,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `sim/move` | Top-down circle body step with eased velocity and substepped push-out | — | Yes | — | — | — | Yes | — |
 | `sim/{abilities,props,boids}` | Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock | — | — | — | Yes | — | Yes | — |
-| `sim/thrown` | Deterministic thrown body: ballistic arc, bounce and roll on terrain, stops against trunks and rocks, comes to rest | — | — | — | — | Yes | — | — |
+| `sim/{thrown,flare-burn}` | Deterministic thrown body (arc, bounce, roll, stops against trunks, rocks and walls, rests) and a road flare's pure burn and sputter | — | — | — | — | Yes | — | — |
 | `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | Yes | — |

@@ -3,9 +3,10 @@ import { Predictor, Smoother } from "@arcade/kit/net/prediction"
 import { RoomSocket } from "@arcade/kit/net/room-socket"
 import { BUILD } from "../shared/build.gen"
 import { createNight, canLight } from "../shared/night"
-import { applyMapDelta, applyNightWire, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { applyFlares, applyMapDelta, applyNightWire, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import { createWoods, newPlayer, setBotCount, stepMotion, stepWoods, type Feel, type Player, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import type { WoodsWorld } from "../shared/world"
+import { flyFor } from "../shared/flares"
 
 /**
  * Where the night runs. Solo steps the shared sim here with bots; a room steps it on the server and this client
@@ -29,6 +30,8 @@ export interface Session {
   /** Presentation for this frame (`alpha` 0..1 of the way from the last tick to the next): friends interpolated, corrections decayed. */
   frame(dt: number, alpha: number): void
   drain(): WoodsEvent[]
+  /** The sim's clock now (s), smooth between ticks and snapshots: what flares burn by. */
+  roomTime(): number
   status(): string | null
   roster(): readonly RosterRow[]
   close(): void
@@ -101,6 +104,9 @@ export class SoloSession implements Session {
     this.events = []
     return out
   }
+  roomTime() {
+    return this.state.t
+  }
   /** An event made outside a tick (the Lab's creature Trigger now), played like the sim's own. */
   inject(e: WoodsEvent) {
     this.events.push(e)
@@ -147,6 +153,8 @@ export class OnlineSession implements Session {
   again() {
     this.socket.send({ type: "again" })
   }
+  /** Room time of the newest snapshot and when it arrived (performance.now ms). */
+  private clock = { t: 0, at: 0 }
   /** Bytes received over the socket (bandwidth readout). */
   bytesIn = 0
   readonly startedAt = performance.now()
@@ -212,7 +220,9 @@ export class OnlineSession implements Session {
     this.me = s.me
     this.self.id = s.me
     this.view.t = s.t
+    this.clock = { t: s.t, at: performance.now() }
     if (s.names) this.names = s.names
+    if (s.fl) applyFlares(this.view.flares, s.fl, s.t, (f, seconds) => flyFor(this.world, f, seconds))
     if (s.tapes) this.view.tapes = s.tapes.map((r) => tapeFromRow(this.world, r)).filter((t) => t !== null)
     if (s.found) this.view.found = s.found
     if (s.distant) this.view.distant = s.distant
@@ -229,6 +239,7 @@ export class OnlineSession implements Session {
     }
     if (s.you) {
       const you = s.you
+      this.self.flares = you[5] ?? this.self.flares
       const restore = () => { Object.assign(this.self, { x: you[0], z: you[1], vx: you[2], vz: you[3], mapRaise: you[4] }) }
       if (first) {
         this.predictor.reset()
@@ -248,6 +259,7 @@ export class OnlineSession implements Session {
 
   frame(dt: number) {
     this.smoother.step(dt)
+    for (const f of this.view.flares.list) if (f.body && !f.body.rest) flyFor(this.world, f, dt)
     const br = this.snaps.sample(performance.now() / 1000)
     const seen = new Set<number>([this.me])
     if (br) {
@@ -293,6 +305,9 @@ export class OnlineSession implements Session {
     const out = this.events
     this.events = []
     return out
+  }
+  roomTime() {
+    return this.clock.t + Math.min(0.5, (performance.now() - this.clock.at) / 1000)
   }
   status() {
     return this.fatal ?? this.socket.status()

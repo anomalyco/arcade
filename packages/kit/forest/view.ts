@@ -11,6 +11,7 @@ import { Renderer, TEMPORAL_DEFAULTS, type Batch, type FrameInput } from "../gpu
 import { makeSceneShader, spriteShader } from "../gpu/shaders"
 import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "../gpu/pass-graph"
 import { TEXTURED_VERTEX_LAYOUT } from "../gpu/textured-mesh"
+import { SPRITE } from "../gpu/frame-parts"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "../gpu/scene-frame"
 import { SpotShadows, type SpotCandidate, type SpotShadowCaster, type SpotShadowMask } from "../gpu/shadows/spot-shadows"
 import { FogScatter, createFogSettings, fogScatterVolume, frustumPlanes, packLampGlow, type FogLamp } from "../gpu/fog-scatter"
@@ -30,6 +31,8 @@ import { indexForestMesh } from "./index-mesh"
 import { appendForestLights } from "./lights"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
+import type { Particles } from "../fx/particles"
+import type { Rect } from "../sim/geom"
 import type { LabControl } from "../lab-navigation"
 import { LakeSky } from "../water/lake-sky"
 import { lakeTime } from "../water/lake"
@@ -51,7 +54,11 @@ export type ForestTorch = {
 }
 
 /** A small bright source seen as a point: its core sprite and the glow the air puts round it (a mast beacon). */
-export type ForestGlow = { x: number; y: number; z: number; color: readonly [number, number, number]; radius: number }
+/**
+ * A point source's hot core and tight glow, or with `soft` a wide, even haze (`color` is its peak radiance), such as the
+ * lit air over a road flare seen from far off, cut up by the trunks in front. Both dim with the fog between.
+ */
+export type ForestGlow = { x: number; y: number; z: number; color: readonly [number, number, number]; radius: number; soft?: boolean }
 
 export type ForestFrameInput = {
   eye: Vec3
@@ -75,6 +82,11 @@ export type ForestFrameInput = {
   glows?: readonly ForestGlow[]
   /** Moving torch-shadow casters the game draws itself (skinned people); their slots re-render while there are any. */
   casters?: readonly SpotShadowCaster[]
+  /**
+   * Kit particles (a road flare's flame, sparks and smoke), lit only by `lights` (the forest's torches are beams, not
+   * points) over a night-dark `ambient`. The game steps the pool.
+   */
+  particles?: { pool: Particles; lights: readonly SceneLight[]; ambient?: readonly [number, number, number] }
 }
 
 export type ForestViewOptions = {
@@ -101,6 +113,11 @@ export type ForestView = {
   readonly build: ForestBuild
   /** Rebuilds the static forest for a new world (same textures and models). */
   setWorld(world: ForestWorld): void
+  /**
+   * Footprints with top heights (trunks, rocks, buildings) that cast polar shadows from every light without
+   * `unshadowed` (a flare on the ground); the forest's own lights are all unshadowed.
+   */
+  setOccluders(boxes: readonly { rect: Rect; h: number }[]): void
   /** Snap to the new scene's exposure after a camera cut, teleport or respawn. */
   resetExposure(): void
   /** Typed LabPanel rows for every look setting. */
@@ -230,6 +247,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const spots = new SpotShadows(device, { count: smoke ? 0 : 1, size: quality.shadowSize, bias: 1.2 }, forestShadowInstanceWgsl)
   renderer.setSpotShadows(spots.bindings())
   const lights = new SceneLights()
+  const fxLights = new SceneLights()
   const frameData = newSceneFrame()
   const custom = new Float32Array(WOODS_FLOATS)
   const empty = new Float32Array(0)
@@ -430,6 +448,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     if (f.sprites && extra) { sprites.set(f.sprites.add.subarray(0, extra * 12), spriteCount * 12); spriteCount += extra }
     for (const g of f.glows ?? []) {
       packLampGlow(sprites, spriteCount * 12, g, g.radius, g.color, f.eye, { density: s.fogDensity, falloff: s.fogFalloff, base: fogBase })
+      if (g.soft) sprites[spriteCount * 12 + 8] = SPRITE.glow
       spriteCount++
     }
     // Veiling glare: a decent lens scatters about 1.5% of the light reaching it evenly over the frame.
@@ -465,7 +484,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const volumes = smoke ? [fog.volumeInput()] : [debug.ssr === false ? null : ssr.volumeInput({ indoor: false, wet: { ...WET_DEFAULTS, wetness: 1, puddles: 1, ripple: 0.15 }, exclude: moonlitLake ? lake : null }), fog.volumeInput()]
     lastFrame = {
       frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
-      occluders: lights.occ, occluderCount: 0, lampPower: lights.power, lampCount: 0,
+      occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-reach, -reach, reach, reach], batches: f.batches ?? [], alphaSprites: f.sprites?.alpha ?? empty, alphaCount: f.sprites?.alphaCount ?? 0, addSprites: sprites, addCount: spriteCount,
       grade: [f.time, s.noise, s.vignette, s.exposure * cam.exposure],
       postParams: [s.aberration, s.halation, s.bloom],
@@ -473,6 +492,11 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
       volume: volumes, fogBlur: fog.blurInput(),
+    }
+    if (f.particles && f.particles.pool.count > 0) {
+      fxLights.update(f.particles.lights, [])
+      lastFrame.fxParticles = f.particles.pool
+      lastFrame.fxLighting = { ambient: f.particles.ambient ?? [0.002, 0.0022, 0.003], lights: fxLights.lights, lightCount: fxLights.lightCount }
     }
   }
 
@@ -497,6 +521,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       resetExposure()
     },
     resetExposure,
+    setOccluders(boxes) { lights.setBoxes(boxes) },
     controls: (prefix = "woods.") => forestLookControls(settings, prefix),
     get quality() { return quality },
     set quality(q: ForestQuality) { quality = q; applyQuality() },
