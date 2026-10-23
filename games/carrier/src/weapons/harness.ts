@@ -309,6 +309,7 @@ async function main() {
       planePass.add(w)
     }
     weapons.frame(dt, target, cam.eye, cam.fov, innerHeight, (x, y, z) => cam.project(x, y, z, innerWidth, innerHeight))
+    hud.reticle = weapons.hud.reticleShown
     // Our wreck falling: the crash camera follows it.
     const wreck = weapons.ownWreck
     if (flight.phase === "crashed" && wreck) {

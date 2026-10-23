@@ -16,6 +16,7 @@ import { feelSection } from "./feel-lab"
 import { juiceSection } from "./juice-lab"
 import { radarSection } from "./radar-lab"
 import { sightSection } from "./sight-lab"
+import { reticleSection } from "./reticle-lab"
 import { feedbackSection } from "./feedback-lab"
 import type { FlightModule } from "../flight/seam"
 import { viewSection } from "./view-lab"
@@ -80,6 +81,7 @@ export function installDevTools(ctx: DevToolsContext) {
     // SOUNDS: the audition board (every sound slot's candidate takes; pick by ear).
     new SoundsLab().section,
     sightSection,
+    reticleSection,
     radarSection,
     // FEEL: the flight camera's lean, lag, kicks and the g-load grey-out (src/flight/feel.ts).
     feelSection,

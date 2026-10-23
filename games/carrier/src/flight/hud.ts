@@ -43,6 +43,7 @@ const CSS = `
 #fl .boost i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); }
 #fl .boost.lit i { background: #ffb547; box-shadow: 0 0 8px #ff9a2a; }
 #fl .mark { position: absolute; left: 0; top: 0; will-change: transform; }
+#fl.reticle .nose { display: none; }
 #fl .nose { width: 22px; height: 22px; margin: -11px 0 0 -11px; }
 #fl .nose::before, #fl .nose::after { content: ""; position: absolute; background: rgba(244, 247, 251, 0.85); box-shadow: 0 0 6px rgba(10, 30, 60, 0.4); }
 #fl .nose::before { left: 10px; top: 0; width: 2px; height: 7px; }
@@ -127,6 +128,11 @@ export class FlightHud {
   /** Your team's colour (CSS), for the carrier marker. */
   set homeColor(c: string) {
     this.homeMarker.color = c
+  }
+
+  /** A weapon reticle sits on the boresight (src/weapons/reticle.ts): the boresight cross steps aside for it. */
+  set reticle(v: boolean) {
+    this.root.classList.toggle("reticle", v)
   }
 
   set visible(v: boolean) {

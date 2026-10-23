@@ -500,6 +500,7 @@ export class FlightModule {
     if (v.ships) w.fleet(v.ships, hulls ?? null, me?.team ?? -1, v.t, v.dt)
     this.shipHud.update(v.dt, v.t, me ?? null, v.crew, v.ships ?? [], hulls ?? null, cam, airborne && (f.phase === "flying" || f.phase === "landing"), v.paused)
     w.frame(v.dt, v.t, v.eye, cam?.fov ?? this.camera.fov, innerHeight, (x, y, z) => (cam ? cam.project(x, y, z, innerWidth, innerHeight) : null), v.paused)
+    this.hud.reticle = w.hud.reticleShown
     const flying = airborne && (f.phase === "flying" || f.phase === "landing")
     const inAir = airborne && f.phase === "flying" && w.flying
     this.feedback.frame({
