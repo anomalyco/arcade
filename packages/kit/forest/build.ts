@@ -400,7 +400,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
   const campLights: CampLight[] = []
   if (world.camp) {
     const before = new Map([...chunks.map.values()].flatMap(c => [[c.near[0], c.near[0].count], [c.far[0], c.far[0].count]] as const))
-    if (opts.campFinish) campChamfer = { hints: new Map(), parts: new Map(), next: 0 }
+    if (opts.campFinish) campChamfer = { near: new Set([...chunks.map.values()].map(c => c.near[0])), hints: new Map(), parts: new Map(), next: 0 }
     try {
       camp(world, chunks, models, campLights, (x, y, z, yaw) => chunks.instance(tableT.t, x, y, z, yaw, 1, 1, 0, 0), opts.campDetail)
       // Only the near level: past it the wear is below a pixel and the far camp keeps its plain shading.
@@ -884,7 +884,7 @@ function tape(w: VertexWriter, x: number, y: number, z: number, r: number, yaw: 
  * Set while a finished camp is built: its boxes are chamfered (`gpu/finish-geom.ts`) and each chamfered vertex's
  * curvature is kept per writer for the bake. The build is synchronous, so this never outlives one `buildForest`.
  */
-let campChamfer: { hints: Map<VertexWriter, number[]>; parts: Map<VertexWriter, number[]>; next: number } | null = null
+let campChamfer: { near: Set<VertexWriter>; hints: Map<VertexWriter, number[]>; parts: Map<VertexWriter, number[]>; next: number } | null = null
 
 /** Box faces in `chamferBox` order (+Y, −X, +X, +Z, −Z, −Y): the u and v axes of each face's planar uv. */
 const BOX_UV: [Vec3, Vec3][] = [[[1, 0, 0], [0, 0, -1]], [[0, 0, 1], [0, 1, 0]], [[0, 0, -1], [0, 1, 0]], [[1, 0, 0], [0, 1, 0]], [[-1, 0, 0], [0, 1, 0]], [[1, 0, 0], [0, 0, 1]]]
@@ -922,7 +922,8 @@ function box(w: VertexWriter, cx: number, cy: number, cz: number, yaw: number, s
   const c = Math.cos(yaw), s = Math.sin(yaw)
   const P = (x: number, y: number, z: number) => [cx + x * c - z * s, cy + y, cz + x * s + z * c]
   const N = (x: number, y: number, z: number) => [x * c - z * s, y, x * s + z * c]
-  if (campChamfer) {
+  // Only the near level is finished: the far camp keeps its square boxes.
+  if (campChamfer?.near.has(w)) {
     const hints = campChamfer.hints.get(w) ?? [], parts = campChamfer.parts.get(w) ?? []
     campChamfer.hints.set(w, hints)
     campChamfer.parts.set(w, parts)

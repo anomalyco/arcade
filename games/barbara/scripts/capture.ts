@@ -24,6 +24,12 @@ const tier = arg("--quality", "high")
 const steps = arg("--steps", "")
 /** `--rebuild`: rebuild the forest after `--look`, for build settings such as `campFinish`. */
 const rebuild = process.argv.includes("--rebuild")
+/**
+ * `--pair <lookKey> [--rounds n]`: after each shot, rebuild with the boolean look key off and on in turn (`n` rounds,
+ * alternating so drift cancels), settling and timing the GPU each time; prints both medians and the triangle counts.
+ */
+const pair = arg("--pair", "")
+const rounds = Number(arg("--rounds", "3"))
 
 type Woods = {
   frames: number; paused: boolean
@@ -335,6 +341,7 @@ await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods 
 await page.evaluate(({ sets, looks, debugs, rebuild }) => { for (const el of document.querySelectorAll<HTMLElement>("#start, .arcade-shell, #hud, #prompt, #objective, #subs, #goal")) el.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets); Object.assign((woods as unknown as { look: object }).look, looks); Object.assign((woods as unknown as { view: { forest: { debug: object } } }).view.forest.debug, debugs)
   if (rebuild) { const f = (woods as unknown as { view: { forest: { world: unknown; setWorld(w: unknown): void } } }).view.forest; f.setWorld(f.world) } }, { sets, looks, debugs, rebuild })
 const timing: Record<string, number> = {}
+const paired: Record<string, unknown> = {}
 for (const [name, setup] of Object.entries(shots)) {
   if (only && !only.split(",").includes(name)) continue
   await page.evaluate(() => { woods.hold("KeyG", false); woods.camera.flashlight = true; (woods as unknown as { debug: { dark: number[] } }).debug.dark = [] })
@@ -352,8 +359,23 @@ for (const [name, setup] of Object.entries(shots)) {
   await page.screenshot({ path: `${out}/${name}${tag}.png` })
   console.log(`${name}: ${timing[name]} ms for 90 steps`)
   if (measure) console.log(name, "gpu", JSON.stringify(await page.evaluate(async () => { const w = woods as unknown as { measure(n: number): Promise<{ median: number } | null>; stats(): unknown }; return { gpu: (await w.measure(12))?.median, stats: w.stats() } })))
+  if (pair) paired[name] = await page.evaluate(async ({ key, rounds }) => {
+    type W = { look: Record<string, unknown>; view: { forest: { world: unknown; setWorld(w: unknown): void } }; measure(n: number): Promise<{ median: number } | null>; stats(): Record<string, number | string> }
+    const w = woods as unknown as W
+    const runs: { on: boolean; gpu: number | null; buildMs: unknown; triangles: unknown; staticTriangles: unknown; drawCalls: unknown }[] = []
+    for (let r = 0; r < rounds; r++) for (const on of r % 2 ? [true, false] : [false, true]) {
+      w.look[key] = on
+      w.view.forest.setWorld(w.view.forest.world)
+      for (let i = 0; i < 60; i++) { woods.step(1000 / 60); if (i % 5 === 4) await new Promise((res) => setTimeout(res, 0)) }
+      const s = w.stats()
+      runs.push({ on, gpu: (await w.measure(12))?.median ?? null, buildMs: s.buildMs, triangles: s.triangles, staticTriangles: s.staticTriangles, drawCalls: s.drawCalls })
+    }
+    const med = (on: boolean) => { const g = runs.filter((x) => x.on === on && x.gpu !== null).map((x) => x.gpu!).sort((a, b) => a - b); return g.length ? g[Math.floor(g.length / 2)]! : null }
+    return { off: med(false), on: med(true), runs }
+  }, { key: pair, rounds })
+  if (pair) console.log(name, "pair", pair, JSON.stringify(paired[name]))
 }
-writeFileSync(`${out}/capture.json`, JSON.stringify({ timing, errors }, null, 2))
+writeFileSync(`${out}/capture.json`, JSON.stringify({ timing, errors, ...(pair ? { pair: { key: pair, shots: paired } } : {}) }, null, 2))
 if (errors.length) console.log("browser messages:", errors.slice(0, 10))
 await browser.close()
 server.stop(true)

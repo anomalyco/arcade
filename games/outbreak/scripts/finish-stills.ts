@@ -3,7 +3,9 @@
  * fitted kitchen with `propFinish` 0 (Today) and 1 from the same frozen frame, at noon and by torch at 19:00, plus the
  * albedo validator view; then alternates 0/1 with the renderer's timestamp queries (3456×1894).
  *
- *   bun scripts/finish-stills.ts --out <dir>      (via hivemind run --kind browser)
+ *   bun scripts/finish-stills.ts --out <dir> [--shots name,name|none] [--rounds n]   (via hivemind run --kind browser)
+ *
+ * `--rounds 0` skips the GPU pairs; split stills and pairs into two runs to keep each under the browser budget.
  *
  * Headless Metal Chromium, muted, no visible window.
  */
@@ -24,6 +26,7 @@ const arg = (name: string, fallback?: string) => {
 }
 const out = resolve(arg("out", resolve(root, "../../captures/finish"))!)
 const rounds = Number(arg("rounds", "8"))
+const only = arg("shots")
 mkdirSync(out, { recursive: true })
 
 const server = await createServer({
@@ -61,8 +64,8 @@ const errors: string[] = []
 const meta: Record<string, unknown> = { shots: {} }
 
 /** Same frozen frame for stills and timing: pose, hour, zoom and finish (a level rebuild), then wait for the rugs. */
-async function setup(page: Page, s: Omit<Shot, "name">) {
-  return page.evaluate(async s => {
+async function setup(page: Page, s: Omit<Shot, "name">, settle = 120) {
+  return page.evaluate(async ({ s, settle }) => {
     const h = (window as any).__arcadeHarness
     h.freeze(true)
     h.reset(7)
@@ -85,10 +88,10 @@ async function setup(page: Page, s: Omit<Shot, "name">) {
       await new Promise(r => setTimeout(r, 25))
     }
     // Long enough for the camera to settle after the level rebuild, so both variants frame the same.
-    for (let i = 0; i < 120; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
+    for (let i = 0; i < settle; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
     const rugs = h.interiors?.()
-    return { settled: rugs?.settled, resident: rugs?.resident }
-  }, s)
+    return { settled: rugs?.settled, resident: rugs?.resident, ms: Math.round(performance.now() - t0) }
+  }, { s, settle })
 }
 
 async function open(width: number, height: number, dpr: number): Promise<Page> {
@@ -111,6 +114,7 @@ try {
   meta.adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   await page.addStyleTag({ content: `${HUD} { visibility: hidden !important; }` })
   for (const shot of shots) {
+    if (only && !only.split(",").includes(shot.name)) continue
     const state = await setup(page, shot)
     await page.screenshot({ path: resolve(out, `${shot.name}.png`) })
     ;(meta.shots as Record<string, unknown>)[shot.name] = { ...shot, state }
@@ -119,29 +123,34 @@ try {
 
   // Paired GPU cost at the bench resolution on the kitchen at night: alternate 0/1, second-fastest of 16 frames each.
   await page.close()
-  const gpuPage = await open(1728, 947, 2)
-  meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
-  const a: number[] = [], b: number[] = []
-  for (let r = 0; r < rounds; r++) {
-    for (const finish of r % 2 ? [1, 0] as const : [0, 1] as const) {
-      await setup(gpuPage, { hour: 19, zoom: 18, ...KITCHEN, finish, flashlight: true })
-      const ms = await gpuPage.evaluate(async () => {
-        const h = (window as any).__arcadeHarness
-        const v: number[] = []
-        // A frame right after the rebuild can return a bogus interval: skip any the timer rejects.
-        for (let i = 0; i < 24 && v.length < 18; i++) { try { v.push(await h.renderer.measure(h.render)) } catch {} }
-        return v.slice(2).sort((x: number, y: number) => x - y)[1] ?? NaN
-      })
-      ;(finish ? b : a).push(ms)
+  if (rounds > 0) {
+    const gpuPage = await open(1728, 947, 2)
+    meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+    const a: number[] = [], b: number[] = []
+    for (let r = 0; r < rounds; r++) {
+      for (const finish of r % 2 ? [1, 0] as const : [0, 1] as const) {
+        // Timing needs the same pose and settled rugs, not a settled camera: a short settle keeps the pairs in budget.
+      const st = await setup(gpuPage, { hour: 19, zoom: 18, ...KITCHEN, finish, flashlight: true }, 20)
+        const ms = await gpuPage.evaluate(async () => {
+          const h = (window as any).__arcadeHarness
+          const v: number[] = []
+          // A frame right after the rebuild can return a bogus interval: skip any the timer rejects.
+          for (let i = 0; i < 24 && v.length < 18; i++) { try { v.push(await h.renderer.measure(h.render)) } catch {} }
+          return v.slice(2).sort((x: number, y: number) => x - y)[1] ?? NaN
+        })
+        ;(finish ? b : a).push(ms)
+      console.log(`round ${r} finish=${finish} ${ms.toFixed(3)} ms (setup ${JSON.stringify(st)})`)
+      writeFileSync(resolve(out, "gpu.json"), JSON.stringify({ partial: true, raw: { a, b } }, null, 2))
+      }
     }
+    const med = (xs: number[]) => { const s = [...xs].sort((p, q) => p - q); return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 }
+    const diffs = a.map((x, i) => b[i]! - x)
+    meta.gpu = { scene: "Ash kitchen 19:00 zoom 18, torch", today: med(a), finished: med(b), pairedDeltaMedian: med(diffs), pairedDeltaMad: med(diffs.map(d => Math.abs(d - med(diffs)))), raw: { a, b } }
+    console.log(`GPU today=${med(a).toFixed(3)} ms finished=${med(b).toFixed(3)} ms paired Δ=${med(diffs).toFixed(3)} ms`)
   }
-  const med = (xs: number[]) => { const s = [...xs].sort((p, q) => p - q); return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 }
-  const diffs = a.map((x, i) => b[i]! - x)
-  meta.gpu = { scene: "Ash kitchen 19:00 zoom 18, torch", today: med(a), finished: med(b), pairedDeltaMedian: med(diffs), pairedDeltaMad: med(diffs.map(d => Math.abs(d - med(diffs)))), raw: { a, b } }
-  console.log(`GPU today=${med(a).toFixed(3)} ms finished=${med(b).toFixed(3)} ms paired Δ=${med(diffs).toFixed(3)} ms`)
   meta.errors = errors
 } finally {
-  writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
+  writeFileSync(resolve(out, rounds > 0 && only === "none" ? "gpu.json" : "meta.json"), JSON.stringify(meta, null, 2))
   await browser.close()
   await server.close()
 }
