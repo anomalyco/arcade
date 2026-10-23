@@ -634,7 +634,103 @@ function storm(): Scene {
   }
 }
 
+/** The "pitch" flight's sections (s). */
+const PITCH_SECTIONS: readonly (readonly [name: string, at: number])[] = [
+  ["idle", 0],
+  ["launch", 4],
+  ["climb", 8.5],
+  ["cruise", 14],
+  ["military", 20],
+  ["afterburner", 25],
+  ["cruise", 30],
+  ["flyby", 36],
+  ["cockpit", 44],
+  ["end", 50],
+]
+
+/**
+ * One continuous Hornet flight (the engine pitch of captures/audio/hornet-pitch/): parked at idle on the deck (chase camera), the catapult (its live
+ * voice), the climb at military, cruise, military, afterburner, back to cruise, then from the deck another Hornet's
+ * flyby at military 40 m out, and your own jet at cruise from the cockpit. Weather clear, the carrier's ambience on.
+ */
+function pitch(dry = false): Scene {
+  const at = (name: string) => PITCH_SECTIONS.find((p) => p[0] === name)![1]
+  const DECK = 20
+  const STROKE_M = 285
+  let thr = 0.15
+  let run = 0
+  let speed = 0
+  const fly = flyby(false)
+  let flyT = -1
+  return {
+    dur: at("end"),
+    setup: (s) => {
+      if (!dry) {
+        s.sky("clear")
+        s.ships = [[1, { x: 0, z: 0, heave: 0, slams: 0, slam: 0 }]]
+      }
+      const o = s.makeOwn("hornet", "chase")
+      o.phase = "launching"
+      o.launch = { phase: "ready", progress: 0 }
+      o.draw.y = DECK
+      o.draw.throttle = thr
+      yawQ(o.draw, Math.PI)
+    },
+    step: (s, t, dt) => {
+      s.weather?.update(s.wx, dt)
+      if (t >= at("flyby") && t < at("cockpit")) {
+        // From the deck: your jet parked out of the way, another Hornet passes.
+        if (flyT < 0) {
+          flyT = 0
+          s.own = null
+          fly.setup!(s)
+        }
+        fly.step(s, flyT, dt)
+        flyT += dt
+        return
+      }
+      if (t >= at("cockpit") && (!s.own || s.own.cam.mode !== "cockpit")) {
+        s.remotes = []
+        const o = s.makeOwn("hornet", "cockpit")
+        o.draw.y = 420
+        thr = 0.77
+        o.draw.throttle = thr
+        yawQ(o.draw, Math.PI)
+        speed = 150
+      }
+      const o = s.own!
+      const d = o.draw
+      const want = t < at("launch") ? 0.15 : t < at("cruise") || (t >= at("military") && t < 30) ? 1 : 0.77
+      if (t >= at("launch") && t < at("climb")) thr = 1
+      else thr += Math.max(-0.7 * dt, Math.min(0.7 * dt, want - thr))
+      d.throttle = thr
+      d.boosting = (t >= at("launch") && run < STROKE_M) || (t >= at("afterburner") && t < 30) ? 1 : 0
+      if (t >= at("launch") && run < STROKE_M) {
+        o.phase = "launching"
+        const u = t - at("launch")
+        speed = u < 0.3 ? (34.7 * u * u) / 0.6 : 34.7 * (u - 0.15)
+        run += speed * dt
+        o.launch = { phase: "stroke", progress: Math.min(1, run / STROKE_M) }
+      } else if (run >= STROKE_M) {
+        o.phase = "flying"
+        o.launch = { phase: "airborne", progress: 1 }
+        const target = t < at("cruise") ? 165 : t < at("military") ? 155 : t < at("afterburner") ? 168 : t < 30 ? 215 : 160
+        speed += (target - speed) * Math.min(1, dt / 2.5)
+        d.vy = t < at("cruise") ? 18 : 0
+        d.y += d.vy * dt
+      }
+      d.vz = -speed
+      d.z += d.vz * dt
+      if (o.cam.mode === "chase") s.chase()
+      else s.cockpit()
+    },
+  }
+}
+
 const SCENES: Record<string, () => Scene> = {
+  pitch: () => pitch(),
+  // The engines alone (no sea, wind or ship ambience), for measuring them.
+  "pitch-dry": () => pitch(true),
   launch,
   landing,
   montage,
