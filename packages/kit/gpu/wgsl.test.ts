@@ -85,7 +85,7 @@ describe("wgslStruct & resolveWgsl", () => {
 
   test("converted uniform structs match exact float counts and eliminate u0..u15 swizzles", () => {
     expect(LookUniformsStruct.floatCount).toBe(64)
-    expect(ParticleFrameStruct.floatCount).toBe(120)
+    expect(ParticleFrameStruct.floatCount).toBe(228)
     expect(VolumeFrameStruct.floatCount).toBe(136)
     expect(FoliageWindConfigStruct.floatCount).toBe(12)
     expect(FoliageActorsStruct.floatCount).toBe(20)
@@ -169,6 +169,26 @@ describe("wgslStruct & resolveWgsl", () => {
     pr.setFrame({ lights, lightCount: 3, lightStride: 16, spotCones: true })
     expect(pr.uniforms[ParticleFrameStruct.offsetOf("lightCount")]).toBe(2)
     expect(Array.from(pr.uniforms.subarray(cones, cones + 8)).map((v) => Math.round(v * 100) / 100)).toEqual([0.6, 0.8, 0.85, 1, 0, 0, 0, 0])
+
+    // The inverse-square core stays until a frame sets another (0 is the window falloff).
+    const falloff = ParticleFrameStruct.offsetOf("shading")
+    expect(pr.uniforms[falloff]).toBe(0)
+    pr.setFrame({ falloff: 0.5 })
+    pr.setFrame({ lights, lightCount: 3, lightStride: 16 })
+    expect(pr.uniforms[falloff]).toBe(0.5)
+    pr.setFrame({ falloff: -1 })
+    expect(pr.uniforms[falloff]).toBe(0)
+
+    // Mist lamps stay until a frame clears them with null; the count caps at what was passed.
+    const medium = ParticleFrameStruct.offsetOf("mistMedium"), mist = ParticleFrameStruct.offsetOf("mist")
+    const lamps = new Float32Array(24).map((_, i) => i + 1)
+    pr.setFrame({ mist: { lamps, count: 1, phase: [0.75, 0.03, 80], bank: [0.02, 2.4] } })
+    pr.setFrame({ falloff: 1 })
+    expect(Array.from(pr.uniforms.subarray(medium, medium + 8)).map((v) => Math.round(v * 100) / 100)).toEqual([0.75, 0.03, 80, 1, 0.02, 2.4, 0, 0])
+    expect(Array.from(pr.uniforms.subarray(mist, mist + 13))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0])
+    pr.setFrame({ mist: null })
+    expect(pr.uniforms[medium + 3]).toBe(0)
+    expect(pr.uniforms[mist]).toBe(0)
   })
 
   test("specializes Look scene & post variants and surface material slots without .replace()", () => {

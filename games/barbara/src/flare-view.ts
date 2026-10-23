@@ -35,13 +35,19 @@ export type FlareLook = {
   shadows: boolean
   /** Smoke drift with the gusts (m/s at a full gust). */
   drift: number
+  /**
+   * How far round the flame its smoke glows (m): the smoke takes the flare's light by inverse square with this soft
+   * core, so the column is red over the flame and goes dim and grey up it, and hides what is behind it. 0 lights the
+   * whole column almost evenly, which made it glow like a lamp shade and lifted the woods behind it.
+   */
+  smokeCore: number
 }
 
 /**
  * A fusee is about 100 cd against a 1990s two-cell torch's ~3000 at its hot spot; the forest's torch is 70, so a flare is
  * a few. Deep red, it lights a broad pool dimly where the torch lights a small spot brightly.
  */
-export const FLARE_LOOK: FlareLook = { power: 4, reach: 18, fog: 2, fogRange: 18, glow: 1, haze: 1, shadows: true, drift: 1.3 }
+export const FLARE_LOOK: FlareLook = { power: 4, reach: 18, fog: 2, fogRange: 18, glow: 1, haze: 1, shadows: true, drift: 1.3, smokeCore: 1 }
 /** Your own flare is a hand from your eyes: its glow in the mist and its smoke past your face are cut so the night stays dark. */
 const OWN_FOG = 0.15
 const OWN_SMOKE = 0.05
@@ -85,7 +91,7 @@ export class FlareView {
   private glows: ForestGlow[] = []
   private particleLights: SceneLight[] = []
   /** What `update` returns, the same object every frame. */
-  private out = { scene: this.scene, fog: this.fog, glows: this.glows, particles: { pool: this.pool, lights: this.particleLights } }
+  private out = { scene: this.scene, fog: this.fog, glows: this.glows, particles: { pool: this.pool, lights: this.particleLights, falloff: FLARE_LOOK.smokeCore } }
   private ground: ((x: number, z: number) => number) | null = null
   private groundOf: WoodsWorld | null = null
   private order: { s: Shown; d: number }[] = []
@@ -115,6 +121,7 @@ export class FlareView {
       r("haze", "Far haze", 0, 4, 0.05, "×"),
       { key: "woods.flare.shadows", field: "shadows", label: "Trunk shadows", group, subsection: "Light", type: "toggle" },
       r("drift", "Smoke drift in a gust", 0, 4, 0.05, "m/s"),
+      r("smokeCore", "Smoke glows within", 0, 3, 0.05, "m"),
     ]
   }
 
@@ -192,6 +199,7 @@ export class FlareView {
     const L = this.look
     this.scene.length = 0; this.fog.length = 0; this.glows.length = 0; this.particleLights.length = 0
     this.order.length = 0
+    this.out.particles.falloff = L.smokeCore
     for (const s of this.shown.values()) if (s.light.level > 0.001) this.order.push({ s, d: Math.hypot(s.light.x - eye[0]!, s.light.y - eye[1]!, s.light.z - eye[2]!) })
     this.order.sort((a, b) => a.d - b.d)
     let id = 0

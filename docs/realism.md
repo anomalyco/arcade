@@ -311,6 +311,20 @@ soft haze sprite (`ForestGlow.soft`) the trunks cut up, since the fog march's la
   the light, half the mist lamp, shadows and smoke in the noise. Decision: pending Kit.
 - Pitfalls: a held flare a hand from the eye fills the frame with lit smoke and mist; cut its own fog, smoke and halo.
   Far off, the haze has to be bright (peak ~0.5 × power × fog) to show in the few gaps a dense stand leaves at 120 m.
+- Pitfalls: smoke drawn in the scene pass showed the woods through itself (Kit, Oct 22). The fog volume and fog blur
+  run after the scene and read its depth, which particles never write, so they fogged and blurred each smoke pixel by
+  the trunk or gap behind it and stamped blocky half-res trunk shapes into the column. The forest now draws kit
+  particles after the fog (`fxLighting.afterFog`: hand depth test, faded by the depth mist in front), which also keeps
+  them out of temporal AA's reactive mask, where a frame-wide plume made TAA show raw jittered frames. The window
+  falloff `(1 − d/r)²` lit the column evenly to the top; smoke now takes inverse square with a 1 m soft core
+  (`FlareLook.smokeCore`, Lab "Smoke glows within"): red over the flame, dark higher up. Drawn after the fog alone,
+  the plume read from outside as a black hole in the red mist (Oct 22): it hid the lamp glow the mist scatters in
+  front of and around it. `fxLighting.mist` puts the fog's omni lamps back per vertex with the fog's own single
+  scattering (equiangular, HG plus isotropic share, windowed range, mean bank via a CPU `woodsBankLocal`): the mist
+  in front is added over the particle, and the smoke is floored at the lit mist it displaces. Outside, the plume
+  measures 27.4 grey against 19.3 cleared, as bright as before; through it, no trunk shapes come back. Torch beams
+  (`beam`, cones) are not put back, so smoke still hides a torch beam behind it.
+  Proof: `games/barbara/scripts/flare-smoke-proof.ts`.
 
 - Pitfalls:
   - **Software-GPU smoke tests time out on heavy scenes (#392).** One Lot frame takes ~190 s to rasterize on CI's
