@@ -43,14 +43,6 @@ canvas#view:active {
   zoom: var(--hud, 1);
 }
 
-#tl {
-  position: absolute;
-  top: 20px;
-  left: 22px;
-  font-size: 17px;
-  letter-spacing: 0.55em;
-}
-
 #br {
   position: absolute;
   right: 28px;

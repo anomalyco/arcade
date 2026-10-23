@@ -430,6 +430,20 @@ export const SHELL_CSS = `
 .arcade-shell .as-bar i { display: block; height: 100%; background: var(--shell-accent); transition: width 0.2s ease-out; }
 .arcade-shell .as-load-label { font-size: 13px; color: var(--shell-dim); }
 @media (prefers-reduced-motion: reduce) { .arcade-shell .as-bar i { transition: none; } }
+/* The in-HUD volume control (ShellVolumeButton): the speaker; hover drops the slider to its left. */
+.arcade-shell.as-volume { display: inline-flex; align-items: center; gap: 4px; pointer-events: auto; font-size: 13px; }
+/* Both sit on the card colour so the icon reads over a bright sky as well as dark water. */
+.arcade-shell.as-volume .as-vol-btn, .arcade-shell.as-volume .as-vol-btn:hover { color: var(--shell-ink); background: var(--shell-card); box-shadow: inset 0 0 0 1px var(--shell-edge); border-radius: var(--shell-radius); }
+.arcade-shell.as-volume .as-vol-btn:hover { box-shadow: inset 0 0 0 1px var(--shell-dim); }
+.arcade-shell.as-volume .as-vol-pop { display: flex; align-items: center; gap: 10px; box-sizing: border-box; height: 32px; padding: 0 10px; border-radius: var(--shell-radius); background: var(--shell-card); box-shadow: inset 0 0 0 1px var(--shell-edge); visibility: hidden; opacity: 0; transform: translateX(6px); transition: opacity 0.12s, transform 0.12s, visibility 0s 0.12s; }
+.arcade-shell.as-volume:hover .as-vol-pop, .arcade-shell.as-volume:focus-within .as-vol-pop { visibility: visible; opacity: 1; transform: none; transition: opacity 0.12s, transform 0.12s; }
+.arcade-shell.as-volume input[type=range] { width: 110px; margin: 0; accent-color: var(--shell-accent); cursor: pointer; }
+.arcade-shell.as-volume output { min-width: 3.6em; text-align: right; font-variant-numeric: tabular-nums; color: var(--shell-dim); }
+.arcade-shell.as-volume .as-x { display: none; }
+.arcade-shell.as-volume[data-level=muted] .as-x { display: inline; }
+.arcade-shell.as-volume[data-level=muted] .as-w1, .arcade-shell.as-volume[data-level=muted] .as-w2, .arcade-shell.as-volume[data-level=low] .as-w2 { display: none; }
+.arcade-shell.as-volume[data-level=muted] .as-vol-btn { color: var(--shell-accent); }
+@media (prefers-reduced-motion: reduce) { .arcade-shell.as-volume .as-vol-pop { transition: none; } }
 `
 
 let installed = false
