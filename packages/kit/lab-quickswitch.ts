@@ -199,7 +199,6 @@ const stack = (labels: readonly string[], shown: string, className = "") =>
 export class QuickSwitchToast {
   readonly element: HTMLDivElement
   private timer: ReturnType<typeof setTimeout> | undefined
-  private held = false
 
   constructor(private readonly doc: Document = document, private readonly linger = 1600) {
     installKeyCapStyles(doc)
@@ -220,7 +219,6 @@ export class QuickSwitchToast {
 
   /** Shows `view`, with the cap for `down` drawn pressed; it fades after `linger` ms unless `hold` keeps it. */
   show(view: QuickSwitchView, down?: string, hold = false): void {
-    this.held = hold
     const cap = (code: string) => keyCapHtml(code, { down: code === down })
     const back = view.back
       ? `<span class="lqs-hint">${cap(QUICK_SWITCH_KEYS.back)}${stack(view.presets, view.back)}</span>`
@@ -237,17 +235,8 @@ export class QuickSwitchToast {
     if (!hold) this.timer = setTimeout(() => this.hide(), this.linger)
   }
 
-  /** Lets a toast held open (a peek) fade on the usual delay. */
-  release(): void {
-    if (!this.held) return
-    this.held = false
-    clearTimeout(this.timer)
-    this.timer = setTimeout(() => this.hide(), this.linger)
-  }
-
   hide(): void {
     clearTimeout(this.timer)
-    this.held = false
     this.element.removeAttribute("data-shown")
   }
 
