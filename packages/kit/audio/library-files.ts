@@ -5,7 +5,7 @@ export type LibraryFile = {
   file: string
   /** Repository path of the source file the asset plugin serves. */
   path: string
-  source: "project" | "elevenlabs-sound-v2" | "procedural-bake"
+  source: "project" | "elevenlabs-sound-v2" | "elevenlabs-tts" | "procedural-bake"
   license: string
   provenance: string
   requestId?: string
@@ -837,5 +837,45 @@ export const LIBRARY_FILES: Record<string, readonly LibraryFile[]> = {
   ],
   "ui.kill-confirm": [
     {"file":"ui-kill-1.ogg","path":"games/carrier/public/sfx/v3/ui-kill-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ui-kill\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.48,"loudness":-21.6,"peakDb":-7.6,"gain":0.959,"bytes":22003},
+  ],
+  "voice.radio.launch": [
+    {"file":"radio-launch-1.ogg","path":"games/carrier/public/sfx/v3/radio-launch-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-launch\" take 1 (ElevenLabs text to speech eleven_v4, voice Rolando; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.437,"loudness":-11.6,"peakDb":-1.5,"gain":0.602,"bytes":24617},
+    {"file":"radio-launch-2.ogg","path":"games/carrier/public/sfx/v3/radio-launch-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-launch\" take 2 (ElevenLabs text to speech eleven_v4, voice Rolando; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.632,"loudness":-11.4,"peakDb":-2.7,"gain":0.586,"bytes":25861},
+  ],
+  "voice.radio.ball": [
+    {"file":"radio-ball-1.ogg","path":"games/carrier/public/sfx/v3/radio-ball-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-ball\" take 1 (ElevenLabs text to speech eleven_v4, voice Rolando; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.458,"loudness":-14.2,"peakDb":-4.9,"gain":0.81,"bytes":14980},
+    {"file":"radio-ball-2.ogg","path":"games/carrier/public/sfx/v3/radio-ball-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-ball\" take 2 (ElevenLabs text to speech eleven_v4, voice Rolando; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.407,"loudness":-14.1,"peakDb":-5.4,"gain":0.805,"bytes":14695},
+  ],
+  "voice.radio.mother": [
+    {"file":"radio-mother-1.ogg","path":"games/carrier/public/sfx/v3/radio-mother-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-mother\" take 1 (ElevenLabs text to speech eleven_v4, voice Rolando; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.355,"loudness":-14.7,"peakDb":-5.5,"gain":0.861,"bytes":13444},
+    {"file":"radio-mother-2.ogg","path":"games/carrier/public/sfx/v3/radio-mother-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-mother\" take 2 (ElevenLabs text to speech eleven_v4, voice Rolando; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.359,"loudness":-14.6,"peakDb":-6.3,"gain":0.852,"bytes":13715},
+  ],
+  "voice.radio.spike": [
+    {"file":"radio-spike-1.ogg","path":"games/carrier/public/sfx/v3/radio-spike-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-spike\" take 1 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.85,"loudness":-14.4,"peakDb":-5.1,"gain":0.829,"bytes":19661},
+    {"file":"radio-spike-2.ogg","path":"games/carrier/public/sfx/v3/radio-spike-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-spike\" take 2 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.773,"loudness":-14,"peakDb":-5,"gain":0.797,"bytes":19819},
+  ],
+  "voice.radio.break-left": [
+    {"file":"radio-break-left-1.ogg","path":"games/carrier/public/sfx/v3/radio-break-left-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-break-left\" take 1 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.999,"loudness":-13.1,"peakDb":-4.3,"gain":0.715,"bytes":21288},
+    {"file":"radio-break-left-2.ogg","path":"games/carrier/public/sfx/v3/radio-break-left-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-break-left\" take 2 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.889,"loudness":-13.1,"peakDb":-4.2,"gain":0.719,"bytes":19191},
+  ],
+  "voice.radio.break-right": [
+    {"file":"radio-break-right-1.ogg","path":"games/carrier/public/sfx/v3/radio-break-right-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-break-right\" take 1 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.535,"loudness":-13.6,"peakDb":-4.6,"gain":0.756,"bytes":17539},
+    {"file":"radio-break-right-2.ogg","path":"games/carrier/public/sfx/v3/radio-break-right-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-break-right\" take 2 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.544,"loudness":-13.4,"peakDb":-3.2,"gain":0.742,"bytes":16013},
+  ],
+  "voice.radio.splash": [
+    {"file":"radio-splash-1.ogg","path":"games/carrier/public/sfx/v3/radio-splash-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-splash\" take 1 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":0.935,"loudness":-14.7,"peakDb":-5.5,"gain":0.859,"bytes":10709},
+    {"file":"radio-splash-2.ogg","path":"games/carrier/public/sfx/v3/radio-splash-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-splash\" take 2 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":0.953,"loudness":-15,"peakDb":-5.1,"gain":0.891,"bytes":10582},
+  ],
+  "voice.radio.hit": [
+    {"file":"radio-hit-1.ogg","path":"games/carrier/public/sfx/v3/radio-hit-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-hit\" take 1 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.754,"loudness":-13.8,"peakDb":-5.8,"gain":0.774,"bytes":18537},
+    {"file":"radio-hit-2.ogg","path":"games/carrier/public/sfx/v3/radio-hit-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-hit\" take 2 (ElevenLabs text to speech eleven_v4, voice Jerry B.; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.974,"loudness":-13.4,"peakDb":-4.8,"gain":0.742,"bytes":19990},
+  ],
+  "voice.radio.zone-captured": [
+    {"file":"radio-zone-captured-1.ogg","path":"games/carrier/public/sfx/v3/radio-zone-captured-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-zone-captured\" take 1 (ElevenLabs text to speech eleven_v4, voice Eryn; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.176,"loudness":-14.6,"peakDb":-4.3,"gain":0.848,"bytes":13686},
+    {"file":"radio-zone-captured-2.ogg","path":"games/carrier/public/sfx/v3/radio-zone-captured-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-zone-captured\" take 2 (ElevenLabs text to speech eleven_v4, voice Eryn; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.142,"loudness":-14.2,"peakDb":-3.8,"gain":0.815,"bytes":13529},
+  ],
+  "voice.radio.zones-moving": [
+    {"file":"radio-zones-moving-1.ogg","path":"games/carrier/public/sfx/v3/radio-zones-moving-1.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-zones-moving\" take 1 (ElevenLabs text to speech eleven_v4, voice Eryn; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.766,"loudness":-14,"peakDb":-2.1,"gain":0.795,"bytes":30179},
+    {"file":"radio-zones-moving-2.ogg","path":"games/carrier/public/sfx/v3/radio-zones-moving-2.ogg","source":"elevenlabs-tts","license":"ElevenLabs commercial text-to-speech license (Anomaly)","provenance":"Carrier's \"radio-zones-moving\" take 2 (ElevenLabs text to speech eleven_v4, voice Eryn; games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.766,"loudness":-12.7,"peakDb":-3.3,"gain":0.682,"bytes":30059},
   ],
 }

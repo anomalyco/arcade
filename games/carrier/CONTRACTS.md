@@ -441,6 +441,15 @@ weather section; any section id works: `time`, `audio`, `sounds`, `sight`, `rada
   room status, and the live list as a table readout; Act on picks every bot, a group or one bot for LOAD, APPLY,
   SHOOT DOWN and REMOVE. Offline it offers Reload with an in-page room. Real-GPU check: `scripts/bots-shot.ts` (captures in `captures/bots/`).
 
+## Seabirds (`src/render/birds.ts`, wired by `src/game/life.ts`)
+
+- Small silent gull flocks (no calls, by decision) wheel over island shores: one shore point per island, biggest islands
+  first (up to 16 sites, 10 shown by default), all from the world seed. Each flock is a kit boids `Flock`
+  (`@arcade/kit/sim/boids`) following an anchor circling the point at ~26 m; a jet within 320 m (3D) or a carrier
+  within 190 m scatters it (the flock opens, climbs and flaps harder) and it settles back over ~9 s. Instanced low-poly
+  gulls ("opaque" slot, 8 triangles, wingbeat in the vertex shader), never smaller than 2.2 px on screen. Only flocks
+  within 3 km step and draw. Tunables `BIRDS` (World tab); scripts read `carrier.life.birds.flocks`.
+
 ## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{dev-panel,weather-lab}.ts`)
 
 - Weather is a pure function of (room seed, sea time, room override), like the sea. `weatherAt(seed, t)` is the seeded
@@ -468,6 +477,12 @@ weather section; any section id works: `time`, `audio`, `sounds`, `sight`, `rada
   cumulus into a low, slate, faceted deck with dark undersides and lightning glow near the strike; the ocean look's
   `stormFoam`, `rain`, `wind`, `windX/Z` (look slots 10-11) draw wind-streak foam (crests torn into streaks, densest on
   crests and swell backs) and rain dimples near the camera. All zero / absent: the sunny look exactly.
+- Canopy rain (`src/render/canopy-rain.ts`, "alpha" slot, screen space): in the cockpit view while it rains, drops land
+  on the canopy at a rate set by rain × density and airspeed (26/s slow, 120/s at 250 m/s); slow they bead and run
+  down, above 35 m/s they stream back and out from low in the windscreen, faster and longer with speed. Behind a jet in
+  the chase view a few (≤ 6) lens drops bead and slide. Each drop is a little refracting lens (dark rim, the sky flipped
+  to its bottom, a highlight). Tunables `CANOPY_RAIN` (World tab), with a Preview (canopy or lens, a pretend airspeed)
+  that needs no jet.
 - Dev panel (dev builds only, `src/dev/dev-panel.ts`): the shared floating `LabPanel` (Backquote), drawn with knobs, one
   tab per subject (World: weather, time; Audio; Sounds; Flight: bombsight, radar; Bots; Game: zones, quality, volume,
   key labels, camera shake). Each `DevSection` (`dev-tools.ts`) binds typed settings, `buttons` rows (presets, strike now, broadcast,
@@ -1014,6 +1029,20 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `seam.ts` `audio.ships(...)`): the deck bed near a hull, hull slams (`Ship.slams`), creaks in heavy seas, a rare horn.
   Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
   `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
+- **Radio chatter** (`src/audio/radio.ts`, `radio-director.ts`, wired by `src/game/life.ts`): short voice lines on your
+  own moments only: the catapult shot ("Hornet two, you're cleared. Good shot."), the scripted landing starting ("call
+  the ball"), an enemy lock ("Spike! Spike!", weapons `warning` 1), a missile inbound ("Missile! Break left/right!" by
+  the side of the nearest missile homing on you, from the camera's right vector; SAMs alternate), your kills ("Splash
+  one!", from `onCallout`: SPLASH ONE, multi-kills, CARRIER SUNK, DECK JET DESTROYED), your jet badly hurt ("I'm hit!"), your carrier losing health
+  ("Mother's taking hits!"), your side taking a zone, zones about to move. Each line is a pooled slot `radio-<line>`
+  (category `radio`, 2 ElevenLabs text-to-speech takes, `public/sfx/CREDITS.md`) played through a procedural radio:
+  band-pass 420 Hz-3.1 kHz, a presence peak, tanh saturation, a squelch click and static burst at the start and end, a
+  faint band-limited hiss under the voice; on its own dry `radio` bus (never behind the canopy) whose gain follows the
+  shell's **Voices** volume; the world ducks to 72% under it. One line at a time: priority missile 4 > lock 3 > kill 2 >
+  hit 1.5 > the rest 1; a more urgent line cuts a lesser one off, a lesser one waits up to 2.5 s for the air (one
+  waiting slot), every line has a cooldown (3-25 s) and 0.5 s of quiet follows each. A small green subtitle ("◉ SPIKE,
+  SPIKE") shows the line bottom left. Tunables: `RADIO` on the Audio tab (with a Say button per line). Offline render:
+  the `radio` scene of `scripts/audio-demo.ts`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
   60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel; seeded, WAVs by the kit's
   `encodeWavPcm16`) in headless Chrome on hailmary or Playwright's Chromium anywhere (no GPU needed);

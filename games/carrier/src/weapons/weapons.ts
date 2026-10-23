@@ -133,6 +133,8 @@ export class Weapons {
   flying = false
   /** Called when our jet is destroyed: by whom (-1 a crash) and with what. */
   onDestroyed: ((by: number, w: KillWeapon | "") => void) | null = null
+  /** The cockpit warning as of the last frame: 0 none, 1 locked on, 2 a missile inbound. */
+  warning: 0 | 1 | 2 = 0
   /** Camera trauma owed from being hit (the host adds it and zeroes it). */
   trauma = 0
   /** Your own shots since the host last read them, for the camera feel (the host zeroes them). */
@@ -775,6 +777,7 @@ export class Weapons {
       if (Math.min(this.world.inbound(this.id, o.x, o.y, o.z), this.sams?.inbound(this.id, o.x, o.y, o.z) ?? Infinity) < INBOUND) warn = 2
       else if (this.lockers.size) warn = 1
     }
+    this.warning = warn
     const weapon = weaponOf(l)
     const seek: 0 | 1 | 2 = this.flying && weapon === "missile" && l.lock.target >= 0 ? (l.lock.locked ? 2 : 1) : 0
     this.audio.update(dt, this.flying && weapon === "gun" && this.wantFire && !l.overheated && this.own.alive, farGun, seek, warn)

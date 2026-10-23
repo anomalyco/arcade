@@ -21,7 +21,7 @@ export function viewSection(quality: GameQuality<CarrierQuality>): DevSection {
       const mix = mixer()
       bindVolumeControls(panel, {
         volumes: mix.volumes,
-        channels: ["master", "effects", "ambience"],
+        channels: ["master", "effects", "ambience", "voice"],
         getMuted: () => mix.muted,
         setMuted: (m) => mix.setMuted(m),
         onChange: () => mix.setVolumes(),

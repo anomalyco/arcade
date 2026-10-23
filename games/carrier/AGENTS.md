@@ -54,6 +54,9 @@
   (`--set FLEET.bomb=60`, `--sweep COLLIDE.harmMax=300,650`, `--overrides file.json`), give sides or roles their own
   skill (`--team1.skill=0.9`, `--role.gun-5in.accuracy=0.3`), and `--assert` exits 1 on degenerate outcomes. The match
   bots behind it are CONTRACTS.md "Bots"; run it after any balance change and quote its numbers.
+- Life around you (`src/game/life.ts`): radio chatter on your own moments (ElevenLabs voices through a procedural radio,
+  the Voices volume), silent seabird flocks over the shores that scatter from jets and ships, rain on the canopy and the
+  chase lens. See CONTRACTS.md "Sound" (Radio chatter), "Seabirds", "Weather" (Canopy rain).
 - Sound: one mix in `src/audio/mixer.ts` (`CARRIER_MIX` on the kit's `AudioRuntime`); every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
   `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`) and is a shared library id the Lab can audition (`SLOT_LIBRARY_ID`). Sounds tab of the
   dev panel (or `?sounds=1`): audition every take and pick by ear; Audio tab: levels. See CONTRACTS.md "Sound".

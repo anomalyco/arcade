@@ -10,7 +10,8 @@
  *   own (your engine, cockpit, already muffled) ─ duck ─ cockpit-room reverb ─┼─► glue compressor ─► limiter
  *   sfx (carrier ops, crashes) ───────────────────────────────────────────────┤     ─► makeup trim ─► master ─► soft clip
  *   weapons (guns, missiles, explosions) ─────────────────────────────────────┤
- *   ui (menus, cues, warnings; dry) ──────────────────────────────────────────┘
+ *   ui (menus, cues, warnings; dry) ──────────────────────────────────────────┤
+ *   radio (chatter, radio.ts; dry, the Voices volume) ────────────────────────┘
  *
  * The graph is `CARRIER_MIX`, built by the kit's `AudioRuntime` (`@arcade/kit/audio/runtime`, `mix` option), which also
  * owns the context: started on the first user gesture (browsers require one), suspended while the tab is hidden, M
@@ -24,12 +25,12 @@ import { AudioRuntime } from "@arcade/kit/audio/runtime"
 import { impulseResponse, type MixSpec, noiseBank, type NoiseBank } from "@arcade/kit/audio/mix"
 import { DEFAULT_VOLUME_SETTINGS, loadVolumeSettings, saveVolumeSettings, type VolumeSettings } from "@arcade/kit/audio/volume"
 
-export type Level = "master" | "engines" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
+export type Level = "master" | "engines" | "flyby" | "sfx" | "weapons" | "weather" | "ui" | "radio"
 export type Levels = Record<Level, number>
-export type Bus = "engines" | "own" | "flyby" | "sfx" | "weapons" | "weather" | "ui"
+export type Bus = "engines" | "own" | "flyby" | "sfx" | "weapons" | "weather" | "ui" | "radio"
 type Send = "reverb" | "echo" | "room"
 
-export const DEFAULT_LEVELS: Readonly<Levels> = { master: 1, engines: 0.7, flyby: 0.8, sfx: 0.9, weapons: 0.9, weather: 0.8, ui: 0.45 }
+export const DEFAULT_LEVELS: Readonly<Levels> = { master: 1, engines: 0.7, flyby: 0.8, sfx: 0.9, weapons: 0.9, weather: 0.8, ui: 0.45, radio: 0.8 }
 const STORE = "carrier.audio.v4"
 
 /**
@@ -46,6 +47,8 @@ export const CARRIER_MIX: MixSpec<Bus, Send> = {
     sfx: {},
     weapons: {},
     ui: {},
+    // Radio chatter (radio.ts): in your headset, so never behind the canopy; follows the player's Voices volume.
+    radio: {},
   },
   sends: {
     // A big soft open-air ocean reverb (behind the canopy with the world), a dark slapback off the water that also feeds
@@ -158,7 +161,7 @@ export class Mixer {
     const rt = this.runtime
     this.noise = noiseBank(ctx)
     const bus = (b: Bus) => rt.mixBus(b)!
-    this.bus = { engines: bus("engines"), own: bus("own"), flyby: bus("flyby"), weather: bus("weather"), sfx: bus("sfx"), weapons: bus("weapons"), ui: bus("ui") }
+    this.bus = { engines: bus("engines"), own: bus("own"), flyby: bus("flyby"), weather: bus("weather"), sfx: bus("sfx"), weapons: bus("weapons"), ui: bus("ui"), radio: bus("radio") }
     for (const b of Object.keys(this.bus) as Bus[]) this.bus[b].gain.value = this.busGain(b)
     this.reverb = rt.mixSend("reverb")!
     this.echo = rt.mixSend("echo")!
@@ -196,7 +199,7 @@ export class Mixer {
   /** A bus's gain: its designer level times the player's channel volume (the own engine follows the engines level). */
   private busGain(b: Bus): number {
     const name: Exclude<Level, "master"> = b === "own" ? "engines" : b
-    const ch = name === "weather" ? this.volumes.volumeAmbience : this.volumes.volumeEffects
+    const ch = name === "weather" ? this.volumes.volumeAmbience : name === "radio" ? this.volumes.volumeVoice : this.volumes.volumeEffects
     return this.levels[name] * (ch / 100)
   }
 
