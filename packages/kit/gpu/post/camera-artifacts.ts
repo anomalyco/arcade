@@ -98,7 +98,7 @@ struct U {
   fa: array<vec4f, 4>,  // lens x y px, spot x y px
   fb: array<vec4f, 4>,  // lens radius px, spot radius px, hz, duty
   fc: array<vec4f, 4>,  // phase, level, -, -
-  pad: vec4f, // infrared tint (0 green, 1 grey), held frames after this one, -, -
+  pad: vec4f, // infrared tint (0 green, 1 grey), denoise echoes (denoiseEchoes), -, -
 }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var src: texture_2d<f32>;
@@ -369,12 +369,14 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
   }
   d = clamp(d, vec3f(0.0), vec3f(1.0));
   res.color = vec4f(d, 1.0);
-  // Each held frame after this one (a later pass repeats the picture) smeared this exposure into the history again
-  // when the lens ran every frame; the denoise keeps that pace.
+  // The denoise smears once per 60 Hz frame, as tuned: a picture held longer (a later pass repeating it, a slower
+  // display) smears this exposure into the history again for each 60 Hz frame it covers, the last one in part.
   var h = d;
   if (smear > 0.0) {
-    for (var i = 0; i < i32(u.pad.y); i++) {
-      h = clamp(mix(raw, h, smear * (1.0 - smoothstep(0.05, 0.22, length(raw - h)))), vec3f(0.0), vec3f(1.0));
+    let n = u.pad.y;
+    for (var i = 0; i < i32(ceil(n)); i++) {
+      let e = clamp(mix(raw, h, smear * (1.0 - smoothstep(0.05, 0.22, length(raw - h)))), vec3f(0.0), vec3f(1.0));
+      h = mix(h, e, min(n - f32(i), 1.0));
     }
   }
   res.hist = vec4f(h, 1.0);
@@ -435,6 +437,14 @@ fn B(i: vec2i) -> vec4f { return textureLoad(aux, clamp(i, vec2i(0), vec2i(textu
 /** The passes' shaders, for validation. */
 export const CAMERA_ARTIFACT_WGSL = { pre: PRE_WGSL, lens: LENS_WGSL, codec: CODEC_WGSL }
 
+/**
+ * Extra denoise smears for a lens picture that stays up `elapsed` seconds since the last: one per 60 Hz frame it
+ * covers past the first, the last in part, so the smoothing matches its 60 Hz tuning at any display or sensor rate.
+ */
+export function denoiseEchoes(elapsed: number): number {
+  return Math.min(Math.max(elapsed * 60 - 1, 0), 4)
+}
+
 const UNIFORM_FLOATS = 96
 const MAX_SOURCES = 4
 
@@ -457,8 +467,8 @@ export class CameraArtifacts implements FinalPass {
   private parity = 0
   private valid = false
   private lastTime = 0
-  /** Frames the chain left this pass out of since it last drew, and as many before that (`skip`). */
-  private skipped = 0
+  /** When this pass last drew (`lastTime` also moves on frames it is left out of, `skip`). */
+  private drawnTime = 0
   private echoes = 0
   /** Autofocus in dioptres: where the lens is, its velocity, what it is racking to, how long the subject has been off. */
   private af = { lens: 0.1, v: 0, aim: 0.1, off: 0, hunt: 0 }
@@ -493,18 +503,9 @@ export class CameraArtifacts implements FinalPass {
     if (!t) return
     this.ensure()
     const time = frame[19]!
-    const dt = time - this.lastTime
-    const continuous = this.valid && dt >= 0 && dt < 0.25
-    if (continuous && dt > 0) {
-      const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
-      const k = 1 - Math.exp(-dt / 0.05)
-      this.flow[0] += (fx / dt - this.flow[0]) * k
-      this.flow[1] += (fy / dt - this.flow[1]) * k
-    } else if (!continuous) this.flow = [0, 0]
-    this.prev.set(frame.subarray(0, 20))
-    this.echoes = continuous ? Math.min(this.skipped, 4) : 0
-    this.skipped = 0
-    this.pack(frame, time, continuous ? Math.max(dt, 0) : 0, !continuous, t.width, t.height)
+    const { continuous, elapsed } = this.advance(frame, true)
+    this.echoes = denoiseEchoes(elapsed)
+    this.pack(frame, time, elapsed, !continuous, t.width, t.height)
     this.device.queue.writeBuffer(this.uniform!, 0, this.data)
     const read = this.parity, write = 1 - read
     const small = (view: GPUTextureView, pipe: GPURenderPipeline) => {
@@ -526,12 +527,33 @@ export class CameraArtifacts implements FinalPass {
     main.end()
     this.parity = write
     this.valid = true
-    this.lastTime = time
   }
 
-  /** A frame a later pass holds, drawn without this one (`FinalPassChain`). */
-  skip(_frame: Float32Array): void {
-    if (this.valid) this.skipped++
+  /** A frame a later pass holds, drawn without this one (`FinalPassChain`): the flow and continuity clocks still move. */
+  skip(frame: Float32Array): void {
+    if (this.targets && this.valid) this.advance(frame, false)
+  }
+
+  /**
+   * Moves the clocks to this frame. `elapsed` is the time since the pass last drew (0 after a cut), which steps the
+   * autofocus, the bitrate envelope and the denoise echoes in real time however often the pass draws.
+   */
+  private advance(frame: Float32Array, draws: boolean): { continuous: boolean; elapsed: number } {
+    const t = this.targets!
+    const time = frame[19]!
+    const dt = time - this.lastTime
+    const continuous = this.valid && dt >= 0 && dt < 0.25
+    if (continuous && dt > 0) {
+      const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
+      const k = 1 - Math.exp(-dt / 0.05)
+      this.flow[0] += (fx / dt - this.flow[0]) * k
+      this.flow[1] += (fy / dt - this.flow[1]) * k
+    } else if (!continuous) this.flow = [0, 0]
+    this.prev.set(frame.subarray(0, 20))
+    this.lastTime = time
+    const elapsed = continuous ? Math.max(time - this.drawnTime, 0) : 0
+    if (draws || !continuous) this.drawnTime = time
+    return { continuous, elapsed }
   }
 
   /**

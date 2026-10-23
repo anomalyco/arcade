@@ -199,6 +199,15 @@ export function cameraFilterControls(options: CameraFilterControlOptions = {}): 
 }
 
 /**
+ * The state pass's step for a sensor frame `elapsed` seconds after the last one. The meter's springs were tuned on a
+ * 60 Hz display, where a camera under 60 fps stepped one display frame per sensor frame; scaling by fps / 60 keeps
+ * that pace at any display rate.
+ */
+export function meterStep(elapsed: number, fps: number): number {
+  return Math.max(elapsed, 0) * Math.min(1, fps / 60)
+}
+
+/**
  * Screen motion of the image centre, in pixels per frame: where the content now at the centre sat in the previous
  * frame, reprojected through a point 10 m ahead. Rotation (the pans that skew and smear) dominates; walking adds none.
  * `cur`/`prev` hold a column-major viewProj at 0..15 and the eye at 16..18 (the renderer's frame layout).
@@ -772,6 +781,8 @@ export class CameraFilter implements FinalPass {
   private valid = false
   private lastMode: CameraFilterMode = "today"
   private lastTime = 0
+  /** When the state pass last metered (a frame not held). */
+  private stateTime = 0
   private lastFrameIndex = -1
   private recordStart = 0
   private stampEpoch = Date.now()
@@ -829,14 +840,10 @@ export class CameraFilter implements FinalPass {
     // The state pass meters exposure for the sensor modes, and for VHS when its iris pumps.
     const metered = sensor || (mode === "vhs" && s.vhsIris > 0)
     const time = frame[19]!
-    const dt = time - this.lastTime
-    const continuous = this.valid && s.mode === this.lastMode && dt >= 0 && dt < 0.25
     if (s.mode !== this.lastMode) { this.recordStart = time; this.stampEpoch = this.epoch ?? Date.now() }
-    this.follow(frame, dt, continuous)
-    const hold = this.holds(frame)
-    if (!hold) this.lastFrameIndex = Math.floor(time * (mode === "body" ? 30 : Number(s.phoneFps) || 30))
+    const { continuous, hold, meter } = this.clock(mode, frame)
     this.paintOverlay(mode, time, t.width, t.height)
-    this.pack(mode, frame, time, continuous ? dt : 0, hold, !continuous, t.width, t.height)
+    this.pack(mode, frame, time, meter, hold, !continuous, t.width, t.height)
     this.device.queue.writeBuffer(this.uniform!, 0, this.data)
     const read = this.parity, write = 1 - read
     const timing = this.measureNext.length > 0 && !this.timer?.busy ? this.ensureTimer() : null
@@ -884,13 +891,30 @@ export class CameraFilter implements FinalPass {
     if (!hold) this.parity = write
     this.valid = true
     this.lastMode = s.mode
-    this.lastTime = time
   }
 
   /**
-   * A held frame the chain repeated without drawing through the filter (`FinalPassChain`): the clocks move as if it
-   * had drawn the hold, so the meter's springs step once per displayed frame, as they were tuned.
+   * Moves the clocks to this drawn frame. `meter` is the state pass's step (`meterStep`) since it last metered, 0 on a
+   * held frame or a cut.
    */
+  private clock(mode: Family, frame: Float32Array): { continuous: boolean; hold: boolean; meter: number } {
+    const s = this.settings
+    const time = frame[19]!
+    const dt = time - this.lastTime
+    const continuous = this.valid && s.mode === this.lastMode && dt >= 0 && dt < 0.25
+    this.follow(frame, dt, continuous)
+    const hold = this.holds(frame)
+    const fps = mode === "body" ? 30 : mode === "phone" ? Number(s.phoneFps) || 30 : Infinity
+    const meter = continuous && !hold ? meterStep(time - this.stateTime, fps) : 0
+    if (!hold) {
+      this.lastFrameIndex = Math.floor(time * (mode === "body" ? 30 : Number(s.phoneFps) || 30))
+      this.stateTime = time
+    }
+    this.lastTime = time
+    return { continuous, hold, meter }
+  }
+
+  /** A held frame the chain repeated without drawing through the filter (`FinalPassChain`): the flow keeps moving. */
   skip(frame: Float32Array): void {
     if (!this.targets || !this.valid) return
     const time = frame[19]!, dt = time - this.lastTime

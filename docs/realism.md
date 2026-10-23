@@ -619,17 +619,17 @@ first build.
   - How it got there (Oct 23, Kit: "the different cameras, like body cam, really slow things down"): a 30 fps sensor
     (body cam, phone) on a 60 Hz display holds every other frame, and on those frames the chain skips the composite and
     every pass before the hold; the codec, last, draws its own last picture again, so a held frame's whole chain is one
-    copy (`FinalPass.holds`, `RepeatablePass.repeat`). Skipped passes are told (`SkippablePass.skip`) so the meter's
-    springs still step per displayed frame and the denoise smear still echoes into the history once per held frame, as
-    tuned. Sensor-gain chroma blotches come from a small lattice pass instead of 16 hashes per pixel, flare ghosts
+    copy (`FinalPass.holds`, `RepeatablePass.repeat`). Skipped passes are told (`SkippablePass.skip`) so their flow
+    and continuity clocks keep moving; the meter's springs (`meterStep`) and the denoise echoes (`denoiseEchoes`) step
+    from the sensor time since they last ran, scaled to their 60 Hz tuning, so every display rate matches 60 Hz. Sensor-gain chroma blotches come from a small lattice pass instead of 16 hashes per pixel, flare ghosts
     early-out outside their disc and the starburst angle has no `atan2`. Before → after at Retina: body cam's final
     passes 1.4 → 0.8 ms, phone 1.4 → 0.7, NightShot 1.2 → 0.9, VHS and Hi8 1.1 → 0.8.
   - Kit: "What are some interesting rendering effects, like the bodycam etc., that could make this look cooler… to
     make it feel realer?"
   - Pitfalls: flare needs sources projected from the torches, not a bright-pixel threshold, or every lit trunk ghosts;
     the PWM band is subtle at a few hundred hertz, so its depth is a knob. A pass with state that a held frame skips
-    must keep its per-frame pace (`skip`): stepping the meter or the denoise once per sensor frame instead of once per
-    displayed frame darkened the phone look by 3%. Timing a held frame needs the end marker to wait for the scene
+    must keep its tuned pace: stepping the meter or the denoise once per sensor frame instead of once per 60 Hz frame
+    darkened the phone look by 3%, and counting skipped display frames instead of sensor time made it differ at 120 Hz. Timing a held frame needs the end marker to wait for the scene
     (`FrameTimer.finish`'s `scene`), or the GPU overlaps the scene with the copy and the frame reads ~1 ms short.
 - **Recorded footage and turn blur (BARBARA).** Body cam reworked as an Axon-style chest cam (120° lens, slight
   barrel, timestamp and unit id, grey IR with an IR lamp and relay click when the torch is off); VHS gains iris

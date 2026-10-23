@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "../test-naga"
-import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CameraFilter, CAMERA_FILTER_WGSL, CRT_PRESETS, applyCameraFilterPreset, cameraFilterControls, cameraFlow, createCameraFilterSettings } from "./camcorder"
+import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CameraFilter, CAMERA_FILTER_WGSL, CRT_PRESETS, applyCameraFilterPreset, cameraFilterControls, cameraFlow, createCameraFilterSettings, meterStep } from "./camcorder"
+import { CAMERA_ARTIFACT_DEFAULTS, CameraArtifacts, denoiseEchoes } from "./camera-artifacts"
 import { bodycamStamp, GLYPH_H, GLYPH_W, glyphPixels, hasGlyph, layoutText, phoneTimecode, textWidth, vhsStamp } from "./camcorder-font"
 import { BodycamRig, bodycamRenderFov } from "../../client/bodycam-rig"
 import type { FirstPerson } from "../../client/first-person"
@@ -226,13 +227,15 @@ describe("camera filter held frames and textures", () => {
     expect(recorded("bodycam").holds(at(1.5))).toBe(false)
   })
 
-  test("a held frame the chain skips still moves the clock, so the meter steps one displayed frame at a time", () => {
+  test("a held frame the chain skips still moves the clock, and the next sensor frame meters from the last one", () => {
     const filter = recorded("bodycam")
-    Object.assign(filter, { targets: { width: 1600, height: 900, source: { destroy() {} }, hist: [] } })
+    Object.assign(filter, { targets: { width: 1600, height: 900, source: { destroy() {} }, hist: [] }, stateTime: 1 })
     filter.skip(at(1.01))
     expect((filter as unknown as { lastTime: number }).lastTime).toBe(Math.fround(1.01))
     expect(filter.holds(at(1.02))).toBe(true)
     expect(filter.holds(at(1.04))).toBe(false)
+    const { meter } = (filter as unknown as { clock(mode: string, frame: Float32Array): { meter: number } }).clock("body", at(1.04))
+    expect(meter).toBeCloseTo(0.02, 5)
   })
 
     test("switching off frees its full-size textures", () => {
@@ -243,5 +246,72 @@ describe("camera filter held frames and textures", () => {
     expect(filter.active).toBe(false)
     expect(freed).toBe(3)
     expect((filter as unknown as { targets: unknown }).targets).toBeNull()
+  })
+})
+
+describe("camera clocks at any display rate", () => {
+  /** A still view at time t (identity viewProj, so the flow is 0). */
+  const at = (t: number) => { const f = new Float32Array(20); f[0] = f[5] = f[10] = f[15] = 1; f[19] = t; return f }
+  const targets = { width: 1600, height: 900, source: { destroy() {} }, hist: [] }
+  type Clocked = { clock(mode: string, frame: Float32Array): { meter: number } }
+  type Advanced = { advance(frame: Float32Array, draws: boolean): { elapsed: number } }
+
+  /**
+   * Two seconds of a 30 fps body cam on a display at `hz`, driven as `FinalPassChain` does: held frames skip the lens
+   * and the filter, sensor frames draw both. Returns the exposure spring after a step of light (simulating `fs_state`
+   * from the packed steps) and the denoise's retention per second (log), with the per-frame steps.
+   */
+  function run(hz: number, mode: "bodycam" | "iphone" = "bodycam", fps = 30) {
+    const filter = new CameraFilter({} as GPUDevice, "bgra8unorm", { ...createCameraFilterSettings(), mode, phoneFps: fps })
+    const lens = new CameraArtifacts({} as GPUDevice, "bgra8unorm", { ...CAMERA_ARTIFACT_DEFAULTS, sensorGain: true }, "lens")
+    const t0 = 1.003
+    Object.assign(filter, { targets, valid: true, lastMode: mode, lastTime: t0, stateTime: t0, lastFrameIndex: Math.floor(t0 * fps) })
+    Object.assign(lens, { targets, valid: true, lastTime: t0, drawnTime: t0 })
+    // The exposure spring with the hunt off (omega 6, zeta 1), from 0 towards 1; a denoise smear keeping 0.6.
+    let e = 0, ev = 0, retained = 0
+    const meters: number[] = [], echoes: number[] = []
+    const frames = Math.round(2 * hz)
+    for (let i = 1; i <= frames; i++) {
+      const f = at(t0 + i / hz)
+      if (filter.holds(f)) {
+        lens.skip(f)
+        filter.skip(f)
+        continue
+      }
+      const n = denoiseEchoes((lens as unknown as Advanced).advance(f, true).elapsed)
+      echoes.push(n)
+      // One smear as the lens draws, then the echoes, the last in part (the lens shader's loop).
+      retained += Math.log(0.6)
+      for (let k = 0; k < Math.ceil(n); k++) retained += Math.log(1 - Math.min(n - k, 1) * 0.4)
+      const dt = Math.min((filter as unknown as Clocked).clock(mode === "bodycam" ? "body" : "phone", f).meter, 0.1)
+      meters.push(dt)
+      ev += (36 * (1 - e) - 12 * ev) * dt
+      e += ev * dt
+    }
+    return { e, retained: retained / 2, meters, echoes }
+  }
+
+  test("60 Hz keeps the tuned steps: a 1/60 s meter step and one denoise echo per 30 fps frame", () => {
+    const { meters, echoes } = run(60)
+    expect(meters.length).toBe(60)
+    for (const m of meters) expect(m).toBeCloseTo(1 / 60, 5)
+    for (const n of echoes) expect(n).toBeCloseTo(1, 4)
+  })
+
+  test("30, 120 and 144 Hz match 60 Hz for the meter springs and the denoise smoothing", () => {
+    const ref = run(60)
+    for (const hz of [30, 120, 144]) {
+      const r = run(hz)
+      expect([hz, r.meters.reduce((a, b) => a + b, 0)]).toEqual([hz, expect.closeTo(1, 3)])
+      expect([hz, r.e]).toEqual([hz, expect.closeTo(ref.e, 3)])
+      expect([hz, r.retained / ref.retained]).toEqual([hz, expect.closeTo(1, 1)])
+    }
+  })
+
+  test("a 24 fps phone's meter keeps its 60 Hz pace on faster displays", () => {
+    const ref = run(60, "iphone", 24)
+    for (const hz of [120, 144]) expect([hz, run(hz, "iphone", 24).e]).toEqual([hz, expect.closeTo(ref.e, 2)])
+    expect(meterStep(1 / 24, 24)).toBeCloseTo(1 / 60, 6)
+    expect(meterStep(1 / 120, 60)).toBeCloseTo(1 / 120, 6)
   })
 })

@@ -2,7 +2,7 @@ import type { FinalPass } from "../renderer"
 
 /** A final pass that can draw its last picture again without its source (`CameraArtifacts`). */
 export type RepeatablePass = FinalPass & { repeat(encoder: GPUCommandEncoder, target: GPUTextureView): boolean }
-/** A final pass whose clocks move on frames the chain does not draw through it (`CameraFilter`'s meter). */
+/** A final pass whose clocks move on frames the chain does not draw through it (`CameraFilter`, `CameraArtifacts`). */
 export type SkippablePass = FinalPass & { skip(frame: Float32Array): void }
 
 /**
@@ -12,7 +12,7 @@ export type SkippablePass = FinalPass & { skip(frame: Float32Array): void }
  *
  * Held frames: when a pass holds (a 30 fps camera between its frames, `FinalPass.holds`) nothing before it runs, the
  * composite included, and if the last pass can `repeat` its own last picture, that one copy is the whole chain. Each
- * pass left out is told it was (`skip`), so its clocks keep the display's pace as when it drew every frame.
+ * pass left out is told it was (`skip`), so its clocks keep moving.
  */
 export class FinalPassChain implements FinalPass {
   private live: FinalPass[] = []
