@@ -320,3 +320,19 @@
   docks left and keeps only Enter. `CoopView.net` reads null meanwhile, so nothing reaches the room. The guided
   training room before a solo run is one setting away (Off by default). The shared feature is inert unless staged.
   `../../docs/outbreak-onboarding.md`. Tests: `tests/training-room.test.ts`; proof: `bun scripts/lobby-practice-proof.ts`.
+
+## Game shell
+
+- The Escape menu and Settings are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts`. Outbreak's lobby (`src/lobby/lobby-ui.ts`: the start screen over the practice space, survivor and kit picks, the co-op muster with ready and start) stays its title and lobby, so the shell starts in play and never draws its own title card. The seed and restart tools are the shell's pause slot (`src/lobby/run-tools.ts`). Shell colours are at the end of `src/style.css`.
+- Deliberate changes when it moved onto the shell (Oct 22):
+  - Escape opens the menu (Resume, the run's seed with Copy replay link and Play seed, Restart, New town, Lobby,
+    Settings) when no bag, map, radial or lobby is open; before, only the HUD's Pause button opened it. Solo, it stops
+    the night as the old pause menu did; in a room it offers Leave room and the room keeps running.
+  - The speaker button opens Settings (Master, Effects, Ambience, Zombies, Mute, Quality, Reduce camera motion, Key
+    labels) instead of its own slider panel (`src/volume/menu.ts`, removed). Closing Settings plays on. The Lab's
+    Volume rows stay and stay in step with Settings. M is still the map; with Backquote › Controls giving it to mute,
+    the shell mutes. The mute is carried over from `outbreak.audio` once (`arcade.mute.outbreak.v1`).
+  - Quality uses the shell's slow-frames policy (Auto starts High and steps down only on slow frames) and is saved per
+    game as `arcade.quality.outbreak.v1` (the old shared `arcade.quality.v1` is read when that is empty).
+  - Reduce camera motion in Settings sets the camera's Reduce motion.
+  - The leave-site prompt stays Outbreak's (`src/controls`); the shell's menu counts as a menu there.

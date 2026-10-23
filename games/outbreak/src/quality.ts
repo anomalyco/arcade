@@ -27,6 +27,9 @@ export interface OutbreakQualityProfile extends QualityProfile {
   readonly softShadowLights: number
 }
 
+/** Where the player's quality pick is saved (the shell's per-game key; `arcade.quality.v1`, shared, is read once). */
+export const OUTBREAK_QUALITY_KEY = "arcade.quality.outbreak.v1"
+
 /** The setting value that means "use the quality tier's". */
 export const QUALITY_TIER = -1
 

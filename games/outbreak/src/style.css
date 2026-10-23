@@ -35,3 +35,9 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 #glance[data-style="photo"] .page-result .glyph { width: 110px; height: 110px }
 #glance[data-style="photo"] .page-arrow, #glance[data-style="photo"] .page-head { display: none }
 #glance[data-style="photo"] .page-pair .glyph { width: 30px; height: 30px }
+
+/* The kit game shell (Escape menu, Settings) in the Noir HUD tokens; Outbreak's run tools sit in its pause slot. */
+.arcade-shell { --shell-font: var(--hud-font); --shell-ink: var(--hud-ink); --shell-dim: var(--hud-ink-2); --shell-card: var(--hud-surface); --shell-edge: var(--hud-line-2); --shell-field: var(--hud-chip); --shell-accent: var(--hud-warm); --shell-accent-ink: #1a1408; --shell-radius: var(--hud-r-panel); --shell-backdrop: radial-gradient(circle at 50% 38%, rgb(12 11 10 / .58), rgb(6 6 7 / .86)) }
+.ob-run-tools { display: grid; gap: 8px }
+.ob-run-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px }
+.ob-run-tools .ob-run-seed { font-variant-numeric: tabular-nums }

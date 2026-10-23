@@ -1,4 +1,4 @@
-/* The player's sound button and panel (menu.ts), in the Noir HUD tokens. */
+/* The player's sound button (index.ts), in the Noir HUD tokens; it opens the game shell's Settings. */
 .vm { position: fixed; right: 12px; top: 12px; z-index: 21; display: flex; flex-direction: column; align-items: flex-end; gap: var(--hud-2, 4px); font: 500 var(--hud-sm, 12px)/var(--hud-sm-lh, 16px) var(--hud-font, system-ui) }
 .vm-button {
   display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; cursor: pointer;
@@ -10,12 +10,3 @@
 .vm[data-muted="true"] .vm-wave { display: none }
 .vm[data-muted="true"] .vm-cross { display: inline }
 .vm[data-muted="true"] .vm-button { color: var(--hud-caution, #e8a34c); opacity: 1 }
-.vm-panel { display: grid; gap: var(--hud-2, 4px); padding: var(--hud-4, 8px) var(--hud-5, 12px); min-width: 220px; color: var(--hud-ink, #ede7d9) }
-.vm-panel[hidden] { display: none }
-.vm-row { display: grid; grid-template-columns: 70px 1fr 36px; align-items: center; gap: var(--hud-3, 6px) }
-.vm-row span { color: var(--hud-ink-2, #b6ae9f) }
-.vm-row b { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums }
-.vm-row input[type="range"] { width: 100%; accent-color: var(--hud-warm, #f1c46a) }
-.vm-mute { grid-template-columns: 70px auto 1fr; --akc-size: 16px }
-.vm-mute input { justify-self: start; accent-color: var(--hud-warm, #f1c46a) }
-.vm-mute .akc { justify-self: end }
