@@ -1,13 +1,8 @@
 import type { VolumeChannel } from "../audio/volume"
 import type { ShellSettings } from "./settings"
-import { installShellStyles } from "./view"
+import { SPEAKER_ICON as ICON, installShellStyles, volumeLevel } from "./view"
 
-const ICON = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9h4l5-4v14l-5-4H4z"/><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path class="as-w1" d="M16 9.5a3.5 3.5 0 0 1 0 5"/><path class="as-w2" d="M18.5 7a7 7 0 0 1 0 10"/><path class="as-x" d="M16 9l5 6M21 9l-5 6"/></g></svg>`
-
-export type ShellVolumeLevel = "muted" | "low" | "high"
-
-/** The icon a volume shows: muted (or at 0), low (under half) or high. */
-export const volumeLevel = (muted: boolean, volume: number): ShellVolumeLevel => (muted || volume <= 0 ? "muted" : volume < 50 ? "low" : "high")
+export { volumeLevel, type ShellVolumeLevel } from "./view"
 
 export type ShellVolumeButtonOptions = {
   /** The channel the slider sets (default master). */
@@ -52,7 +47,8 @@ export class ShellVolumeButton {
     this.button.addEventListener("click", () => settings.toggleMute())
     this.slider.addEventListener("input", () => {
       settings.setVolume(this.channel, Number(this.slider.value))
-      if (settings.muted && Number(this.slider.value) > 0) settings.setMuted(false)
+      // Master unmutes itself (settings); another channel's slider turned up while muted is asking to hear it too.
+      if (this.channel !== "master" && settings.muted && Number(this.slider.value) > 0) settings.setMuted(false)
     })
     const letGo = () => this.slider.blur()
     this.slider.addEventListener("change", letGo)

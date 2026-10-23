@@ -34,11 +34,58 @@
       /* The Lab quick switch toast (@arcade/kit/lab-quickswitch) sits under the key strip. */
       :root { --lab-quickswitch-top: 44px; }
 
-      /* The shell's title and Escape menu (@arcade/kit/shell) as a lit card over the dark woods. */
-      .arcade-shell { --shell-title-font: Georgia, serif; --shell-ink: #efe6cc; --shell-dim: #b9b19c; --shell-card: rgba(10, 12, 11, 0.78); --shell-edge: rgba(239, 230, 204, 0.14); --shell-field: rgba(255, 255, 255, 0.06); --shell-accent: #f2c96b; --shell-accent-ink: #17130a; --shell-backdrop: radial-gradient(ellipse at center, rgba(0,0,0,0.05), rgba(0,0,0,0.6)); --shell-radius: 16px; }
-      .arcade-shell .as-title { font-weight: 400; font-size: 52px; letter-spacing: 0.22em; margin-right: -0.22em; color: #f6eed6; text-shadow: 0 2px 24px rgba(255,214,140,0.25); }
-      .arcade-shell .as-heading { font-weight: 400; color: #f6eed6; }
-      .arcade-shell .as-sub { font: italic 17px Georgia, serif; color: #ddd4bd; }
+      /* The shell (@arcade/kit/shell) as a 1996 camcorder's viewfinder over the camp: white OSD type with a little bloom
+         and colour bleed, a ▶ cursor, STBY or PAUSE top left, the tape counter and date top right, faint scan lines. */
+      .arcade-shell {
+        --osd: #f1f0ea; --osd-dim: rgba(241, 240, 234, 0.62);
+        --osd-glow: 0 0 1px rgba(241, 240, 234, 0.7), 0 0 10px rgba(241, 240, 234, 0.2), 1px 0 0 rgba(255, 70, 70, 0.22), -1px 0 0 rgba(70, 150, 255, 0.22);
+        --shell-font: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --shell-title-font: var(--shell-font);
+        --shell-ink: var(--osd); --shell-dim: var(--osd-dim); --shell-edge: rgba(241, 240, 234, 0.3); --shell-field: rgba(241, 240, 234, 0.08);
+        --shell-accent: var(--osd); --shell-accent-ink: #0b0c0b; --shell-card: rgba(6, 7, 7, 0.8); --shell-radius: 0; --shell-curtain: #020303;
+        --shell-scrim: linear-gradient(90deg, rgba(2,3,3,0.7), rgba(2,3,3,0.36) 36%, rgba(2,3,3,0) 70%), linear-gradient(0deg, rgba(2,3,3,0.55), rgba(2,3,3,0) 24%), radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.5));
+        --shell-backdrop: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, rgba(0,0,0,0) 1px 3px);
+        --shell-title-size: 56px; --shell-item-size: 16px;
+        --shell-in: 0.42s; --shell-stagger: 0.05s; --shell-rise: 4px;
+      }
+      .arcade-shell .as-title { font-weight: 500; letter-spacing: 0.34em; text-shadow: var(--osd-glow); }
+      .arcade-shell .as-sub { font-size: 13px; text-shadow: var(--osd-glow); }
+      .arcade-shell .as-btn { font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; text-shadow: var(--osd-glow); opacity: 0.7; }
+      .arcade-shell .as-btn small { font-size: 11px; letter-spacing: 0.06em; text-transform: none; }
+      .arcade-shell .as-btn::before { content: "▶"; width: auto; height: auto; margin-top: -0.5em; left: 1px; line-height: 1; font-size: 0.6em; background: none; border-radius: 0; color: var(--osd); text-shadow: var(--osd-glow); opacity: 0; transform: translateX(-3px); transition: opacity 0.12s, transform 0.16s var(--shell-ease); }
+      .arcade-shell .as-btn:hover:not(:disabled), .arcade-shell .as-btn:focus-visible, .arcade-shell .as-card:not(:has(.as-btn:hover, .as-btn:focus-visible)) .as-primary:not(:disabled) { background: none; }
+      .arcade-shell .as-btn:hover:not(:disabled)::before, .arcade-shell .as-btn:focus-visible::before, .arcade-shell .as-card:not(:has(.as-btn:hover, .as-btn:focus-visible)) .as-primary:not(:disabled)::before { opacity: 1; transform: none; }
+      .arcade-shell .as-row, .arcade-shell .as-head, .arcade-shell .as-load-label, .arcade-shell .as-field > span { text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; text-shadow: var(--osd-glow); }
+      /* Text fields as OSD boxes; an empty Name blinks the camcorder's block cursor, so it reads as somewhere to type. */
+      .arcade-shell input[type=text] { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 10px; border: 0; background: rgba(241, 240, 234, 0.05); box-shadow: inset 0 0 0 1px var(--shell-edge); caret-color: var(--osd); text-shadow: var(--osd-glow); }
+      .arcade-shell input[type=text]:focus { box-shadow: inset 0 0 0 1px var(--osd); }
+      .arcade-shell input[type=text]::placeholder { text-transform: none; text-shadow: none; }
+      .arcade-shell .as-name input:placeholder-shown:not(:focus) { padding-left: 24px; background-image: linear-gradient(var(--osd), var(--osd)); background-repeat: no-repeat; background-position: 10px 50%; background-size: 7px 13px; animation: osd-caret 1.06s steps(1) infinite; }
+      @keyframes osd-caret { 50% { background-size: 0 0; } }
+      @media (prefers-reduced-motion: reduce) { .arcade-shell .as-name input { animation: none !important; } }
+      .arcade-shell .as-inline { text-transform: uppercase; letter-spacing: 0.14em; font-weight: 500; font-size: 11px; background: none; box-shadow: inset 0 0 0 1px var(--shell-edge); }
+      .arcade-shell .as-controls { text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px; --akc-face: transparent; --akc-ink: var(--osd); }
+      .arcade-shell .as-controls .akc-cap, .arcade-shell .as-vol .akc-cap { box-shadow: inset 0 0 0 1px var(--osd-dim); border-radius: 2px; }
+      .arcade-shell .as-controls .akc-hold .akc-cap { border-radius: 999px; }
+      .arcade-shell .as-vol output { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; text-shadow: var(--osd-glow); }
+      /* The volume as an OSD level: segments that fill from the left. */
+      .arcade-shell input[type=range] { appearance: none; -webkit-appearance: none; height: 18px; background: none; cursor: pointer; }
+      .arcade-shell .as-vol input[type=range] { width: 150px; }
+      .arcade-shell input[type=range]::-webkit-slider-runnable-track { height: 9px; background: linear-gradient(90deg, var(--osd) var(--v, 80%), rgba(241,240,234,0.22) var(--v, 80%)); -webkit-mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 9px); mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 9px); }
+      .arcade-shell input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 1px; height: 9px; background: transparent; }
+      .arcade-shell input[type=range]::-moz-range-track { height: 9px; background: linear-gradient(90deg, var(--osd) var(--v, 80%), rgba(241,240,234,0.22) var(--v, 80%)); }
+      .arcade-shell input[type=range]::-moz-range-thumb { width: 1px; height: 9px; border: 0; background: transparent; }
+      .arcade-shell .as-field input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; box-shadow: inset 0 0 0 1px var(--osd-dim); cursor: pointer; }
+      .arcade-shell .as-field input[type=checkbox]:checked { background: var(--osd); box-shadow: inset 0 0 0 3px #0b0c0b, 0 0 0 1px var(--osd); }
+      .arcade-shell .as-field select { font-size: 13px; letter-spacing: 0.06em; background: none; box-shadow: inset 0 0 0 1px var(--shell-edge); }
+      .arcade-shell .as-seg, .arcade-shell .as-pick { background: none; box-shadow: inset 0 0 0 1px var(--shell-edge); }
+      .arcade-shell .as-bar { height: 9px; background: rgba(241, 240, 234, 0.16); -webkit-mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 9px); mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 9px); }
+      .arcade-shell .as-bar i { background: var(--osd); }
+      .osd { position: absolute; top: max(28px, 5vh); font: 500 15px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.14em; color: var(--osd); text-shadow: var(--osd-glow); font-variant-numeric: tabular-nums; }
+      .osd-tl { left: var(--shell-x); }
+      .osd-tr { right: var(--shell-x); text-align: right; }
+      /* The game's own HUD stays out of the way while the shell is up (its controls are the shell's hint row). */
+      #hud, #room { transition: opacity 0.3s; }
+      html[data-shell] #hud, html[data-shell] #room { opacity: 0; }
     </style>
   </head>
   <body>

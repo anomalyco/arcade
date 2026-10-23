@@ -12,7 +12,7 @@ export { ShellLobby, type LobbyConnection, type LobbyPlayer, type ShellLobbyOpti
 export { LEAVE_GUARD_AFTER_MS, LeaveGuard, ShellLoading, type LoadingStage } from "./page"
 export { CHANNEL_LABEL, REDUCE_MOTION_STORAGE_KEY, ShellSettings, muteStorageKey, type ShellQuality, type ShellRow, type ShellSection, type ShellSettingsOptions } from "./settings"
 export { audioRuntimeSync, type ShellAudioRuntime } from "./audio"
-export { SHELL_CSS, ShellView, installShellStyles, shellKeysHtml, type ShellViewOptions } from "./view"
+export { SHELL_CSS, ShellView, installShellStyles, shellKeysHtml, type ShellPhase, type ShellViewOptions } from "./view"
 export { ShellVolumeButton, mountVolumeControl, volumeLevel, type ShellVolumeButtonOptions, type ShellVolumeLevel } from "./volume"
 
 /**
@@ -23,7 +23,7 @@ export function createShellQuality<P extends QualityScaling>(options: Omit<GameQ
   return new GameQuality({ ...options, stepDown: "slow-frames" })
 }
 
-export type GameShellOptions = Omit<ShellViewOptions, "muteKey"> & {
+export type GameShellOptions = ShellViewOptions & {
   /** The game's id (storage keys, `<game>.name`). */
   game: string
   /** Volume channels, master first; `[]` for a silent game (no Sound section, mute button or M key). */
@@ -94,7 +94,9 @@ export class GameShell {
     // Leaving a room is the game's Leave unless it has its own; Leave from the pause menu leaves the room too.
     this.lobby = o.lobby ? new ShellLobby({ game: o.game, ...o.lobby, onLeaveRoom: () => (onLeaveRoom ?? onLeave)?.() }) : null
     this.loading = o.loading ? new ShellLoading(o.loading) : null
-    this.view = o.view === false || typeof document === "undefined" ? null : new ShellView(o.root ?? document.body, { ...o, muteKey: o.muteKey !== false && this.settings.channels.length > 0 }, this.settings, this.flow, this.lobby, hidden ? null : this.loading)
+    const muteKeyOn = o.muteKey !== false && this.settings.channels.length > 0
+    const muteKey = typeof o.muteKey === "function" ? o.muteKey : () => true
+    this.view = o.view === false || typeof document === "undefined" ? null : new ShellView(o.root ?? document.body, { ...o, muteKey: muteKeyOn && muteKey }, this.settings, this.flow, this.lobby, hidden ? null : this.loading)
     const guard = o.leaveGuard
     this.guard = guard === false ? null : new LeaveGuard(guard ?? (() => Boolean(this.lobby?.room) || (this.flow.started && this.playedMs >= LEAVE_GUARD_AFTER_MS)))
     this.offs.push(
@@ -111,9 +113,7 @@ export class GameShell {
       }),
     )
     this.wasStarted = this.flow.started
-    const muteKeyOn = o.muteKey !== false && this.settings.channels.length > 0
     if (muteKeyOn && typeof window !== "undefined") {
-      const muteKey = typeof o.muteKey === "function" ? o.muteKey : () => true
       const key = (e: KeyboardEvent) => {
         if (e.code !== "KeyM" || !muteKey() || e.repeat || e.metaKey || e.ctrlKey || e.altKey || o.keysBlocked?.() || isTextEntry(e.target)) return
         this.settings.toggleMute()

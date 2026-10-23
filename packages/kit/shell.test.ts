@@ -74,6 +74,23 @@ describe("@arcade/kit/shell settings", () => {
     expect(legacy.reduceMotion).toBe(true)
   })
 
+  test("master and mute are one control: 0 is muted, unmuting at 0 brings back the last level heard", () => {
+    const storage = memory()
+    const s = new ShellSettings({ game: "lot", storage, automated: false, prefersReducedMotion: false })
+    s.setVolume("master", 60)
+    s.setVolume("master", 0)
+    expect(s.muted).toBe(true)
+    expect(storage.m.get(muteStorageKey("lot"))).toBe("1")
+    s.toggleMute()
+    expect(s.muted).toBe(false)
+    expect(s.volume("master")).toBe(60)
+    // Moving the slider while muted unmutes; a saved master of 0 loads muted.
+    s.setMuted(true)
+    s.setVolume("master", 40)
+    expect(s.muted).toBe(false)
+    expect(new ShellSettings({ game: "x", storage: memory({ "arcade.volume.x.v1": JSON.stringify({ volumeMaster: 0 }) }), automated: false }).muted).toBe(true)
+  })
+
   test("quality goes through the game's ShellQuality and notifies views", () => {
     let mode: QualityMode = "auto"
     const quality = { get mode() { return mode }, tier: "high" as QualityTier, setMode: (m: QualityMode) => void (mode = m) }
@@ -132,10 +149,11 @@ describe("@arcade/kit/shell flow", () => {
     expect(flow.screen).toBe("title")
   })
 
-  test("pointer lock: losing it pauses, its own Escape is not a second press, a refusal never strands the menu", () => {
+  test("pointer lock: losing it pauses, its own Escape is not a second press, a refusal never strands the menu", async () => {
     const doc = new FakeDoc(), win = new EventTarget(), canvas = {} as HTMLElement
+    const relockMs = { afterEsc: 40, retry: 20 }
     let panel = false
-    const flow = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, blocked: () => panel, requestLock: (el) => doc.setLock(el as never) })
+    const flow = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, blocked: () => panel, requestLock: (el) => doc.setLock(el as never), relockMs })
     flow.play()
     expect(flow.screen).toBe("playing")
     doc.setLock(null) // the browser ate Esc
@@ -145,13 +163,75 @@ describe("@arcade/kit/shell flow", () => {
     panel = true
     expect(flow.overlay).toBe(null)
     panel = false
+    // One click on Resume right after the player's Esc: the request waits out the browser's cooldown, no second click.
+    flow.resume()
+    expect(flow.arming).toBe(true)
+    expect(flow.screen).toBe("paused")
+    await Bun.sleep(60)
+    expect(flow.arming).toBe(false)
+    expect(flow.screen).toBe("playing")
+    // The shell's own release (pause, Settings) has no cooldown: Resume takes the lock at once.
+    flow.pause()
+    expect(flow.screen).toBe("paused")
     flow.resume()
     expect(flow.screen).toBe("playing")
-    const refusing = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, requestLock: () => doc.dispatchEvent(new Event("pointerlockerror")) })
-    doc.setLock(null)
-    refusing.resume()
+    // A refusal is retried once quietly; refused again, the menu stays up and says so.
+    let asked = 0
+    const other = new FakeDoc()
+    const refusing = new ShellFlow({ doc: other as never, win: win as never, pointerLock: canvas, requestLock: () => (asked++, other.dispatchEvent(new Event("pointerlockerror"))), relockMs })
+    refusing.play()
+    expect(refusing.lockRefused).toBe(false)
+    await Bun.sleep(80)
+    expect(asked).toBe(2)
     expect(refusing.screen).toBe("title")
     expect(refusing.lockRefused).toBe(true)
+  })
+
+  test("a Resume waiting out the Esc cooldown is dropped when Settings or the Lab panel takes the screen", async () => {
+    const doc = new FakeDoc(), win = new EventTarget(), canvas = {} as HTMLElement
+    const relockMs = { afterEsc: 40, retry: 20 }
+    let panel = false, asked = 0
+    const flow = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, blocked: () => panel, requestLock: (el) => (asked++, doc.setLock(el as never)), relockMs })
+    flow.play()
+    doc.setLock(null) // the player's Esc
+    flow.resume()
+    expect(flow.arming).toBe(true)
+    flow.openSettings(true)
+    expect(flow.arming).toBe(false)
+    await Bun.sleep(60)
+    expect(flow.screen).toBe("paused")
+    expect(flow.settingsOpen).toBe(true)
+    expect(asked).toBe(1)
+    flow.openSettings(false)
+    // Again, with the Lab panel opening while it waits.
+    doc.setLock(canvas as never)
+    doc.setLock(null)
+    flow.resume()
+    panel = true
+    await Bun.sleep(60)
+    expect(flow.screen).toBe("paused")
+    expect(flow.arming).toBe(false)
+    expect(asked).toBe(1)
+  })
+
+  test("a refusal of someone else's lock request (the Lab panel's on Esc) is neither retried nor reported", async () => {
+    const doc = new FakeDoc(), win = new EventTarget(), canvas = {} as HTMLElement
+    let asked = 0
+    const flow = new ShellFlow({ doc: doc as never, win: win as never, pointerLock: canvas, requestLock: (el) => (asked++, doc.setLock(el as never)), relockMs: { afterEsc: 300, retry: 20 } })
+    flow.play()
+    expect(flow.screen).toBe("playing")
+    doc.setLock(null) // the panel opens and frees the mouse
+    doc.dispatchEvent(new Event("pointerlockerror")) // its resumeLock is refused (Esc within the cooldown)
+    await Bun.sleep(40)
+    expect(asked).toBe(1)
+    expect(flow.lockRefused).toBe(false)
+    // A Resume dropped by pause() forgets its click too.
+    flow.resume()
+    flow.pause()
+    doc.dispatchEvent(new Event("pointerlockerror"))
+    await Bun.sleep(80)
+    expect(asked).toBe(1)
+    expect(flow.lockRefused).toBe(false)
   })
 
   test("Settings opened from play (a HUD button) goes straight back to play when closed", () => {

@@ -18,8 +18,13 @@ tool; the shell is what players see.
    Ultra. An explicit Ultra choice starts at full resolution, then may shed resolution and tiers on slow frames.
    Once it leaves Ultra, recovery stops at High until the player selects Ultra again. `?quality=ultra` pins it
    for measurement. Unsupported Ultra requests fall back to High.
-3. **Volume and mute are always reachable from the title and the Escape menu**: the speaker and gear buttons in the
-   card's corner, and M (unless the game gives M to something else, like Outbreak's map, and passes `muteKey: false`).
+3. **Volume and mute are always reachable from the title and the Escape menu**: the master volume slider and speaker
+   in the bottom-right corner, and M (unless the game gives M to something else, like Outbreak's map, and passes
+   `muteKey: false`, or a function when it changes in play, like split-keyboard Archers). The M cap shows only while M
+   mutes. Master and mute are one control: master at 0 is muted, turning the slider up unmutes, and unmuting at 0
+   brings back the last level heard. While the shell is up, `html[data-shell]` is set so a game can hide its HUD
+   (`html[data-shell] #hud { visibility: hidden }`) clear of the bottom row. Per-channel
+   volumes are in Settings (a menu item on both screens).
 4. **No game ships its own volume or quality UI.** The Lab panel may keep designer mix levels (renamed "Mix level"
    where it was "Volume"), but player volume, mute, quality and reduce camera motion live in the shell's Settings.
    The one sanctioned in-HUD volume control is the shell's `ShellVolumeButton` (below); a game opts in by mounting it.
@@ -31,9 +36,16 @@ tool; the shell is what players see.
 7. **Automation sees the game, not the shell.** Under `navigator.webdriver` the overlays are hidden (pointer-lock
    games start when they take the lock; others start in play), automation starts muted, and saved volumes and quality
    are ignored. Add `?shell` to a URL to show the shell in a proof.
-8. **Every card fits a 1280×720 window.** A taller card scrolls inside itself with a soft fade at the edge that has
-   more, never clips; keep title slots compact enough that the title card fits without scrolling. The mute and gear
-   icons sit in their own row above the title. Check the title at 1280×720 and 1920×1080.
+8. **Menus sit in the world, not in a card** (Kit, Oct 22: "much more like in-game… it's really weird that it keeps
+   making you click in different places"). The wordmark stays at one place from loading to the title to the Escape
+   menu and Settings; under it a line (subtitle, Paused, Settings or a message) always holds two lines' height, so the
+   menu's first item (Play, Resume) lands on the same spot on every screen. The game's controls are a one-line hint row
+   along the bottom, with the volume at its right. A menu taller than the window scrolls inside itself with a soft
+   fade; it never clips. Check the title at 1280×720 and 1920×1080.
+9. **One click plays.** Play (or Resume) takes the pointer lock and starts the sound in the same click. Right after
+   the player's own Esc the browser refuses a new lock for about a second; the shell holds the click's request until
+   then (inside the click's activation) and retries once, so no second click is needed. A click anywhere on the world
+   behind the Escape menu resumes too.
 
 ## Using it
 
@@ -69,7 +81,20 @@ audio.master = shell.settings.gain("master")   // master × channel, 0 while mut
 | HUD volume | `ShellVolumeButton` / `mountVolumeControl(shell.settings, el, { channel?, muteKey? })` | Opt-in. Mounts a speaker in a HUD corner `el` (the game positions `el`; the control sets `pointer-events: auto`). Click toggles mute; hover drops a master-volume slider (moving it up unmutes). The icon shows muted (or 0), low (< 50%) or high. Same `ShellSettings` as Settings and M, so it saves the same way. It never holds keyboard focus (a key while it has focus blurs it and goes on to the game) and stops its own pointer events, so clicking it never takes pointer lock; under pointer lock it is out of reach until Esc frees the cursor. Carrier uses it top right. |
 | Leave warning | `LeaveGuard` (`shell.guard`) | Nothing, or its own `leaveGuard: () => boolean`. |
 | Loading | `ShellLoading` (`shell.loading`): weighted `stage()`s, `done()`, `finish()`, `fail()` | Reports real work; calls `finish()` after the first frame. |
-| View | `ShellView` (`shell.view`): title and pause cards, Settings inside them, loading bar, reconnect pill | Restyles with `--shell-font`, `--shell-title-font`, `--shell-ink`, `--shell-dim`, `--shell-card`, `--shell-edge`, `--shell-field`, `--shell-accent`, `--shell-accent-ink`, `--shell-backdrop`, `--shell-radius`. `view: false` draws nothing (headless). |
+| View | `ShellView` (`shell.view`): the wordmark, the menu column (title, Escape menu, Settings, the loading bar), the title slot beside it, the hint row and volume along the bottom, reconnect pill | Restyles with CSS variables (below). `pausedLabel` sets the Escape menu's line (`""` keeps the subtitle), `decor(phase)` draws a theme's own furniture around the menu (Barbara's camcorder OSD). `view: false` draws nothing (headless). |
+
+### Theming
+
+The default look is a left-aligned column over a scrim that darkens the left and the bottom of the world and leaves the
+rest clear. A game restyles it with variables on `.arcade-shell` and its own rules for the shell's classes:
+
+| Hook | What it sets |
+|---|---|
+| Type and colour | `--shell-font`, `--shell-title-font`, `--shell-title-size`, `--shell-item-size`, `--shell-ink`, `--shell-dim`, `--shell-accent`, `--shell-accent-ink`, `--shell-field`, `--shell-edge`, `--shell-radius`, `--shell-card` (the reconnect pill and HUD volume) |
+| Layout | `--shell-x` (left and right inset), `--shell-top` (the wordmark's top), `--shell-col` (menu width), `--shell-aside` (title slot width beside the menu; it moves above the menu under 1080 px) |
+| Backdrop | `--shell-scrim` (the gradient behind the menu), `--shell-backdrop` (under it, for a vignette or scan lines), `--shell-curtain` (the loading screen's dark, which lifts off the world when it's done) |
+| Motion | `--shell-ease`, `--shell-in`, `--shell-out`, `--shell-stagger`, `--shell-rise`: a changed screen's items rise into place in a stagger, exits only fade and are shorter, the first paint doesn't animate, reduced motion drops the rise |
+| State | `data-phase` on `.arcade-shell` and `data-shell` on `<html>` (`loading`, `title`, `paused`, `settings`; absent in play), so a game can step its own HUD aside (`html[data-shell] #hud { opacity: 0 }`); `--v` on every slider is its fill, for themes that draw their own track |
 
 Volume channels are the kit's (`@arcade/kit/audio/volume`): Master, Effects, Ambience, Voices and Music, saved per
 game in `arcade.volume.<game>.v1`, so games that already saved them keep the player's levels. List only the channels
@@ -104,8 +129,11 @@ torch-shadow slots and 4K map print. Measurements: [Barbara Ultra](../perf/barba
 - [ ] Simulation pauses with `shell.playing` in solo play; rooms keep running behind the menu.
 - [ ] Game menus that close on Escape are named in `escapeOwned`.
 - [ ] Player settings that aren't volume or quality go in as `sections`, not Lab rows.
+- [ ] The game's own HUD steps aside while the shell is up if it would sit under the menu or the hint row
+  (`html[data-shell] #hud { opacity: 0 }`).
 - [ ] Prove it with `bun scripts/prove-game-shell.ts <game>` (stills of the title at 1280×720 and 1920×1080, Settings,
-  lobby and pause with `?shell`).
+  lobby and pause with `?shell`). `bun scripts/prove-shell-ingame.ts <game> --clip` measures the wordmark and Play
+  against Resume, counts the clicks to play and back, checks M against the slider and records loading → play.
 
 ## Status (Oct 22)
 
@@ -122,7 +150,7 @@ Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell"
 | Getaway | Yes (night-road backdrop in the title slot) | `games/getaway/src/main.ts`, `src/ui/lobby.ts` |
 | Carrier | Yes (rooms only, callsign required) | `games/carrier/src/main.ts` |
 | Outbreak | Escape menu and Settings; its own lobby stays the title | `games/outbreak/src/main.ts`, `src/lobby/run-tools.ts` |
-| Barbara | Yes (room by link; M mutes; the Lab panel hides the cards while it is open, so you can play with it up) | `games/barbara/src/main.ts`, `index.html` |
+| Barbara | Yes (room by link; M mutes; the Lab panel hides the menus while it is open, so you can play with it up; camcorder OSD theme, the title camera pans the camp) | `games/barbara/src/main.ts`, `index.html` |
 | Lab | Exempt: it is the authoring tool, not a game. It keeps Key labels and its own Edit-mode mute | |
 | Landing, redirects | Out of scope: independent projects | |
 
@@ -148,8 +176,8 @@ Woods built the shell's first draft (`SettingsMenu`, the `#start` and `#pause` c
 remembered). Barbara now uses the kit shell: `createGameShell({ game: "barbara", ... })` with Play alone, Play with
 friends and an invite room (a room is its own page, `?room=<code>`, so joining loads it and Leave room loads solo),
 `createShellQuality` over `FOREST_QUALITY` (`arcade.quality.barbara.v1`; frame time only, as before), channels master,
-effects, ambience and voice copied into the sound bank, Subtitles as a Story section, and the card look in
-`--shell-*` variables (Georgia title, warm `#f2c96b` accent). The Lab's Volume, Mute, Quality and Reduce camera motion
+effects, ambience and voice copied into the sound bank, Subtitles as a Story section, and the look in `--shell-*`
+variables (since Oct 23 a 1996 camcorder's viewfinder: see Barbara's `AGENTS.md`, Game shell). The Lab's Volume, Mute, Quality and Reduce camera motion
 rows are gone; `blocked` is the Lab panel being open, not only holding input, so the cards stay out of the way while
 you tune and a click on the woods plays on.
 

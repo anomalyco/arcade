@@ -1,4 +1,4 @@
-/* While the shell's title is up over the live sea (body.mn-open, set in main.ts), the HUD stays out of the way. */
+/* While the shell is up over the live sea (body.mn-open, set in main.ts out of play), the HUD stays out of the way. */
 body.mn-open #hud {
   display: none;
 }
@@ -13,6 +13,8 @@ body.mn-open #hud {
   --shell-accent-ink: #07101a;
   --shell-backdrop: radial-gradient(ellipse 60% 70% at 50% 50%, rgba(8, 24, 48, 0.5), rgba(8, 24, 48, 0.1) 70%, transparent);
   --shell-radius: 2px;
+  /* The title reads against a bright sky and sea: a deeper navy scrim on the left. */
+  --shell-scrim: linear-gradient(90deg, rgba(7, 14, 24, 0.82), rgba(7, 14, 24, 0.55) 36%, rgba(7, 14, 24, 0) 70%), linear-gradient(0deg, rgba(7, 14, 24, 0.6), rgba(7, 14, 24, 0) 24%);
   font-weight: 300;
 }
 

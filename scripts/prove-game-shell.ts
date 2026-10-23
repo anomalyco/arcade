@@ -26,16 +26,18 @@ const { chromium } = budget
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio", "--autoplay-policy=user-gesture-required"] })
 const report: Record<string, unknown> = {}
 /** Per-game URL extras and what to click to reach play. */
-const SETUP: Record<string, { query?: string; timeout?: number; built?: boolean; lobby?: boolean }> = {
+const SETUP: Record<string, { query?: string; timeout?: number; built?: boolean; lobby?: boolean; playing?: boolean }> = {
   nightshift: { timeout: 180_000 }, lot: { timeout: 180_000, built: true }, barbara: { timeout: 180_000, built: true, lobby: true },
-  brawl: { lobby: true }, outbreak: { lobby: true }, getaway: { lobby: true }, blackout: { lobby: true }, carrier: { lobby: true }, archers: { lobby: true },
+  brawl: { lobby: true }, outbreak: { playing: true, timeout: 180_000 }, getaway: { lobby: true }, blackout: { lobby: true }, carrier: { lobby: true, timeout: 180_000 }, archers: { lobby: true },
 }
 
-const screen = (page: Page) => page.evaluate(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen ?? null)
+const screen = (page: Page) => page.evaluate(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen ?? null)
 const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${name}.png` })
 
 async function run(game: string, clip: boolean) {
   const dir = resolve(root, "games", game)
+  // Games with rooms stamp their build id first (`shared/build.gen.ts`).
+  if (existsSync(`${dir}/scripts/build-id.ts`)) execFileSync("bun", ["scripts/build-id.ts"], { cwd: dir, stdio: "inherit" })
   // The Lot imports public/ scripts at runtime, which only the built site serves.
   if (SETUP[game]?.built) await build({ root: dir, logLevel: "error" })
   const server = SETUP[game]?.built
@@ -50,7 +52,24 @@ async function run(game: string, clip: boolean) {
   try {
     const port = (server.httpServer!.address() as { port: number }).port
     await page.goto(`http://127.0.0.1:${port}${server.config.base}?shell${SETUP[game]?.query ?? ""}`, { waitUntil: "domcontentloaded" })
-    await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "title")
+    // Outbreak's own lobby is its title: the shell is only its Escape menu and Settings.
+    if (SETUP[game]?.playing) {
+      await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen === "playing")
+      await page.waitForTimeout(3000)
+      // Enter plays solo from its lobby; then Escape opens the shell's menu.
+      await page.keyboard.press("Enter")
+      await page.waitForTimeout(2500)
+      await page.keyboard.press("Escape")
+      await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen === "paused")
+      await page.waitForTimeout(900)
+      await shot(page, `${game}-pause`)
+      await page.locator(".as-card [data-act=settings]").first().click()
+      await page.waitForTimeout(900)
+      await shot(page, `${game}-settings`)
+      report[game] = { ok: true, finalScreen: await screen(page), note: "own lobby: Escape menu and Settings only", errors }
+      return
+    }
+    await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen === "title")
     await page.waitForTimeout(1500)
     const tag = clip ? `${game}-clip` : game
     const fit: Record<string, { overflow: number; fade: string }> = {}
@@ -71,12 +90,15 @@ async function run(game: string, clip: boolean) {
     }
     await page.locator(".as-card [data-act=settings]").first().click()
     await page.waitForSelector(".as-settings")
+    // Settings' rows rise in one after another.
+    await page.waitForTimeout(800)
     if (!clip) await shot(page, `${tag}-settings`)
     if (!clip && SETUP[game]?.lobby) {
       // The lobby: a private room's card (code, Copy invite link, players) for games that gather first, or the
       // title with its lobby choices for games that play as soon as they join.
       await page.locator("[data-act=back]").click()
       await page.locator(".as-card input[data-field=name]").fill("Kit").catch(() => {})
+      await page.waitForTimeout(800)
       await shot(page, `${tag}-lobby`)
       await page.locator(".as-card [data-act=settings]").first().click()
       await page.waitForSelector(".as-settings")
@@ -89,7 +111,7 @@ async function run(game: string, clip: boolean) {
         await page.locator(".as-seg [data-mode=low]").click()
         await page.waitForTimeout(900)
       }
-      const master = page.locator("input[data-vol=master]")
+      const master = page.locator(".as-settings input[data-vol=master]")
       if ((await master.count()) > 0) {
         const box = (await master.boundingBox())!
         await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2)
@@ -116,18 +138,18 @@ async function run(game: string, clip: boolean) {
       return
     }
     await play.click()
-    await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "playing")
+    await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen === "playing")
     await page.waitForTimeout(clip ? 1500 : 800)
     // Escape: pointer-lock games lose the lock (the browser's own Escape), others get the key.
     const locked = await page.evaluate(() => document.pointerLockElement !== null)
     if (locked) await page.evaluate(() => document.exitPointerLock())
     else await page.keyboard.press("Escape")
-    await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "paused")
-    await page.waitForTimeout(500)
+    await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen === "paused")
+    await page.waitForTimeout(900)
     if (!clip) await shot(page, `${tag}-pause`)
     if (clip) {
       await page.locator("[data-act=resume]").click()
-      await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "playing")
+      await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell[data-screen]")?.dataset.screen === "playing")
       await page.waitForTimeout(1500)
     }
     report[tag] = { ok: true, finalScreen: await screen(page), titleFit: fit, errors }

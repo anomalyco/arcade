@@ -65,7 +65,17 @@ const OWN = 0
 let pocketFlares = 1
 /** A camera look with a motor zoom (Hi8): the controls line offers the right mouse button. */
 let zoomPrompt = false
-const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare", { hold: true })] : []), ...(zoomPrompt ? [keyPromptHtml("Mouse2", "Zoom", { hold: true })] : []), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+const playKeys = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), ...(pocketFlares > 0 ? [keyPromptHtml("KeyQ", "Road flare", { hold: true })] : []), ...(zoomPrompt ? [keyPromptHtml("Mouse2", "Zoom", { hold: true })] : [])]
+const controlsHtml = () => [...playKeys(), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+/** The shell's hint row: its volume already shows M. */
+const shellControlsHtml = () => [...playKeys(), keyPromptHtml("Escape", "Menu")].join(" ")
+/** The night of the search (STORY.md), for the camcorder's date stamp on the title and Escape menu. */
+const OSD_DATE = "NOV.17.1996"
+const OSD_MODE = { loading: "STBY", title: "STBY", paused: "❚❚ PAUSE", settings: "MENU" } as const
+const tapeCounter = (seconds: number) => {
+  const s = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
+}
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG", "KeyQ"])
 /** `axis` turned by the hand's swing: `pitch` up and `yaw` right (radians, small), about the view's own axes. */
 function swayAxis(axis: [number, number, number], yaw: number, pitch: number, turn: number): [number, number, number] {
@@ -103,8 +113,11 @@ async function main() {
   const quality = createShellQuality({ game: "barbara", tiers: FOREST_QUALITY, params, onChange: () => live.qualityChanged() })
   if (smoke) quality.setMode("low", false)
   const shell = createGameShell({
-    game: "barbara", title: "BARBARA", subtitle: online ? "Your friends start at camp too" : "Camp Tamarack, November 1996. Her car is still in the lot.",
-    soloLabel: "Play alone", soloNote: "you and three searchers", friendsNote: "a private room, up to 6", playLabel: "Step out of camp", resumeLabel: "Back to the woods", askName: true,
+    game: "barbara", title: "BARBARA", subtitle: online ? "Your friends start at camp too." : "Camp Tamarack. Her car is still in the lot.",
+    soloLabel: "Play alone", playLabel: "Step out of camp", resumeLabel: "Back to the woods", askName: true,
+    // The viewfinder says PAUSE, so the line under the wordmark keeps the tagline.
+    pausedLabel: "",
+    decor: (phase) => `<div class="osd osd-tl">${OSD_MODE[phase]}</div><div class="osd osd-tr"><div data-osd-counter>${tapeCounter(live.session?.view.t ?? 0)}</div><div>${OSD_DATE}</div></div>`,
     channels: ["master", "effects", "ambience", "voice"], quality,
     sections: [
       { id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] },
@@ -114,7 +127,7 @@ async function main() {
     ],
     // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
     pointerLock: canvas, blocked: () => (live.panel?.visible ?? false) || live.editing() || live.endCard(), keysBlocked: () => live.panel?.hasFocus() ?? false,
-    loading: smoke ? false : { gpu: 1, world: 4, people: 1, frame: 1 }, controls: controlsHtml,
+    loading: smoke ? false : { gpu: 1, world: 4, people: 1, frame: 1 }, controls: shellControlsHtml,
     lobby: {
       friends: true,
       // Solo plays the session that's already running; a room is its own page (`?room=`), so joining loads it.
@@ -132,12 +145,9 @@ async function main() {
     audio.bank.applyVolumes()
   }
   syncSound()
-  // Nothing sounds before Begin: Play, Resume, a click outside the pause card, or a click on the woods.
-  shell.view?.root.addEventListener("click", (e) => {
-    const t = e.target as HTMLElement
-    const act = t.closest<HTMLElement>("[data-act]")?.dataset.act
-    if (act === "play" || act === "solo" || act === "resume" || t.classList.contains("as-overlay")) audio.begin()
-  }, { capture: true })
+  // Nothing sounds before Begin, which any click on the shell gives (the woods only play in play or with the knobs
+  // open): the click on Play that takes the mouse is the same one that starts the sound.
+  shell.view?.root.addEventListener("click", () => audio.begin(), { capture: true })
   shell.loading?.stage("gpu", "Starting the GPU")
   const gpu = await openGpu(canvas, "BARBARA")
   if (typeof gpu === "string") { hud.textContent = gpu; shell.loading?.fail(gpu); return }
@@ -422,7 +432,7 @@ async function main() {
   /** The forest floor: leaf litter under the grass (out past camp's lawn, off the path). */
   const litterAt = (x: number, z: number, surface: FootSurface) => (surface === "grass" || surface === "wet-grass") && Math.hypot(x - world.camp.x, z - world.camp.z) > world.camp.radius
 
-  let acc = 0, last = performance.now(), time = 0, frames = 0, paused = false, prevLight = camera.flashlight, ownLevel = 1
+  let acc = 0, last = performance.now(), time = 0, frames = 0, paused = false, prevLight = camera.flashlight, ownLevel = 1, titleDrift = 0, counterShown = ""
   /** The view's clock: it freezes a beat on a hit-stop (the creature, being taken); the creature is drawn on it. */
   let viewTime = 0, prevRaise = 0, raising = 0, wasTying = false, wasTaken = false
   /** `dark`: player ids whose torches aren't drawn (captures that count lights; presentation only). */
@@ -630,6 +640,13 @@ async function main() {
     while (acc >= session.dt) {
       acc -= session.dt
       session.tick(intent())
+    }
+    // The title: the camera pans slowly across the camp as if someone were holding it. It adds to the look rather than
+    // setting it, so Play (or a return to the title) takes over from wherever it is without a jump.
+    if (!shell.flow.started && !shell.hidden && !lakeLab && !panel.visible && !settings.reduceMotion) {
+      const a = titleDrift, b = (titleDrift += dt)
+      camera.yaw += 0.16 * (Math.sin(b * 0.13) - Math.sin(a * 0.13))
+      camera.pitch += 0.018 * (Math.sin(b * 0.31) - Math.sin(a * 0.31))
     }
     const alpha = Math.min(1, acc / session.dt)
     if (session instanceof SoloSession) session.smooth = friends.smooth
@@ -853,6 +870,13 @@ async function main() {
       goal.classList.toggle("on", playing && story.started && p.mapRaise < 0.5)
       const text = nextStep(state.night, p.map.clues, nameOf, meId)
       if (goalText.textContent !== text) goalText.textContent = text
+    }
+    // The camcorder's tape counter is the night's own clock: it stands still while a solo night is paused.
+    const counter = tapeCounter(state.t)
+    if (counter !== counterShown && shell.view?.root.dataset.phase) {
+      counterShown = counter
+      const el = shell.view.root.querySelector("[data-osd-counter]")
+      if (el) el.textContent = counter
     }
     endCard.label = online ? `Room ${roomCode}` : `Night ${night + 1}`
     endCard.frame(state, world)

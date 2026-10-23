@@ -41,3 +41,5 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 .arcade-shell .as-title { font-weight: 800; font-size: 58px; letter-spacing: 0.2em; margin-right: -0.2em; }
 .arcade-shell .as-heading { font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
 .arcade-shell .as-btn { font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+/* The shell's hint row and menu replace the HUD's own prompts while the title or Escape menu is up. */
+html[data-shell] #hud { opacity: 0; }
