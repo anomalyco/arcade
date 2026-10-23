@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsc/kit.tsbuildinfo",
     "lib": [
       "ESNext",
       "DOM",

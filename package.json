@@ -12,11 +12,14 @@
     "arcade": "bun scripts/arcade.ts",
     "agent-ops": "bun scripts/agent-ops.ts",
     "check:packages": "bun run --filter '@arcade/*' check",
+    "check:scripts": "bun games/blackout/scripts/build-id.ts && bun games/outbreak/scripts/build-id.ts && tsc --noEmit -p scripts/tsconfig.json && bun test --max-concurrency 4 scripts/verify-scripts.test.ts",
     "verify": "bun scripts/verify.ts",
     "verify:remote": "bun scripts/verify-remote.ts",
     "verify:release": "bun scripts/verify.ts --release"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@webgpu/types": "^0.1.74",
     "vite": "^8.3.4",
     "playwright-core": "^1.64.0",
     "typescript": "^5.9.3"

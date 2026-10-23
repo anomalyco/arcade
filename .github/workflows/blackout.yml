@@ -10,7 +10,8 @@ on:
       - "package.json"
       - "bun.lock"
       - "bunfig.toml"
-      # tsconfig.scripts.json includes the cross-game multiplayer benchmark.
+      # The fire/water Lab imports Getaway's environment and props, including shared simulation types.
+      - "games/getaway/src/**"
       - "games/getaway/shared/**"
       - "games/getaway/public/sfx/**"
       - ".github/workflows/blackout.yml"
@@ -22,6 +23,7 @@ on:
       - "package.json"
       - "bun.lock"
       - "bunfig.toml"
+      - "games/getaway/src/**"
       - "games/getaway/shared/**"
       - "games/getaway/public/sfx/**"
       - ".github/workflows/blackout.yml"

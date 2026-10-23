@@ -1,5 +1,5 @@
 // Mesh-side metrics for the realistic people on the shared rig (the rig's own gait numbers come from
-// games/blackout/scripts/animation/gait-metrics.ts; the people layer does not change them):
+// scripts/animation/gait-metrics.ts; the people layer does not change them):
 //   bun scripts/people/measure.ts [cast-id]
 // Planted-ball slip (flat walk), foot sink/float over rolling ground with a 30 cm log, swing-foot clearance over the
 // log, torch-to-beam angle, CPU pose cost per person-frame, and the backpack's fit (rest gap, clipping in motion).

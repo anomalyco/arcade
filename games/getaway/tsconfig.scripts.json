@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsc/getaway-scripts.tsbuildinfo",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
@@ -12,5 +14,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/**/*.ts", "tests", "../../scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts", "tests"]
 }
