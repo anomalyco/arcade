@@ -448,7 +448,7 @@ async function main() {
         if (e.kind === "clue-found") {
           const clue = state.night.layout.clues[e.clue]
           if (mine && clue) { audio.play("ui.ping"); say(`You found ${CLUE_NAMES[e.what]}. ${leadText(clue)} It's on your map.`, 9) }
-          else say(`${nameOf(e.by)} found ${CLUE_NAMES[e.what]}. Ask them where it points.`, 5)
+          else say(`${nameOf(e.by)} found ${CLUE_NAMES[e.what]}.${e.what === "strip" ? "" : e.what === "cassette" ? " Ask them what's on it." : " Ask them where it points."}`, 5)
         }
         if (e.kind === "spare-taken" && mine) { audio.play("pack.open"); say("A spare battery, in your pocket. It goes in when your torch dies.", 4) }
         if (e.kind === "torch" && mine) {

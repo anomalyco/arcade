@@ -290,14 +290,16 @@ export function createNight(world: WoodsWorld, seed: number): NightState {
 /** Minutes after midnight on the watch at sim time `t` (12:40 until the search starts; it stops at the end). */
 export function watchMinutes(n: Pick<NightState, "phase" | "start" | "dawn" | "end">, t: number): number {
   if (n.phase === "camp" || n.dawn <= n.start) return WATCH_START
-  const now = n.end > 0 ? n.end : t
+  // The watch stops at the end; an earlier moment (a find) reads its own time.
+  const now = n.end > 0 ? Math.min(t, n.end) : t
   return WATCH_START + ((now - n.start) / (n.dawn - n.start)) * (WATCH_DAWN - WATCH_START)
 }
 
 /** How grey the sky has gone (0 night, 1 dawn): from `GREY_MINUTES` before dawn. */
 export function dawnShare(n: Pick<NightState, "phase" | "start" | "dawn" | "end">, t: number): number {
   if (n.phase === "camp" || n.dawn <= n.start) return 0
-  const now = n.end > 0 ? n.end : t
+  // The watch stops at the end; an earlier moment (a find) reads its own time.
+  const now = n.end > 0 ? Math.min(t, n.end) : t
   const k = (now - (n.dawn - GREY_MINUTES * 60)) / (GREY_MINUTES * 60)
   return Math.max(0, Math.min(1, k))
 }
@@ -544,7 +546,7 @@ export function leadText(c: Clue): string {
   switch (c.kind) {
     case "car": return `The driver's door is unlocked now, and there's a pink donut box on the passenger seat that wasn't there this afternoon. Two sets of footprints leave the lot: one heads ${bearingWords(a!.dx, a!.dz)}, the other ${bearingWords(b!.dx, b!.dz)}.`
     case "page": return `"Sunday 17: 11:00 Hike? 6:00 R." Tied on with flagging tape that isn't ours. An arrow in pen points ${bearingWords(a!.dx, a!.dz)}.`
-    case "badge": return `BARBARA K. NAKAMURA, EXECUTIVE SYSTEMS, on a snapped lanyard in the creek mud. Drag marks lead ${bearingWords(a!.dx, a!.dz)}.`
+    case "badge": return `BARBARA K. NAKAMURA, EXECUTIVE SYSTEMS, on a snapped lanyard. Drag marks lead ${bearingWords(a!.dx, a!.dz)}.`
     case "cassette": return `Rewound and played, it's Barbara: she was walking up to ${RIDGE_NAME}.`
     case "strip": return "Only tape: one strip, tied the way Walt ties it. Nobody is here."
   }
