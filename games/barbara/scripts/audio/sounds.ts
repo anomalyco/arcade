@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from "node:path"
 import { analyzeSfx, detectOnsets, type SfxStats } from "../../../../packages/kit/audio/sfx-analysis"
 import { decode } from "../../../../scripts/sfx/decode"
-import { WOODS_SOUND_SPECS, type WoodsSoundSpec } from "./specs"
+import { UNCANNY_IDS, UNCANNY_SOURCE_SPECS, WOODS_SOUND_SPECS, type WoodsSoundSpec } from "./specs"
 
 const SR = 48000
 const game = new URL("../../", import.meta.url).pathname
@@ -25,7 +25,7 @@ const LOOP_WRAP = 12000
 const FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
 
 const [command, ...args] = process.argv.slice(2)
-const specs = WOODS_SOUND_SPECS.filter((s) => args.length === 0 || args.some((a) => s.id === a || (a.endsWith("*") && s.id.startsWith(a.slice(0, -1)))))
+const specs = [...WOODS_SOUND_SPECS, ...UNCANNY_SOURCE_SPECS].filter((s) => args.length === 0 || args.some((a) => s.id === a || (a.endsWith("*") && s.id.startsWith(a.slice(0, -1)))))
 
 type RawMeta = { id: string; take: number; prompt: string; duration: number; influence: number; loop: boolean; traceId: string | null; cost: number | null; bytes: number }
 type Candidate = { name: string; take: number; raw: string; pcm: string; stats: SfxStats; events: number; snr: number; seam?: number; steadiness?: number; tags?: string; score: number; reasons: string[]; picked?: boolean }
@@ -309,8 +309,17 @@ async function build() {
   mkdirSync(outDir, { recursive: true })
   const files: Record<string, WoodsFile[]> = {}
   const keep = new Set<string>()
+  // Ids with nothing in the work directory keep their shipped files and entries (the work files are temporary).
+  const { WOODS_FILES: shipped } = (await import(join(game, "src/audio/files.ts"))) as { WOODS_FILES: Record<string, readonly WoodsFile[]> }
+  const keepShipped = (id: string, why: string) => {
+    const old = shipped[id]
+    if (!old) { console.log(`skip ${id}: ${why}`); return }
+    files[id] = [...old]
+    for (const f of old) keep.add(f.file)
+    console.log(`keep ${id}: ${why}, ${old.length} shipped files`)
+  }
   for (const spec of WOODS_SOUND_SPECS) {
-    if (!existsSync(curatedPath(spec.id))) { console.log(`skip ${spec.id}: not curated`); continue }
+    if (!existsSync(curatedPath(spec.id))) { keepShipped(spec.id, "not curated"); continue }
     const curated = JSON.parse(readFileSync(curatedPath(spec.id), "utf8")) as Curated
     const list: WoodsFile[] = []
     let n = 0
@@ -336,6 +345,34 @@ async function build() {
       })
     }
     files[spec.id] = list
+  }
+  // The uncanny tier: composed offline by uncanny.ts from curated ingredients, encoded the same way.
+  for (const id of UNCANNY_IDS) {
+    const dir = join(work, "composed", id)
+    if (!existsSync(dir)) { keepShipped(id, "not composed"); continue }
+    const spec: WoodsSoundSpec = { id, prompt: "", duration: 0, influence: 0, takes: 0, keep: 0, target: -18, range: [0, 60] }
+    const list: WoodsFile[] = []
+    for (let n = 1; existsSync(join(dir, `${n}.f32`)); n++) {
+      const meta = JSON.parse(readFileSync(join(dir, `${n}.json`), "utf8")) as { note: string; from: { source: string; prompt: string; requestId: string | null }[] }
+      const file = `${id}.${n}.ogg`
+      const out = join(outDir, file)
+      const pcm = readF32(join(dir, `${n}.f32`), 1)
+      await encode(spec, pcm, out)
+      keep.add(file)
+      let decoded = await decode(out, 1)
+      const over = analyzeSfx(decoded).peakDb - (PEAK_CAP_DB + 0.4)
+      if (over > 0) { await encode(spec, pcm, out, over + 0.2); decoded = await decode(out, 1) }
+      const stats = analyzeSfx(decoded)
+      const requestIds = meta.from.map((f) => f.requestId).filter(Boolean)
+      list.push({
+        file, license: meta.from.some((f) => f.source.startsWith("voice")) ? `${LICENSE}; voice: ElevenLabs Eleven v4 premade voice` : LICENSE,
+        prompt: meta.from.map((f) => f.prompt).filter(Boolean).join(" | "),
+        provenance: `composed by scripts/audio/uncanny.ts: ${meta.note}; from ${meta.from.map((f) => f.source).join(", ")}; normalised to -18 LUFS momentary max, Ogg Opus`,
+        ...(requestIds.length ? { requestId: requestIds.join(",") } : {}),
+        seconds: round(stats.durationSeconds, 3), loudness: round(stats.momentaryMaxLufs, 1), peakDb: round(stats.peakDb, 1), gain: round(10 ** ((spec.target - stats.momentaryMaxLufs) / 20), 3), bytes: statSync(out).size,
+      })
+    }
+    files[id] = list
   }
   for (const f of readdirSync(outDir)) if (f.endsWith(".ogg") && !keep.has(f)) rmSync(join(outDir, f))
   const body = Object.entries(files).map(([id, list]) => `  ${JSON.stringify(id)}: [\n${list.map((f) => `    ${JSON.stringify(f)},`).join("\n")}\n  ],`).join("\n")

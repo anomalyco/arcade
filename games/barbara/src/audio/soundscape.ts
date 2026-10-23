@@ -1,5 +1,5 @@
 import type { CreatureEvent } from "../../shared/creature"
-import type { DistantEvent, DistantSound } from "../../shared/distant"
+import { UNCANNY_SOUNDS, type DistantEvent, type DistantSound } from "../../shared/distant"
 import { treesNear, type Tree, type WoodsWorld } from "../../shared/world"
 import { WOODS_FILES, type WoodsSoundId } from "./files"
 import type { SoundSettings } from "./settings"
@@ -30,7 +30,24 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 const DISTANT_LEVEL: Record<DistantSound, number> = {
   "far.loon": 0.54, "far.fox": 0.6, "far.owl": 0.34, "far.snap": 0.55, "far.steps": 0.7, "far.knock": 0.76,
   "far.whistle": 0.56, "far.radio": 0.55, "far.cardoor": 0.93, "far.screendoor": 0.66,
+  "far.howl": 0.6, "far.taken": 0.53, "far.mimic": 0.45, "far.echo": 0.54, "far.climb": 0.34, "far.stop": 0.8,
 }
+
+/**
+ * How the crickets near you react to an uncanny sound, from when it reaches you (s): they start to go quiet at `from`
+ * over `attack`, are down by `depth` and stay down `hold` past the end of the sound, then come back over `release`.
+ */
+const HUSH: Partial<Record<DistantSound, { from: number; attack: number; depth: number; hold: number; release: number }>> = {
+  // Thinning while the howl goes on; after its dead stop they stay silent (a second hush at the end, below).
+  "far.howl": { from: 2.5, attack: 4, depth: 0.6, hold: 0, release: 1 },
+  "far.taken": { from: 0.4, attack: 1.4, depth: 0.95, hold: 16, release: 8 },
+  "far.climb": { from: 1, attack: 2.5, depth: 0.7, hold: 4, release: 6 },
+  "far.stop": { from: 0, attack: 0.12, depth: 1, hold: 12, release: 7 },
+}
+/** The forest reverb's share per sound (default 0.5): the howl's dead stop wants little tail. */
+const REVERB: Partial<Record<DistantSound, number>> = { "far.howl": 0.32, "far.stop": 0.6 }
+/** Fetched on the second pass after Begin (they can't play in the first eight minutes). */
+const DEFERRED = new Set<string>(UNCANNY_SOUNDS)
 
 /** The creature's brush crash against the distant sounds (× the Lab's loudness): a few dB under a far branch snap. */
 const CREATURE_LEVEL = 0.17
@@ -182,7 +199,7 @@ export class Soundscape {
   private nextCreak = 0
   private nextKnock = 0
   private nextDock = 0
-  private hush: { from: number; to: number }[] = []
+  private hush: { from: number; to: number; attack: number; release: number; depth: number }[] = []
   private ctxCache = { at: -1, exposure: 1, density: 0.5, insects: 1, densities: [0.5, 0.5, 0.5, 0.5] }
   private near: Tree[] = []
   /** One-shots scheduled or sounding, so a lost focus stops them and a signal fades the distant ones. */
@@ -208,14 +225,16 @@ export class Soundscape {
 
   /**
    * Fetches and decodes the files not loaded yet (after Begin, never on page load). A file that fails is skipped and
-   * tried again on the next call. Resolves whether every file is in.
+   * tried again on the next call; the uncanny tier waits for the second call unless `all`. Resolves whether every file is in.
    */
-  load(fetcher: (url: string) => Promise<ArrayBuffer> = fetchFile): Promise<boolean> {
+  load(fetcher: (url: string) => Promise<ArrayBuffer> = fetchFile, all = false): Promise<boolean> {
     if (this.loading) return this.loading
     const run = async () => {
       const jobs: Promise<void>[] = []
-      let failed = 0
+      let failed = 0, deferred = 0
+      const first = !this.loaded && !all
       for (const [id, files] of Object.entries(WOODS_FILES) as [WoodsSoundId, readonly { file: string }[]][]) {
+        if (first && DEFERRED.has(id)) { deferred++; continue }
         let list = this.buffers.get(id)
         if (!list) this.buffers.set(id, (list = []))
         const into = list
@@ -226,7 +245,7 @@ export class Soundscape {
       }
       await Promise.all(jobs)
       this.loaded = BEDS.every((id) => this.buffers.get(id)?.[0])
-      this.complete = failed === 0
+      this.complete = failed === 0 && deferred === 0
       return this.complete
     }
     this.loading = run().finally(() => { this.loading = null })
@@ -374,11 +393,11 @@ export class Soundscape {
     // Crickets go quiet while something heavy moves nearby.
     let hush = 1
     for (const h of this.hush) {
-      if (now < h.from || now > h.to + 5) continue
-      const k = now < h.from + 1.2 ? (now - h.from) / 1.2 : now > h.to ? 1 - (now - h.to) / 5 : 1
-      hush = Math.min(hush, 1 - 0.8 * clamp(k, 0, 1))
+      if (now < h.from || now > h.to + h.release) continue
+      const k = now < h.from + h.attack ? (now - h.from) / h.attack : now > h.to ? 1 - (now - h.to) / h.release : 1
+      hush = Math.min(hush, 1 - h.depth * clamp(k, 0, 1))
     }
-    this.hush = this.hush.filter((h) => now < h.to + 6)
+    this.hush = this.hush.filter((h) => now < h.to + h.release + 1)
     set(this.beds.get("insects"), this.on("insects") ? s.soundInsects * 0.06 * c.insects * hush : 0, 0.6)
     set(this.beds.get("walls"), this.on("walls") ? s.soundWind * 0.13 * inside * (0.35 + 0.65 * gustHere) : 0, 0.3)
 
@@ -421,7 +440,7 @@ export class Soundscape {
   }
 
   /** A positional one-shot: travel delay, distance level and low-pass, HRTF panning and a distance-weighted reverb send. */
-  oneShot(id: WoodsSoundId, take: number, x: number, y: number, z: number, l: Listener, level: number, opts: { reverb?: number; rate?: number; elapsed?: number; distant?: boolean } = {}): { distance: number; delay: number } | null {
+  oneShot(id: WoodsSoundId, take: number, x: number, y: number, z: number, l: Listener, level: number, opts: { reverb?: number; rate?: number; elapsed?: number; distant?: boolean } = {}): { distance: number; delay: number; seconds: number } | null {
     // The chosen take, or the next one that loaded.
     const list = this.buffers.get(id), n = WOODS_FILES[id].length
     let buffer: AudioBuffer | undefined
@@ -462,7 +481,7 @@ export class Soundscape {
     this.voices.add(voice)
     src.onended = () => { this.voices.delete(voice); for (const n of [src, lp, lp2, fade, dry, wet, pan]) n.disconnect() }
     src.start(at)
-    return { distance: d, delay }
+    return { distance: d, delay, seconds: buffer.duration / (opts.rate ?? 1) }
   }
 
   private crashes = new Map<number, AudioBuffer>()
@@ -508,7 +527,7 @@ export class Soundscape {
     this.voices.add(voice)
     src.onended = () => { this.voices.delete(voice); for (const n of [src, lp, fade, dry, wet, pan]) n.disconnect() }
     src.start(at)
-    this.hush.push({ from: at, to: at + 2.5 })
+    this.hush.push({ from: at, to: at + 2.5, attack: 1.2, release: 5, depth: 0.8 })
     this.heard.push({ sound: "creature", distance: Math.round(d), delay: Math.round(delay * 100) / 100, time: ctx.currentTime })
     return { distance: d, delay }
   }
@@ -518,9 +537,14 @@ export class Soundscape {
     if (!this.on("distant")) return
     const level = this.settings.distantLevel * DISTANT_LEVEL[e.sound] * 0.55
     const elapsed = Math.max(0, simNow - e.at)
-    const r = this.oneShot(e.sound, e.take, e.x, e.y, e.z, l, level, { reverb: 0.5, elapsed, distant: true, rate: 1 + ((e.seq * 0.37) % 1 - 0.5) * 0.04 })
+    const r = this.oneShot(e.sound, e.take, e.x, e.y, e.z, l, level, { reverb: REVERB[e.sound] ?? 0.5, elapsed, distant: true, rate: 1 + ((e.seq * 0.37) % 1 - 0.5) * 0.04 })
     if (!r) return
     this.heard.push({ sound: e.sound, distance: Math.round(r.distance), delay: Math.round(r.delay * 100) / 100, time: this.ctx.currentTime })
-    if (e.sound === "far.steps") { const t0 = this.ctx.currentTime + r.delay; this.hush.push({ from: t0, to: t0 + 7 }) }
+    const t0 = this.ctx.currentTime + r.delay
+    if (e.sound === "far.steps") this.hush.push({ from: t0, to: t0 + 7, attack: 1.2, release: 5, depth: 0.8 })
+    const h = HUSH[e.sound]
+    if (h) this.hush.push({ from: t0 + h.from, to: t0 + r.seconds + h.hold, attack: h.attack, release: h.release, depth: h.depth })
+    // The howl stops dead and so does everything else for a while.
+    if (e.sound === "far.howl") this.hush.push({ from: t0 + r.seconds - 0.05, to: t0 + r.seconds + 16, attack: 0.15, release: 9, depth: 1 })
   }
 }

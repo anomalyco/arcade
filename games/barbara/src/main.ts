@@ -9,6 +9,8 @@ import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
 import type { ForestTorch } from "@arcade/kit/forest/view"
 import { createGameShell, createShellQuality } from "@arcade/kit/shell"
 import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
+import { answerCall, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
+import { VOICE_LINES } from "../shared/lines.gen"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
 import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
@@ -143,6 +145,7 @@ async function main() {
     { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
   ])
   panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
+  panel.addControls({}, UNCANNY_SOUNDS.map((s) => ({ key: `uncanny.${s}`, label: `Trigger ${s.slice(4)}`, group: "Sound", subsection: "Uncanny", type: "action" as const, run: () => { void uncanny.trigger(s) } })))
   panel.addControls(held.settings as unknown as Record<string, number | string | boolean>, heldMapControls())
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
@@ -250,6 +253,33 @@ async function main() {
     const here = new Set(rows.filter((r) => r.connected).map((r) => r.pid))
     for (const r of rows) if (r.connected && !rosterSeen.has(r.pid) && r.pid !== session.me && rosterSeen.size) say(`${r.name} walked into camp.`, 3)
     rosterSeen = here
+  }
+
+  /**
+   * The uncanny tier's Lab triggers: solo, placed by the schedule's own rules in the sim (the mimic: a searcher calls
+   * from 70–110 m ahead and the sim's mimic answers); in a room, this machine only, placed around you (no mimic).
+   */
+  const uncanny = {
+    call: 0,
+    async trigger(sound: UncannySound): Promise<void> {
+      if (!(await audio.prepare())) return
+      if (!(session instanceof SoloSession)) {
+        if (sound === "far.mimic") { say("The mimic answers a searcher's call; trigger it playing alone.", 4); return }
+        audio.audition(sound)
+        return
+      }
+      const st = session.state, people = st.players.filter((p) => !p.bot)
+      if (sound !== "far.mimic") { const e = triggerUncanny(st.distant, world, people, sound, st.t); if (e) session.inject(e); return }
+      const line = VOICE_LINES.find((l) => l.id === MIMIC_LINES[uncanny.call++ % MIMIC_LINES.length])!
+      const me = session.self, h = world.params.half - 8
+      for (const [off, d] of [[0.5, 90], [0.3, 80], [0.7, 100], [-0.5, 90], [0, 110], [1, 70]] as const) {
+        const yaw = camera.yaw + off, x = me.x - Math.sin(yaw) * d, z = me.z - Math.cos(yaw) * d
+        if (Math.abs(x) > h || Math.abs(z) > h || isDeepWater(world, x, z)) continue
+        session.inject({ kind: "voice", line: line.id, cast: line.cast, by: -1, x, y: standHeight(world, x, z) + 1.6, z, at: st.t, seq: -1 })
+        if (answerCall(st.distant, world, people, line.id, { x, z }, line.seconds, st.t, settings, true)) say(`${line.text} … and an answer.`, 3)
+        return
+      }
+    },
   }
 
   /**

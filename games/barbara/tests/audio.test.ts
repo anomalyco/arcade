@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createDistant, DISTANT_RULES, holdDistant, stepDistant, type DistantEvent } from "../shared/distant"
+import { answerCall, createDistant, DISTANT_RULES, distantDread, holdDistant, MIMIC_LINES, stepDistant, triggerUncanny, UNCANNY_FIRST, UNCANNY_SOUNDS, uncannyChance, type DistantEvent } from "../shared/distant"
 import { makeWorld } from "../shared/world"
 import { gustAt, GUST_SPEED, insectLevel, nearestShore, WIND_DIR, windExposure } from "../src/audio/space"
 
@@ -55,6 +55,65 @@ describe("distant events", () => {
       if (rule.place === "beyond") expect(Math.max(Math.abs(e.x), Math.abs(e.z))).toBeGreaterThan(world.params.half)
     }
     expect(new Set(events.map((e) => e.sound)).size).toBeGreaterThanOrEqual(8)
+  })
+})
+
+describe("uncanny distant sounds", () => {
+  const strange = (events: DistantEvent[]) => events.filter((e) => (UNCANNY_SOUNDS as readonly string[]).includes(e.sound))
+
+  test("none in the first eight minutes, each at most once a night, the same for the same seed", () => {
+    let seen = 0
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const odd = strange(run(seed, 45))
+      seen += odd.length
+      for (const e of odd) expect(e.at).toBeGreaterThanOrEqual(UNCANNY_FIRST)
+      expect(new Set(odd.map((e) => e.sound)).size).toBe(odd.length)
+    }
+    expect(seen).toBeGreaterThan(0)
+    expect(strange(run(4, 45))).toEqual(strange(run(4, 45)))
+  })
+
+  test("more likely late and far from camp than early near it; off when switched off", () => {
+    expect(uncannyChance(distantDread(600, 20))).toBe(0)
+    expect(uncannyChance(distantDread(1500, 180))).toBeGreaterThan(0.6)
+    const near = (seed: number, on: boolean) => {
+      const ds = createDistant(seed), out: DistantEvent[] = []
+      for (let i = 0; i <= 45 * 600; i++) { const e = stepDistant(ds, world, [{ x: world.camp.x + 8, z: world.camp.z - 30 }], i / 10, 1, { uncanny: on, uncannyRate: 1 }); if (e) out.push(e) }
+      return out
+    }
+    const countNear = [1, 2, 3, 4, 5, 6].reduce((n, s) => n + strange(near(s, true)).filter((e) => e.at < 1200).length, 0)
+    const countFar = [1, 2, 3, 4, 5, 6].reduce((n, s) => n + strange(run(s, 45)).filter((e) => e.at < 1200).length, 0)
+    expect(countFar).toBeGreaterThan(countNear)
+    expect(strange(near(3, false))).toEqual([])
+  })
+
+  test("the mimic answers a call from the far side of whoever was nearest the caller, after the call, once", () => {
+    const ds = createDistant(9)
+    const me = { x: 100, z: -40 }, caller = { x: 100, z: -120 }
+    const t0 = 1500
+    expect(answerCall(ds, world, [me], "walt.ask.1", caller, 2, t0, undefined, true)).toBe(false)
+    expect(answerCall(ds, world, [me], "walt.call.1", caller, 2.24, t0, undefined, true)).toBe(true)
+    let e: DistantEvent | null = null
+    for (let t = t0; t < t0 + 15 && !e; t += 0.1) e = stepDistant(ds, world, [me], t)
+    expect(e?.sound).toBe("far.mimic")
+    expect(e!.take).toBe(MIMIC_LINES.indexOf("walt.call.1"))
+    expect(e!.at).toBeGreaterThan(t0 + 80 / 343 + 2.24)
+    const d = Math.hypot(e!.x - me.x, e!.z - me.z)
+    expect(d).toBeGreaterThanOrEqual(DISTANT_RULES["far.mimic"].near - 1)
+    // Away from the caller: on the far side of me.
+    expect((e!.x - me.x) * (caller.x - me.x) + (e!.z - me.z) * (caller.z - me.z)).toBeLessThan(0)
+    expect(answerCall(ds, world, [me], "walt.call.1", caller, 2.24, t0 + 60)).toBe(false)
+  })
+
+  test("an animal is got where the creature last crossed, and the creature is due again soon after", () => {
+    const ds = createDistant(11)
+    const me = { x: 40, z: -110 }
+    ds.creature.last = { x: 40, z: -10, at: 900 }
+    ds.creature.next = 5000
+    const e = triggerUncanny(ds, world, [me], "far.taken", 1000)!
+    expect(e.sound).toBe("far.taken")
+    expect(Math.hypot(e.x - 40, e.z + 10)).toBeLessThan(25)
+    expect(ds.creature.next).toBeLessThan(1000 + 120)
   })
 })
 
