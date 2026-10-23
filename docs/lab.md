@@ -83,7 +83,9 @@ practical lamps). There is one world per Lab (`LabContext.world`); its section d
   Weather, Materials, Vegetation and Screen, with curated presets on top. A preset may also set the camera (CRT in a
   dark room looks at the screen bench inside the house; the `screen-display` station opens it). A preset is a named set of knob values over the
   defaults (`WORLD_PRESETS` in `world/presets.ts`): Clear day, Golden hour, Dusk, Noir rain, 70s sodium, Painterly,
-  Storm night, Foggy dawn, Snow night, Night lamps, Brick and concrete, Autumn yard, Pine and weeds. Reset (or the Clear
+  Storm night, Foggy dawn, Snow night, Night lamps, Brick and concrete, Finished props, Autumn yard, Pine and weeds.
+  Finished props puts one prop per wear look on the driveway, close up; the world compiles its finish shader variant
+  only while those props or Materials › Finish › Albedo check are on. Reset (or the Clear
   day preset) restores the defaults. `world.preset`, `world.set`, `world.export` and `world.import` drive it; the export
   is versioned (`arcade.lab.world`, version 1) and import validates every key, type, range and choice before it changes
   anything.

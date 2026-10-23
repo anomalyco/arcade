@@ -3,7 +3,7 @@
  * Current look, Oak and Lawn, wet asphalt), one per idea the separate Looks, Lighting, Weather, Materials and
  * Vegetation labs used to show. Add a preset here rather than a new lab. Keys are the world section's setting keys.
  */
-import { SCREEN_CAMERA } from "./scene"
+import { FINISHED_CAMERA, SCREEN_CAMERA } from "./scene"
 
 export const WORLD_PRESET_VERSION = 1
 
@@ -41,6 +41,7 @@ export const WORLD_PRESETS: readonly WorldPreset[] = [
   { id: "screen-bench", label: "CRT in a dark room", idea: "light", note: "Midnight inside the house, lamps off: a CRT television on a workbench is the only light, and the room follows its picture.", values: { hour: 0, lightModel: "physical", lampPower: 0, skyLight: 0.015, exposureEV: 0.8, shadowLift: 0, lensBloom: 0.25, screen: true, "screen.light": 6 }, camera: SCREEN_CAMERA },
   { id: "dying-lamps", label: "Dying lamps", idea: "light", note: "Midnight with the shared flicker: the sodium streetlamp cycles out and restrikes pink, the porch tube stutters.", values: { hour: 0, flicker: 1.5 } },
   { id: "brick-street", label: "Brick and concrete", idea: "materials", note: "Brick-red walls, dry asphalt, plaza paving, carpet inside.", values: { wall: "brick", street: 5, walk: 7, path: 7, floor: 0, car: "teal" } },
+  { id: "finished-props", label: "Finished props", idea: "materials", note: "Six props on the driveway at 16:00, one per wear look (worn lab metal, damp cinderblock, old wood, painted steel, wet bark, weathered stone): chamfers, baked AO, curvature and sky exposure, CC0 scan detail. Materials › Finish has the wear knobs and the albedo check.", values: { hour: 16, lightModel: "physical", finishProps: true }, camera: FINISHED_CAMERA },
   { id: "autumn", label: "Autumn yard", idea: "vegetation", note: "Maple, an overgrown shrub and an overgrown lawn at 16:00.", values: { hour: 16, treePreset: "maple", bushPreset: "overgrown", grassPreset: "overgrown" } },
   { id: "pine-weeds", label: "Pine and weeds", idea: "vegetation", note: "A pine over weeds and dead grass, sage walls.", values: { treePreset: "pine", grassPreset: "weeds", bushPreset: "hydrangea", wall: "sage" } },
 ]

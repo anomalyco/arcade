@@ -490,8 +490,34 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
   footprint (Outbreak `games/outbreak/src/ground.ts`).
 - **World-space wear, damp and wax.** The Lot's interior varies albedo and roughness together in world space
   (`games/lot/src/interior/finishes.ts`), locked to Lot uniforms for now.
-- **Wear materials and finish pass (landing, branch `kit-finish`).** Shared wear materials and a finish pass every
-  model goes through. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
+- **Wear materials and finish pass (`@arcade/kit/gpu/finish`, Oct 2026). Kit's call pending: no visible gain at game
+  distance in BARBARA or Outbreak, so no game uses it.** See it in the Lab: world preset **Finished props**.
+  Code-built boxes come out square, evenly lit and untouched; the finishing pass gives them a one-segment chamfer
+  (`finish-geom.ts`, faces split to ≤ 1.3 m), bakes AO, signed curvature and sky exposure per vertex into the spare
+  vertex bytes (`finish-bake.ts`, BVH, deterministic; no stride change) and wears them in the shader from that data
+  (`materials/wear.ts`, lifted from the Lot's `finishes.ts`): edge wear through to an under-layer, cavity grime, rising
+  damp with a salt rim, rain streaks on exposed faces, dust where rain never reaches, rust on metal, two scales of
+  per-region variation, wetness. Albedo, roughness and metalness change together. Six looks (worn lab metal, damp
+  cinderblock, old wood, painted steel, wet bark, weathered stone) can add a CC0 Poly Haven scan projected triplanar
+  in world space (`materials/scans/`, credits beside them). `albedoClamp` scales finished non-metals into the measured
+  50–243 sRGB range before wear. The Lab's **Albedo check** (Materials › Finish) shows every lit surface blue below
+  range, red above and grey inside (charcoal 0.04, aged concrete 0.2–0.3). `bun scripts/finish-prop.ts` reports what
+  it would bake for each `.prop` (v1 props have no spare bytes, so it never rewrites them). Nothing runs unless a mesh
+  is finished: with the hooks off the scene shaders are byte-identical to before, and unfinished meshes are unchanged.
+  The BARBARA camp and Outbreak kitchen adoption is kept on branch `kit-finish-adoption` for when a game opts in.
+  - **Cost, measured on the adoption branch** (mini Metal, paired in one page): BARBARA 1600×900 +1.3 ms (cabin 22.9 →
+    24.2, fire ring 21.1 → 22.4; +57k static triangles), forest build ~0.14 s → ~1.0 s (the bake is ~0.85 s, 118k ray
+    samples; it ran only with the camp opted in). Outbreak 3456×1894 kitchen +10 ms (MAD 1.8). Outbreak's absolute
+    frame times there (~520 ms) are implausible, so only the delta means anything.
+  - **Where the Outbreak cost comes from: geometry, not the shader.** Both modes compile the same shader, and a
+    finished fragment does at most 3 `textureSampleGrad` + 1 `textureSampleLevel` and about 7 value-noise calls. The
+    chamfers multiplied triangles: per box, square 10, chamfered 30, with the 3 cm wear band 70, and a long face after
+    `splitLong` up to 114. Ash's cabinetry went 3,700 → 27,996 tris (7.6×), town 7's level 139,706 → 164,002 (+17%).
+    Most are slivers about 1 px or less at the game camera (24–65 m), which shade whole 2×2 quads under MSAA. About
+    8.5k came from steel and laminate parts chamfered but never tagged (a glue bug in the adoption, not the kit).
+    `finish: true` also adds one varying and `wearDecode` per vertex.
+  - **If a game opts in:** chamfer only tagged parts, skip the wear band on small parts, and finish only props seen
+    up close (first person, interiors under ~5 m). Pass `exposure: 0` indoors to skip sky rays.
 - **Textured props (opt-in; Kit's pick pending).** `gpu/textured-mesh.ts` draws repeated
   GLB primitives with one instanced draw per material, on the host's existing lights, shadows, fog and exposure.
   `props/textured.ts` lazily loads nearby placements and keeps `.prop` fallbacks until ready. Outbreak's phone,
@@ -509,7 +535,7 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
   run after texture sampling so a host can layer its finish.
 - Pitfalls: coplanar trim makes moving patches (Night Shift partition rails); noise octaves and bump normals must fade
   by footprint. Kit vertex colours are sRGB and the shader linearises them, so a dark value goes far darker: 0.085
-  became 0.4 % linear albedo and the spider's second round was invisible. Not built: triplanar wear on props and cars.
+  became 0.4 % linear albedo and the spider's second round was invisible. Not built: wear on cars.
 
 ## Glass, interiors and built structures
 

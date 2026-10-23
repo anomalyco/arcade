@@ -1,5 +1,7 @@
 import { buildFoliageBush, buildFoliageTree, emitGrassClump, scatterGrassClumps, type FoliageParams } from "../../gpu/foliage"
 import type { LevelData } from "../../gpu/level"
+import { finishTagged } from "../../gpu/finish"
+import { lookIndex, type FinishLookId } from "../../gpu/materials/wear"
 import { FLOATS_PER_VERT, MAT, Mesh, hex, type Rgb } from "../../gpu/mesh"
 import { coldSodiumTint, type FlickerSample } from "../../gpu/lights/flicker"
 import { cagedBulbMesh, fluorescentTubeMesh, ledIndicatorMesh, type CagedBulb, type FluorescentTube, type LedIndicator } from "../../gpu/lights/practicals"
@@ -64,6 +66,8 @@ export type WorldBuild = {
   /** Practical fixtures over the bench: a failing fluorescent tube and a caged bulb on the side wall. */
   tube?: boolean
   bulb?: boolean
+  /** A row of finished props on the driveway, one per wear look (`gpu/finish`, `finishedProps` preset). */
+  finishProps?: boolean
 }
 
 /** The world's flat bounce fill (`flatLighting`): daylight and sky returned off the ground, everywhere. */
@@ -138,6 +142,7 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
 
   addHouse(m, glass, b, boxes)
   if (b.screen) addScreenBench(m, b)
+  if (b.finishProps) addFinishedProps(m)
   addStreetlamp(m, boxes, casters)
   addCar(m, glass, b, boxes)
   addCharacter(m, casters)
@@ -164,6 +169,9 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
     }
   }
 
+  // After everything else is built, so the house, driveway and lawn occlude the props' bake.
+  if (b.finishProps) finishTagged(m, { ground: DRIVEWAY_Y })
+
   const [ox, oz] = WORLD_ORIGIN
   m.place(0, 0, -ox, 0, -oz)
   glass.place(0, 0, -ox, 0, -oz)
@@ -183,6 +191,79 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
     casters,
     vertices: (m.v.length + glass.v.length) / 11,
   }
+}
+
+/** Driveway surface height (the concrete box's top) the finished props stand on. */
+const DRIVEWAY_Y = 0.025
+/** Plan x of each finished prop along the driveway at `FINISHED_Z`, in `FINISHED_LOOKS` order. */
+const FINISHED_X = [3.5, 4.72, 5.92, 6.8, 7.74, 8.79] as const
+const FINISHED_Z = 15.4
+export const FINISHED_LOOKS = ["worn-lab-metal", "damp-cinderblock", "old-wood", "painted-steel", "wet-bark", "weathered-stone"] as const satisfies readonly FinishLookId[]
+/**
+ * The finished props from the driveway's edge, close enough that chamfers, grime and scan detail read: all six fit
+ * a 1.26:1 canvas at the stage's 0.65 rad field of view.
+ */
+export const FINISHED_CAMERA = { target: [6.13 - WORLD_ORIGIN[0], 0.45, FINISHED_Z - WORLD_ORIGIN[1]] as const, yaw: 0.12, pitch: 0.3, dist: 8 } as const
+
+/**
+ * One prop per wear look on the driveway, built chamfered and tagged with `Mesh.finishPart`; `buildWorld` bakes them
+ * (`finishTagged`) once the rest of the set is in place. Looks that replace the albedo (metal, cinderblock, painted
+ * steel) ignore the vertex colour; the others wear it.
+ */
+function addFinishedProps(m: Mesh): void {
+  const y = DRIVEWAY_Y, z = FINISHED_Z
+  const part = (id: FinishLookId, build: () => void) => m.finishPart(lookIndex(id), build, "auto")
+  const at = (id: FinishLookId) => FINISHED_X[FINISHED_LOOKS.indexOf(id as (typeof FINISHED_LOOKS)[number])]!
+  // Worn lab metal: a cabinet on a plinth, two doors with a reveal between them and a bar handle.
+  part("worn-lab-metal", () => {
+    const x = at("worn-lab-metal"), c = rgb(0x8f9294)
+    m.box(x - 0.3, y, z - 0.22, x + 0.3, y + 0.08, z + 0.2, shade(c, 0.6))
+    m.box(x - 0.32, y + 0.08, z - 0.24, x + 0.32, y + 1.36, z + 0.22, c)
+    m.box(x - 0.29, y + 0.12, z + 0.22, x - 0.008, y + 1.32, z + 0.235, c)
+    m.box(x + 0.008, y + 0.12, z + 0.22, x + 0.29, y + 1.32, z + 0.235, c)
+    m.box(x + 0.03, y + 0.62, z + 0.235, x + 0.05, y + 0.86, z + 0.265, c)
+  })
+  // Damp cinderblock: three courses of 39 × 19 cm blocks in running bond with 1 cm joints.
+  part("damp-cinderblock", () => {
+    const x = at("damp-cinderblock"), c = rgb(0x8a8781)
+    const courses = [[0, 0.39, 0.4, 0.79, 0.8, 1.19], [0, 0.19, 0.2, 0.59, 0.6, 0.99, 1.0, 1.19]]
+    for (let row = 0; row < 3; row++) {
+      const y0 = y + row * 0.2, c0 = courses[row % 2]!
+      for (let i = 0; i < c0.length; i += 2) m.box(x - 0.6 + c0[i]!, y0, z - 0.1, x - 0.6 + c0[i + 1]!, y0 + 0.19, z + 0.09, c)
+    }
+  })
+  // Old wood: a slatted crate with corner posts.
+  part("old-wood", () => {
+    const x = at("old-wood"), c = rgb(0x7a634b), post = rgb(0x6a5440)
+    const h = 0.56, s = 0.28
+    for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) m.box(x + px * s - 0.03, y, z + pz * s - 0.03, x + px * s + 0.03, y + h, z + pz * s + 0.03, post)
+    for (let k = 0; k < 4; k++) {
+      const y0 = y + 0.02 + k * 0.135
+      m.box(x - s, y0, z + s - 0.005, x + s, y0 + 0.11, z + s + 0.015, c)
+      m.box(x - s, y0, z - s - 0.015, x + s, y0 + 0.11, z - s + 0.005, c)
+      m.box(x - s - 0.015, y0, z - s, x - s + 0.005, y0 + 0.11, z + s, c)
+      m.box(x + s - 0.005, y0, z - s, x + s + 0.015, y0 + 0.11, z + s, c)
+    }
+  })
+  // Painted steel: a 200 l drum with two rolling hoops.
+  part("painted-steel", () => {
+    const x = at("painted-steel"), c = rgb(0x3d5a44)
+    m.cylinder(x, z, 0.29, y, y + 0.88, 20, c, MAT.lit, 0, { top: true })
+    for (const h of [0.29, 0.59]) m.cylinder(x, z, 0.302, y + h, y + h + 0.025, 20, c, MAT.lit, 0, { top: true, bottom: true })
+  })
+  // Wet bark: a sawn stump with a shorter round leaning on it.
+  part("wet-bark", () => {
+    const x = at("wet-bark"), c = rgb(0x5a4838)
+    m.cylinder(x - 0.08, z, 0.26, y, y + 0.5, 14, c, MAT.lit, 0, { top: true, topColor: rgb(0x9a8264) })
+    m.cylinder(x + 0.3, z + 0.12, 0.16, y, y + 0.3, 12, c, MAT.lit, 0, { top: true, phase: 0.4, topColor: rgb(0x9a8264) })
+  })
+  // Weathered stone: a plinth with a projecting cap.
+  part("weathered-stone", () => {
+    const x = at("weathered-stone"), c = rgb(0x8c8a82)
+    m.box(x - 0.27, y, z - 0.27, x + 0.27, y + 0.08, z + 0.27, shade(c, 0.95))
+    m.box(x - 0.22, y + 0.08, z - 0.22, x + 0.22, y + 0.78, z + 0.22, c)
+    m.box(x - 0.29, y + 0.78, z - 0.29, x + 0.29, y + 0.88, z + 0.29, shade(c, 1.04))
+  })
 }
 
 function addHouse(m: Mesh, glass: Mesh, b: WorldBuild, boxes: { rect: Rect; h: number }[]): void {

@@ -11,8 +11,11 @@ import { Renderer, type FrameInput } from "../../gpu/renderer"
 import { SpotShadows, type SpotCandidate } from "../../gpu/shadows/spot-shadows"
 import { VERT_BYTES } from "../../gpu/mesh"
 import { SceneLights, flatLighting, newSceneFrame, packSceneFrame, type SceneLight } from "../../gpu/scene-frame"
-import { makeSceneShader, postShader, spriteShader } from "../../gpu/shaders"
+import { makeSceneShader, postShader, spriteShader, type SceneHooks } from "../../gpu/shaders"
 import { customPostGradeWgsl } from "../../gpu/post-uniform"
+import { WEAR_DEFAULTS, type WearSettings } from "../../gpu/materials/wear"
+import { loadFinishScans, type FinishScanArray } from "../../gpu/materials/wear-scans"
+import { LAB_FINISH_FLOATS, LAB_SCANS, labFinishHooks, packLabFinish } from "./finish"
 import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeatherSettings, resolveWeatherPresetId, type WeatherLight, type WeatherSettings } from "../../weather"
 import type { LabContext } from "../types"
 import { cagedBulb, fluorescentTube, ledIndicator } from "../../gpu/lights/practicals"
@@ -76,6 +79,8 @@ export type WorldState = {
   tube: boolean
   /** A caged bulb on the wall beside the bench. */
   bulb: boolean
+  /** A row of finished props on the driveway, one per wear look (`gpu/finish`); with the albedo check, the world draws its finish variant. */
+  finishProps: boolean
 }
 
 export const WORLD_DEFAULTS: Readonly<WorldState> = {
@@ -111,10 +116,11 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   programme: "show",
   tube: false,
   bulb: false,
+  finishProps: false,
 }
 
 /** World keys whose change rebuilds the mesh (everything else is per frame). */
-const STRUCTURAL = new Set<string>(["street", "walk", "path", "floor", "wall", "car", "tree", "bush", "grass", "seed", "screen", "tube", "bulb"])
+const STRUCTURAL = new Set<string>(["street", "walk", "path", "floor", "wall", "car", "tree", "bush", "grass", "seed", "screen", "tube", "bulb", "finishProps"])
 
 /** `SceneLight.id`s of the screen bench's lights. */
 export const SCREEN_LIGHT_ID = { screen: 20, tube: 21, bulb: 22, tvLed: 23, deckLed: 24, deckActivity: 25 } as const
@@ -135,6 +141,8 @@ export type DebugWorld = {
   readonly vegetation: FoliageParams
   /** The screen bench television's display settings (the Screen tab). */
   readonly screen: ScreenDisplaySettings
+  /** Wear knobs and the albedo validator for the finish variant (`finish.ts`). */
+  readonly wear: WearSettings
   /** Runs the television's degauss coil. */
   degauss(): void
   setLook(preset: string): void
@@ -171,7 +179,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   applyFoliagePreset("bush", "hedge", vegetation)
   applyFoliagePreset("grass", "lawn", vegetation)
 
-  const renderers: Partial<Record<LightModel, Renderer>> = {}
+  const wear: WearSettings = { ...WEAR_DEFAULTS }
+  // The finish variant (wear and the albedo validator) compiles only while something needs it.
+  const finishOn = () => state.finishProps || wear.albedoCheck
+  const renderers: Partial<Record<`${LightModel}${"" | "+finish"}`, Renderer>> = {}
   const skies = new Map<Renderer, ReturnType<typeof attachSky>>()
   const drawn = new Map<Renderer, WorldGeometry>()
   // The `skyLight` each renderer's flat bounce fill was last scaled for (the level uploads it at 1).
@@ -187,6 +198,11 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const emptySprites = new Float32Array(0) as Float32Array<ArrayBuffer>
 
   const knobs = new Float32Array(12) as Float32Array<ArrayBuffer>
+  const finishKnobs = new Float32Array(LAB_FINISH_FLOATS) as Float32Array<ArrayBuffer>
+  // The props' CC0 scans, loaded on the first finish renderer and bound to every one.
+  let scans: FinishScanArray | null = null
+  let scansLoading = false
+  const finishRenderers = new Set<Renderer>()
   const screenSettings = createScreenDisplaySettings()
   let display: ScreenDisplay | null = null
   let programme: ScreenProgramme | null = null
@@ -203,8 +219,9 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     return display
   }
   const ensureRenderer = () => {
-    const model = state.lightModel
-    const have = renderers[model]
+    const model = state.lightModel, finish = finishOn()
+    const key = finish ? (`${model}+finish` as const) : model
+    const have = renderers[key]
     if (have) return have
     const format = navigator.gpu.getPreferredCanvasFormat()
     const canvas = document.createElement("canvas")
@@ -214,14 +231,32 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     ctx.configure({ device, format, alphaMode: "opaque" })
     // Physical swaps only the scene shader; Today's baseline is the same shader without the hooks.
     const physical = physicalLightHooks({ knobs: "PK.k", spotShadows: true, beam: { a: "PK.beamA", b: "PK.beamB" }, rect: true, panel: true })
-    const r = model === "physical"
+    const physicalScene: SceneHooks = { ...physical, lampGrid: false }
+    const r = finish
       ? new Renderer(device, ctx, format, {
-          scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
+          scene: makeSceneShader(model === "physical" ? labFinishHooks(physicalScene, true) : labFinishHooks({ lampGrid: false }, false), false),
+          sprite: spriteShader(),
+          ...(model === "physical" ? { post: WORLD_POST } : {}),
+        })
+      : model === "physical"
+      ? new Renderer(device, ctx, format, {
+          scene: makeSceneShader({ ...physicalScene, declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}` }, false),
           sprite: spriteShader(),
           post: WORLD_POST,
         })
       : new Renderer(device, ctx, format)
-    renderers[model] = r
+    renderers[key] = r
+    if (finish) {
+      finishRenderers.add(r)
+      if (scans) r.setDetailTextureArray(scans.view)
+      else if (!scansLoading) {
+        scansLoading = true
+        void loadFinishScans(device, LAB_SCANS).then(s => {
+          scans = s
+          for (const fr of finishRenderers) fr.setDetailTextureArray(s.view)
+        }, err => console.warn("finish scans failed to load; wear draws without scan detail", err))
+      }
+    }
     skies.set(r, attachSky(r, sky))
     return r
   }
@@ -331,6 +366,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     rainLighting,
     vegetation,
     screen: screenSettings,
+    wear,
     degauss() {
       display?.degauss()
     },
@@ -360,6 +396,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       Object.assign(rainLighting, RAIN_LIGHTING_DEFAULTS)
       eyeAdaptation.reset(); exposureMultiplier = 1
       Object.assign(screenSettings, createScreenDisplaySettings())
+      Object.assign(wear, WEAR_DEFAULTS)
       display?.power.reset(screenSettings.power)
       showFrom = display?.time ?? 0
       Object.assign(vegetation, cloneFoliageParams())
@@ -413,7 +450,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       if (state.lightModel === "physical") {
         packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobs)
         packBeamProfile(BEAM_PROFILES[state.beamProfile] ?? BEAM_PROFILES.darkwood, knobs, 4)
-        r.setCustomUniforms(knobs)
+        if (!finishRenderers.has(r)) r.setCustomUniforms(knobs)
       }
       lights.update(scene, geometry!.casters)
       if (state.lightModel === "physical") shadowSpots(r, scene)
@@ -440,6 +477,12 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       sim.step(0, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
       // Live switches to Today also reset sensitivity while the Lab's simulation is paused.
       exposureMultiplier = eyeAdaptation.step({ dt: 0, luminance: 1 + sim.state.flash * 48, referenceLuminance: 1 }, exposure).multiplier
+      const exposureScale = clock.exposure * exposureMultiplier * 2 ** state.exposureEV
+      if (finishRenderers.has(r)) {
+        finishKnobs.set(knobs)
+        packLabFinish(finishKnobs, wear, exposureScale, scans?.layers ?? null)
+        r.setCustomUniforms(finishKnobs)
+      }
       const raining = weather.preset !== "clear" || sim.state.flash > 0.001
       const weatherLights: WeatherLight[] = scene.slice(1, 7).map(l => ({ x: l.x, y: l.h, z: l.y, radius: l.r, r: l.color[0], g: l.color[1], b: l.color[2], power: l.power * 1.3, ...(l.cone ? { dx: l.cone[0], dz: l.cone[1], cosHalf: l.cone[2], isCone: true } : {}),
         ...(rainLighting.mode === "volume" ? l.spot || l.beam
@@ -481,7 +524,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
               cameraDist: stage.camDist,
             }
           : null,
-        grade: [time, 0, sim.state.flash * 0.4, clock.exposure * exposureMultiplier * 2 ** state.exposureEV],
+        grade: [time, 0, sim.state.flash * 0.4, exposureScale],
         look: look.preset === "current" ? null : look,
         ...(state.shadowLift !== 1 || state.lensBloom !== 1 ? { postCustom: [1, Math.max(0, state.shadowLift), Math.max(0, state.lensBloom), 0] as const } : {}),
       }

@@ -34,7 +34,9 @@ Creatures and rooms: see the method rows in [docs/assets.md](../../../docs/asset
    lighting; the transfer preserves it. In the game, give `TexturedPropBatches` the game's own `SceneHookVariants`
    (every look mode, `postLightMaterial` included) and call `setLook` with the vertex props' `PropLook`. Done when
    the report has no failures and vertex and textured stills match in exposure in each look mode
-   (`scripts/props/textured-proof.ts`). The shared finish pass (wear, edges, material sanity) is landing on `kit-finish`.
+   (`scripts/props/textured-proof.ts`). Code-built props can also go through the shared finish pass
+   (`@arcade/kit/gpu/finish`: chamfers, baked AO/curvature/exposure, wear looks; no game uses it yet, see
+   `docs/realism.md` for its triangle cost); `bun scripts/finish-prop.ts` reports albedo range and AO for `.prop` files.
 5. **Check.** `bun test props/` in `packages/kit` (two LODs, floor pivot, size, triangle budget). Then look at it in
    the Lab's `props` station (`bun run arcade station props`) and at the game's own camera, beside its target. Done
    when the tests pass and the in-game still holds up next to the target.
