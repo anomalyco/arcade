@@ -406,8 +406,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // While a lightning flash is in the meter the storm's eye adaptation answers it; this clock, and the slow dark
     // adaptation (which would read the flash as a bright scene and decay), both wait.
     if (!st?.holdExposure) {
-      // Dark adaptation lifts the cap only once the scene alone already holds the camera at its lift.
-      cam.dark = stepDarkAdaptation(cam.dark, f.dt, !!local, forestExposureTarget(metered, fallback, s, offset) >= s.adaptLift - 0.05, s)
+      // Dark adaptation lifts the cap only once the scene alone already holds the camera at its lift; smoke keeps the
+      // plain exposure law, like the moon.
+      cam.dark = smoke ? 0 : stepDarkAdaptation(cam.dark, f.dt, !!local, forestExposureTarget(metered, fallback, s, offset) >= s.adaptLift - 0.05, s)
       stepForestExposure(cam, renderer.sceneMeterStatus, forestExposureTarget(metered, fallback, s, offset, s.darkAdapt * cam.dark), f.dt, s)
     }
     cam.exposure = Math.pow(2, cam.stops)
