@@ -882,7 +882,7 @@ describe("kill moment under reduced motion", () => {
     const was = SHAKE.reduceMotion
     try {
       const mid = FEEDBACK.punchTime * 0.25
-      SHAKE.reduceMotion = false
+      SHAKE.reduceMotion = 0
       const cam = new TurretCam()
       expect(cam.shake.reduced).toBe(false)
       expect(punchScale(mid, cam.shake.reduced)).toBeLessThan(1)
@@ -890,7 +890,7 @@ describe("kill moment under reduced motion", () => {
       on.trigger(0.1, 0.05, !cam.shake.reduced)
       expect(on.step(1 / 60)).toBeLessThan(1 / 60)
 
-      SHAKE.reduceMotion = true
+      SHAKE.reduceMotion = 1
       expect(cam.shake.reduced).toBe(true)
       expect(punchScale(mid, cam.shake.reduced)).toBe(1)
       const off = new HitStop()
