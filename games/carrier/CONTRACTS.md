@@ -94,6 +94,11 @@ scope): `skyColor(dir)`, `hazeColor(dir)` (the fog colour, equal to the sky at t
   in per frame), boat (`BoatCam.shake`, hits and slams, decay 3/s), turret (`TurretCam.shake`, recoil, linear 2.4/s),
   flight and crash (`FlightCam.shake`, catapult, trap, buffet floor, hits, explosions, decay 2.2/s). No hit-stop: the
   frame draws a room-synced world.
+- Flight feel (`src/flight/feel.ts` `FlightFeel` = `FlightCam.feel`, typed `FEEL` settings on the dev panel's Flight
+  tab): chase lean/turn lag, g pull-in, catapult kick, cockpit head sink and roll lag, gun recoil/buzz (`Weapons.fired`,
+  read and zeroed by `FlightModule`), missile/bomb release bumps (the drawn jet's `bump`), grey-out/red-out
+  (`src/flight/g-overlay.ts`, DOM under `#fl`) and the cockpit breathing's `strain`. Kicks scale with `shakeScale` ×
+  `kickScale` and stop under reduced motion; lean and head motion soften to 30%. It never touches the FOV.
 
 ## Sea (`shared/sea.ts`, `shared/sea.wgsl.ts`)
 

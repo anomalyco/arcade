@@ -4,6 +4,7 @@ import { PLANE, type Plane, type PlaneTuning, type Quat, planeQuat, planeSpeed, 
 import { TraumaShake, shakeWave } from "@arcade/kit/client/camera"
 import { FAR, NEAR, SHAKE } from "../render/camera"
 import { RelView } from "../render/ocean-view"
+import { type FeelOffsets, FlightFeel } from "./feel"
 
 const DEG = Math.PI / 180
 
@@ -95,6 +96,8 @@ export class FlightCam {
   private placed = false
   /** Trauma 0..1 (catapult, stall buffet, hits, crash): the host raises and decays it, `update`/`crashView` shake by it. */
   readonly shake = new TraumaShake(SHAKE)
+  /** Lean, lag, g, recoil and release bumps (src/flight/feel.ts): the host updates it, `update` applies its offsets. */
+  readonly feel = new FlightFeel()
   private view = new Float64Array(16)
   private proj = new Float64Array(16)
   private target = new Float64Array(3)
@@ -177,6 +180,8 @@ export class FlightCam {
     const cq = this.tmp
     quatMul(this.q, quatAxis(0, 1, 0, this.lookYaw + fr.yaw, cq), cq)
     quatMul(cq, quatAxis(1, 0, 0, -(this.lookPitch + fr.pitch), this.tq), cq)
+    const fo = this.feel.offsets
+    if (this.mode === "chase" && !sight) this.chaseLag(cq, fo)
 
     const speed = planeSpeed(p)
     const fast = Math.max(0, Math.min(1, (speed - P.optimalSpeed) / (P.boostSpeed - P.optimalSpeed)))
@@ -203,14 +208,15 @@ export class FlightCam {
       this.eye[0] = p.x + e[0]
       this.eye[1] = p.y + e[1]
       this.eye[2] = p.z + e[2]
+      this.headSink(q0, fo)
       // Cockpit keeps the jet's full attitude.
       quatMul(q0, quatAxis(0, 1, 0, this.lookYaw, this.tmp), cq)
       quatMul(cq, quatAxis(1, 0, 0, -this.lookPitch, this.tq), cq)
       fov = FLIGHT_CAM.cockpitFov + FLIGHT_CAM.fovSpeed * 0.5 * fast
       this.placed = false
     } else {
-      const dist = FLIGHT_CAM.dist * (1 + FLIGHT_CAM.speedPull * fast) * fr.dist
-      const want = quatRotate(cq[0], cq[1], cq[2], cq[3], jx * FLIGHT_CAM.shake, FLIGHT_CAM.height + jy * FLIGHT_CAM.shake, -dist, this.v)
+      const dist = FLIGHT_CAM.dist * (1 + FLIGHT_CAM.speedPull * fast) * fr.dist * fo.dist + fo.back
+      const want = quatRotate(cq[0], cq[1], cq[2], cq[3], jx * FLIGHT_CAM.shake, FLIGHT_CAM.height + fo.up + jy * FLIGHT_CAM.shake, -dist, this.v)
       if (!this.placed) {
         this.rel[0] = want[0]
         this.rel[1] = want[1]
@@ -233,6 +239,7 @@ export class FlightCam {
     const wob = s2 * FLIGHT_CAM.shakeAngle
     quatMul(cq, quatAxis(1, 0, 0, down + wob * shakeWave(n, 53.7), this.tq), cq)
     quatMul(cq, quatAxis(0, 0, 1, wob * shakeWave(n, 59.3, 1), this.tq), cq)
+    if (!sight) this.feelView(cq, fo)
     const fw = quatRotate(cq[0], cq[1], cq[2], cq[3], 0, 0, 1, this.v)
     this.forward[0] = fw[0]
     this.forward[1] = fw[1]
@@ -242,6 +249,27 @@ export class FlightCam {
     this.up[1] = up[1]
     this.up[2] = up[2]
     this.compute(aspect)
+  }
+
+  /** Chase: the camera falls behind the jet's pitch and yaw rates, so hard turns swing the jet across the screen. */
+  private chaseLag(cq: Quat, fo: FeelOffsets): void {
+    quatMul(cq, quatAxis(0, 1, 0, fo.lagYaw, this.tq), cq)
+    quatMul(cq, quatAxis(1, 0, 0, fo.lagPitch, this.tq), cq)
+  }
+
+  /** Cockpit: g pushes the head down in the seat (along the jet's up axis); negative g lifts it. */
+  private headSink(q0: Quat, fo: FeelOffsets): void {
+    const d = quatRotate(q0[0], q0[1], q0[2], q0[3], 0, fo.headUp, 0, this.v)
+    this.eye[0] += d[0]
+    this.eye[1] += d[1]
+    this.eye[2] += d[2]
+  }
+
+  /** The view's lean into rolls (chase) or the head's roll lag (cockpit), and the gun's buzz, last on the view. */
+  private feelView(cq: Quat, fo: FeelOffsets): void {
+    const roll = (this.mode === "chase" ? fo.roll : fo.headRoll) + fo.buzzRoll
+    quatMul(cq, quatAxis(1, 0, 0, fo.buzzPitch, this.tq), cq)
+    quatMul(cq, quatAxis(0, 0, 1, roll, this.tq), cq)
   }
 
   /**

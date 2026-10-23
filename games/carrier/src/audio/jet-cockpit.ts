@@ -13,6 +13,8 @@ export type CockpitInput = {
   g: number
   stall: number
   brake: number
+  /** Grey-out or red-out 0..1 (src/flight/feel.ts): the breathing strains with it. */
+  strain: number
 }
 
 export const COCKPIT_TUNE = { wind: 1, breath: 1, bed: 1 }
@@ -34,6 +36,7 @@ export class CockpitBed {
   private stallOsc: OscillatorNode
   private stallPhase = 0
   private breathIn = 0
+  private strainWas = 0
   private creakIn = 1
   private started = false
   private sources: AudioScheduledSourceNode[]
@@ -126,14 +129,20 @@ export class CockpitBed {
       set(this.stallGain.gain, 0, 0.01)
     }
 
-    if (!s || !flying || k < 0.5) return
-    // Breathing through the mask: every ~4 s at 1 g, down to ~1.5 s and strained under heavy g.
-    const strain = smoothstep(3.5, 8, s.g)
+    if (!s || !flying) return
+    // Breathing through the mask: every ~4 s at 1 g, down to ~1.2 s and grunting as the grey-out builds (the
+    // anti-g strain: a sharp exhale and a snatched breath). In the chase view only the strain is heard, quieter.
+    const load = Math.max(smoothstep(3.5, 8, s.g) * 0.6, s.strain)
+    const heard = k >= 0.5 ? 1 : smoothstep(0.15, 0.5, s.strain) * 0.55
+    // The grey-out setting in: the next breath comes at once, so the grunt lands with the tunnel closing.
+    if (s.strain > 0.3 && this.strainWas <= 0.3) this.breathIn = Math.min(this.breathIn, 0.05)
+    this.strainWas = s.strain
     this.breathIn -= dt
-    if (this.breathIn <= 0) {
-      this.breathIn = 4.2 - 2.6 * strain + Math.random() * 0.6
-      this.breath(strain)
+    if (this.breathIn <= 0 && heard > 0) {
+      this.breathIn = 4.2 - 3 * load + Math.random() * 0.6 * (1 - load)
+      this.breath(load, heard)
     }
+    if (k < 0.5) return
     // Airframe creaks in hard pulls.
     if (s.g > 5.5) {
       this.creakIn -= dt * (s.g - 5)
@@ -144,10 +153,10 @@ export class CockpitBed {
     }
   }
 
-  private breath(strain: number): void {
+  private breath(strain: number, heard = 1): void {
     const n = this.mixer.noise
     const ctx = this.ctx
-    const lvl = 0.03 * (1 + 1.4 * strain) * COCKPIT_TUNE.breath
+    const lvl = 0.03 * (1 + 2 * strain) * heard * COCKPIT_TUNE.breath
     if (lvl < 0.002) return
     const now = ctx.currentTime + 0.01
     const dest = this.mixer.bus.own

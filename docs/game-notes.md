@@ -2169,6 +2169,17 @@ Candidates from the code audits; measure and playtest before moving any into the
   existing skid switch; the capture recorded exactly 26 connected segments (two per frame) and five smoke sprites,
   then no further segments while boost stayed held. CPU/GPU cost and Kit's playtest verdict remain unmeasured.
 
+- **Flight feel lives in one presentation layer, stepped in closed form.** Carrier's `src/flight/feel.ts`
+  (`FlightFeel`, owned by `FlightCam.feel`) turns the jet's smoothed body rates and g into camera offsets the chase and
+  cockpit views apply in their own small functions (`chaseLag`, `headSink`, `feelView` in `src/flight/camera.ts`, so the
+  FOV stays with the speed effects): chase lean into rolls (1.6°/(rad/s), ≤6°) and lag behind pitch/yaw rates (≤4°),
+  a 14% pull-in at full g, a catapult kick-back, cockpit head sink 1.6 cm/g and roll lag; gun recoil and buzz, missile
+  and bomb release bumps (the drawn jet lifts 0.35/0.5 m, the camera follows a beat later). Kicks are critically damped
+  springs stepped exactly, so 30 and 144 fps match (`tests/flight-feel.test.ts`); kicks follow shake × kick scale and
+  stop under reduced motion, lean and head motion soften to 30%. Grey-out builds over 1.4 s from 6.5 g (full 11 g) and
+  clears over 0.6 s, red-out from −1.5 g: a DOM layer under the HUD (`src/flight/g-overlay.ts`: a saturation-blend
+  layer drains colour from the edges, a radial tunnel closes, multiply red), and the same level drives the existing
+  cockpit breathing (grunts land as the tunnel closes; heard quieter in chase). Clip: `scripts/feel-shot.ts`.
 ## Audio
 
 - **A procedural soundscape that ships no files (AR-86).** Outbreak's `src/audio/soundscape/` synthesizes 28 ambient

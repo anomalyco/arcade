@@ -5,6 +5,7 @@ import { PLANE, type Plane, type PlaneControls, type PlaneWorld, copyPlane, lerp
 import { VEHICLES, type VehicleKind, landingVehicle } from "../../shared/vehicles"
 import type { PlaneDrawPose } from "../render/plane-pass"
 import { FlightCam } from "./camera"
+import { GOverlay } from "./g-overlay"
 import { type FlightHud, knots } from "./hud"
 import type { FlightInput } from "./input"
 
@@ -56,6 +57,9 @@ export class Flight {
   private wantLaunch = false
   private att = { heading: 0, pitch: 0, bank: 0 }
   private drawLanding = {} as Landing
+  /** The catapult's phase last frame (the feel's kick-back keys off the shot). */
+  private feelLaunch = ""
+  private overlay: GOverlay | null = null
 
   constructor(
     private input: FlightInput,
@@ -78,6 +82,7 @@ export class Flight {
     this.gear = 1
     this.hook = 0
     this.cam.reset()
+    this.cam.feel.reset()
     // Keep Pointer Lock across the hand-off from the ship's camera: just centre the stick.
     this.input.centre()
   }
@@ -198,6 +203,8 @@ export class Flight {
     this.phase = "idle"
     this.launch = null
     this.input.enabled = false
+    this.cam.feel.reset()
+    this.overlay?.update(0, 0)
     this.hud.update(null)
     this.hud.message(null)
   }
@@ -239,13 +246,16 @@ export class Flight {
     this.cam.framing.dist = showDeck ? 1.6 : 1
     this.cam.nose = VEHICLES[this.vehicle].probes[0]![2]
     this.cam.setBombs(this.phase === "flying" && this.airborne > SIGHT_AFTER_LAUNCH && !!this.bombsight?.())
+    this.feel(p, dt)
     if (this.phase === "crashed") this.cam.crashView(p.x, p.y, p.z, seaHeight(this.cam.eye[0], this.cam.eye[2]), dt, aspect)
     else this.cam.update(p, dt, aspect, look, this.eyeModel, VEHICLES[this.vehicle].flight)
 
     const pose = this.pose
-    pose.x = p.x
-    pose.y = p.y
-    pose.z = p.z
+    // The release bump lifts the drawn jet along its own up axis (presentation only; the camera follows `p`).
+    const b = this.cam.feel.bump
+    pose.x = p.x + 2 * (p.qx * p.qy - p.qw * p.qz) * b
+    pose.y = p.y + (1 - 2 * (p.qx * p.qx + p.qz * p.qz)) * b
+    pose.z = p.z + 2 * (p.qy * p.qz + p.qw * p.qx) * b
     pose.qx = p.qx
     pose.qy = p.qy
     pose.qz = p.qz
@@ -295,6 +305,17 @@ export class Flight {
       this.hud.message(what, `BACK ON DECK  ${Math.ceil(left)}`)
     } else this.hud.message(null)
     return this.phase === "crashed" ? null : pose
+  }
+
+  /** The camera feel (src/flight/feel.ts) for this frame: the catapult's kick, g and the rates, and the g overlay. */
+  private feel(p: Plane, dt: number): void {
+    const feel = this.cam.feel
+    const lp = this.phase === "launching" ? (this.launch?.phase ?? "") : ""
+    feel.catapult(lp === "stroke", lp === "stroke" && this.feelLaunch !== "stroke")
+    this.feelLaunch = lp
+    feel.update(p, dt, this.phase === "flying")
+    if (!this.overlay && typeof document !== "undefined") this.overlay = new GOverlay()
+    this.overlay?.update(this.phase === "idle" ? 0 : feel.grey, this.phase === "idle" ? 0 : feel.red)
   }
 
   /**
