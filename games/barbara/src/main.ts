@@ -15,12 +15,13 @@ import { CLUE_NAMES, dawnShare, evidenceText, leadText, nextStep } from "../shar
 import { canVote, isGone, SUSPECT_NAMES, SUSPECTS } from "../shared/verdict"
 import { VerdictCard } from "./verdict-hud"
 import { FLARE_SCRAPE, flareSources, heldFlare, layFlare } from "../shared/flares"
-import { ROOM_CODE } from "../shared/protocol"
+import { ROOM_CODE, TEAM } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
 import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
+import { toBoundary } from "./boundary-view"
 import { WoodsAudio } from "./audio"
 import { WoodsCamera } from "./camera"
-import { CameraLook, stageCameraLab } from "./camera-look"
+import { CAMERA_LOOKS, CameraLook, stageCameraLab, type CameraLookId } from "./camera-look"
 import { CreatureView } from "./creature-view"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FlareView } from "./flare-view"
@@ -57,6 +58,8 @@ const NIGHT_KEY = "barbara.night"
 /** Beam ids for dropped torches (`DROPPED` + the taken walker's id). */
 const DROPPED = 10000
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+/** The camera look picked in Settings (the Escape menu), kept across visits. */
+const CAMERA_LOOK_KEY = "barbara.cameraLook.v1"
 /** A solo night's seed from its number (rooms seed theirs from the room code the same way). */
 const nightSeed = (base: number, night: number) => (base + Math.imul(night, 7919)) >>> 0
 
@@ -71,7 +74,7 @@ async function main() {
   const audio = new WoodsAudio()
   const story = new StoryHud(audio)
   // Filled in once they exist; the shell reads them from its first frame.
-  const live: { panel: LabPanel | null; session: Session | null; qualityChanged: () => void; editing: () => boolean; endCard: () => boolean } = { panel: null, session: null, qualityChanged: () => {}, editing: () => false, endCard: () => false }
+  const live: { panel: LabPanel | null; cameraLook: CameraLook | null; session: Session | null; qualityChanged: () => void; editing: () => boolean; endCard: () => boolean } = { panel: null, cameraLook: null, session: null, qualityChanged: () => {}, editing: () => false, endCard: () => false }
   // Auto starts at High and steps down on slow frames only (frame time alone: the renderer's GPU reading counts CPU
   // encoding and queue waits, which demoted capable GPUs). Saved per game; `?quality=` pins a mode for automation.
   const quality = createShellQuality({ game: "barbara", tiers: FOREST_QUALITY, params, onChange: () => live.qualityChanged() })
@@ -80,10 +83,15 @@ async function main() {
     game: "barbara", title: "BARBARA", subtitle: online ? "Your friends start at camp too" : "Camp Tamarack, November 1996. Her car is still in the lot.",
     soloLabel: "Play alone", soloNote: "you and three searchers", friendsNote: "a private room, up to 6", playLabel: "Step out of camp", resumeLabel: "Back to the woods", askName: true,
     channels: ["master", "effects", "ambience", "voice"], quality,
-    sections: [{ id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] }],
+    sections: [
+      { id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] },
+      // The camera looks (body cam, NightShot, phone, VHS) one click from the Escape menu; the Lab keeps their knobs.
+      { id: "camera", title: "Camera", rows: [{ kind: "choice", id: "cameraLook", label: "Camera look", options: Object.entries(CAMERA_LOOKS).map(([value, p]) => ({ value, label: p.label })),
+        get: () => live.cameraLook?.settings.look ?? "eyes", set: (v) => { live.cameraLook?.apply(v as CameraLookId); localStorage.setItem(CAMERA_LOOK_KEY, v); live.panel?.sync() } }] },
+    ],
     // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
     pointerLock: canvas, blocked: () => (live.panel?.visible ?? false) || live.editing() || live.endCard(), keysBlocked: () => live.panel?.hasFocus() ?? false,
-    loading: smoke ? false : { gpu: 1, world: 4, frame: 1 }, controls: controlsHtml,
+    loading: smoke ? false : { gpu: 1, world: 4, people: 1, frame: 1 }, controls: controlsHtml,
     lobby: {
       friends: true,
       // Solo plays the session that's already running; a room is its own page (`?room=`), so joining loads it.
@@ -122,12 +130,16 @@ async function main() {
   shell.loading?.stage("world", "Growing the woods")
   const view = await WorldView.create(gpu, world, { smoke, quality: quality.tier })
   shell.loading?.done("world")
-  shell.loading?.stage("frame", "Lighting the camp")
   const renderer = view.renderer
   live.qualityChanged = () => { view.forest.setQuality(quality.tier); shell.settings.changed() }
   // Realistic friends by default; the blocky ones are one setting away (Lab › Friends, or `?people=blocky`). The
   // software-GPU smoke draws blocky friends.
   const friends = new FriendsView(renderer, !smoke && params.get("people") !== "blocky")
+  // The first searchers you meet are loaded before Play, so nobody pops in at the start (12 s at most on a slow link).
+  shell.loading?.stage("people", "Waking the searchers")
+  await Promise.race([friends.preload(TEAM - 1), new Promise((r) => setTimeout(r, 12000))])
+  shell.loading?.done("people")
+  shell.loading?.stage("frame", "Lighting the camp")
   const creatures = new CreatureView(renderer)
   if (params.get("smooth") === "0") friends.smooth = false
   const map = new PaperMap(document.body)
@@ -198,6 +210,9 @@ async function main() {
   panel.addControls({}, [{ key: "woods.trigger.flare", label: "Throw a flare", group: "Road flare", type: "action", run: () => { flareTrigger() } }])
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
+  live.cameraLook = cameraLook
+  const savedLook = smoke ? null : localStorage.getItem(CAMERA_LOOK_KEY)
+  if (savedLook && savedLook in CAMERA_LOOKS) cameraLook.apply(savedLook as CameraLookId)
   audio.bindControls(panel)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()
@@ -254,6 +269,7 @@ async function main() {
   const goal = document.getElementById("goal")!, goalText = goal.querySelector("span")!
   let goalAt = 0
   let toastUntil = 0
+  let boundarySaid = false
   const say = (text: string, seconds = 3.5) => { toast.textContent = text; toast.style.opacity = "1"; toastUntil = performance.now() + seconds * 1000 }
   if (online) say(`Room ${roomCode}: your friends start at camp too.`, 6)
 
@@ -521,6 +537,8 @@ async function main() {
     }
 
     const p = session.self
+    // The first time you come up to the boundary fence, say what it is (the fence and its signs carry it after that).
+    if (playing && !boundarySaid && toBoundary(world, p.x, p.z) < 12) { boundarySaid = true; say("A rusted wire fence and POSTED signs: the state forest ends here. Barbara's somewhere inside it.", 6) }
     // The held map and compass (Map style: Held): its hands follow the raise; while up, your torch is the one in its
     // right glove, aimed at the sheet, on its low setting.
     held.tier = quality.tier
@@ -558,6 +576,7 @@ async function main() {
     nightView.draw(fp, state.night, world)
     dawn.apply(view.forest.settings, dawnShare(state.night, state.t))
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
+    friends.readingLevel = held.settings.readingLevel
     // The taken are gone from the woods (`verdict.ts`): no body, only their torch lying lit where they stood.
     const gone = state.night.verdict.gone
     const shown = gone.length ? { ...state, players: state.players.filter((q) => !isGone(state.night, q.id)) } : state

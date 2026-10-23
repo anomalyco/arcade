@@ -332,7 +332,15 @@ export function treesNear(world: WoodsWorld, x: number, z: number, r: number, ou
   return out
 }
 
-/** Solid footprints near (x, z) for `stepBody`: trunks, rocks, buildings and the edge of the map. */
+/**
+ * The state forest's boundary fence runs this far inside the map's edge all round (`boundaryLine`): a rusted wire fence
+ * with posted signs, the line you can't cross, drawn on the held map as the boundary.
+ */
+export const BOUNDARY_INSET = 3
+/** Where the boundary fence stands: |x| and |z| up to this. */
+export const boundaryLine = (world: WoodsWorld) => world.params.half - BOUNDARY_INSET
+
+/** Solid footprints near (x, z) for `stepBody`: trunks, rocks, buildings and the boundary fence. */
 export function solidsNear(world: WoodsWorld, x: number, z: number, r = 4): Rect[] {
   const out: Rect[] = []
   for (const t of treesNear(world, x, z, r)) {
@@ -350,7 +358,7 @@ export function solidsNear(world: WoodsWorld, x: number, z: number, r = 4): Rect
     if (x < x0 - r || x > x1 + r || z < z0 - r || z > z1 + r) continue
     out.push(b.rect)
   }
-  const h = world.params.half
+  const h = boundaryLine(world)
   if (x < -h + r) out.push([-h - 2, -h - 2, -h, h + 2])
   if (x > h - r) out.push([h, -h - 2, h + 2, h + 2])
   if (z < -h + r) out.push([-h - 2, -h - 2, h + 2, -h])

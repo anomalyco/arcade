@@ -17,7 +17,7 @@ const variants = arg("--variants", "base").split(",")
 const tag = arg("--tag", "")
 const [w, h] = arg("--size", "1280x720").split("x").map(Number) as [number, number]
 
-type P = { id: number; x: number; z: number; yaw: number; pitch: number; light: boolean; mapRaise: number; bot: boolean }
+type P = { id: number; x: number; z: number; vx: number; vz: number; yaw: number; pitch: number; light: boolean; mapRaise: number; bot: boolean }
 type Woods = {
   frames: number; paused: boolean; autoplay: boolean
   setPose(x: number, z: number, yaw: number, pitch?: number): void
@@ -189,28 +189,35 @@ if (scenarios.includes("sweep")) {
 }
 
 if (scenarios.includes("map")) {
+  // A friend reading the map 1.9 m away, lit by your torch: from the front (turned three-quarters to you) and from
+  // over their right shoulder; realistic and blocky.
   const page = await open()
   await hideShell(page)
   await page.evaluate(() => { woods.paused = true })
   for (const real of [true, false]) {
-    await page.evaluate(({ real, clear }) => {
-      new Function(clear)()
-      woods.friends.realistic = real
-      const c = woods.world.camp, x = c.x + 2, z = c.z - 40
-      woods.setPose(x, z, 0, -0.12)
-      woods.camera.flashlight = false
-      const p = woods.state.players.find((q) => q.bot)!, b = woods.state.brains.find((q) => q.id === p.id)!
-      // Three metres ahead, turned three-quarters towards you, reading.
-      p.x = x + 0.6; p.z = z - 2.6; b.heading = Math.PI - 0.7; b.sweep = 0
-    }, { real, clear: clearBots })
-    // Realistic people load on first sight; give them time.
-    for (let k = 0; k < 40; k++) {
-      await steps(page, 6, "const p = woods.state.players.find((q) => q.bot); p.mapRaise = 1; woods.state.brains[0].sweep = 0")
-      if (!real || await page.evaluate(() => woods.friends.realPeople().drawn > 0)) break
-      await page.waitForTimeout(250)
+    for (const view of ["front", "shoulder"] as const) {
+      await page.evaluate(({ real, clear, view }) => {
+        new Function(clear)()
+        woods.friends.realistic = real
+        const c = woods.world.camp, fx = c.x + 2, fz = c.z - 42
+        const p = woods.state.players.find((q) => q.bot)!, b = woods.state.brains.find((q) => q.id === p.id)!
+        p.x = fx; p.z = fz; p.vx = 0; p.vz = 0
+        // The friend faces +x turned 0.5 rad towards the camera; yaw such that viewDir(yaw) = (-sin, -cos).
+        b.heading = view === "front" ? -Math.PI / 2 - 0.5 : -Math.PI / 2; b.sweep = 0
+        const eye = view === "front" ? { x: fx + 1.75, z: fz + 0.75 } : { x: fx - 0.55, z: fz + 0.6 }
+        const toF = { x: fx + (view === "front" ? 0 : 0.45) - eye.x, z: fz - eye.z }
+        woods.setPose(eye.x, eye.z, Math.atan2(-toF.x, -toF.z), view === "front" ? -0.22 : -0.6)
+        woods.camera.flashlight = true
+      }, { real, clear: clearBots, view })
+      const hold = "const p = woods.state.players.find((q) => q.bot); p.mapRaise = 1; p.vx = 0; p.vz = 0; const b = woods.state.brains.find((q) => q.id === p.id); b.sweep = 0; b.mode = 'wait'; b.timer = 99"
+      for (let k = 0; k < 40; k++) {
+        await steps(page, 6, hold)
+        if (!real || await page.evaluate(() => woods.friends.realPeople().drawn > 0)) break
+        await page.waitForTimeout(250)
+      }
+      await steps(page, 60, hold)
+      await shot(page, `map-${real ? "realistic" : "blocky"}-${view}`)
     }
-    await steps(page, 60, "const p = woods.state.players.find((q) => q.bot); p.mapRaise = 1; woods.state.brains[0].sweep = 0")
-    await shot(page, `map-${real ? "realistic" : "blocky"}`)
   }
   await page.close()
 }
@@ -219,11 +226,12 @@ if (scenarios.includes("edge")) {
   const page = await open()
   await hideShell(page)
   await page.evaluate(() => { woods.paused = true })
-  for (const d of [25, 4]) {
+  // Distances from the boundary fence (3 m inside the map's edge).
+  for (const d of [14, 3]) {
     await page.evaluate(({ d, clear }) => {
       new Function(clear)()
       const half = woods.world.params.half, c = woods.world.camp
-      woods.setPose(c.x + 30, -half + d, 0.15, d > 10 ? -0.04 : -0.12)
+      woods.setPose(c.x + 30, -half + 3 + d, 0.15, d > 10 ? -0.06 : -0.12)
       woods.camera.flashlight = true
     }, { d, clear: clearBots })
     await steps(page, 120)

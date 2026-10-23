@@ -9,6 +9,7 @@ import type { QualityTier } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Feel, WoodsState } from "../shared/sim"
 import { toForestWorld, type ForestWorld } from "../shared/forest-world"
+import { boundaryMesh } from "./boundary-view"
 import { TapeView } from "./tape-view"
 import type { WoodsWorld } from "../shared/world"
 
@@ -107,6 +108,7 @@ function forestWorld(world: WoodsWorld, campDetail = false): ForestWorld {
 export class WorldView {
   private markerModel = -1
   private mastModel = -1
+  private fenceModel = -1
   private glows: ForestGlow[] = []
   private readonly tapes: TapeView
 
@@ -135,6 +137,7 @@ export class WorldView {
     const tower = new Mesh()
     if (m) mast(tower, (m.rect[0] + m.rect[2]) / 2, (m.rect[1] + m.rect[3]) / 2, m.y, m.h)
     this.mastModel = this.slot(this.mastModel, tower)
+    this.fenceModel = this.slot(this.fenceModel, boundaryMesh(world))
   }
 
   /** A model slot: allocated once, refilled when the world is regenerated. */
@@ -184,11 +187,12 @@ export class WorldView {
     return { scene, fog }
   }
 
-  /** Per-frame world content: tapes (`TapeView`), survey markers and the mast. */
+  /** Per-frame world content: tapes (`TapeView`), survey markers, the mast and the boundary fence. */
   draw(fp: FrameParts, world: WoodsWorld, state: WoodsState, t: number, eye: readonly number[], feel: Feel): void {
     this.tapes.draw(fp, world, state.tapes, t, eye, feel, this.forest.settings, this.forest.quality.near)
     if (this.markerModel >= 0) fp.push(this.markerModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
     if (this.mastModel >= 0) fp.push(this.mastModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
+    if (this.fenceModel >= 0) fp.push(this.fenceModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
   }
 
   /**
