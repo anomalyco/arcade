@@ -397,6 +397,17 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
 
 ## Glass and interiors
 
+**Grounded camp construction (BARBARA).** Wider closed-riser steps meet the terrain, four corner posts leave
+the entrance clear, and a framed door and firewood stack give the porch a use. Centred scanned stones surround
+textured ash, charcoal chips and charred logs. Camp wood stays matte; paths blend through the terrain material.
+- Where: `packages/kit/forest/build.ts` and `shaders.ts`, behind `campDetail`; enabled by the BARBARA adapter.
+  The shared kit default stays off and the setting remains available to Looks presets through a world rebuild.
+- Cost: approved camp pose, triangles 780,622 → 789,329, draws 468 → 468, lights 21 → 42. Rough shared-Pro
+  timing ~20 ms for the candidate is unpaired and does not establish incremental cost. No new render pass.
+  Game lights pack before camp under the 64-light limit (`forest/lights.test.ts`).
+- Kit: approved rounds 8–11 as the default, including the remaining faint paths, less visible tabletop and
+  lower fine detail than the targets. [Evidence and port status](../perf/woods-autoresearch.md).
+
 **Thin glass.** Fresnel reflectance is also the opacity, so a pane is nearly clear face-on and a mirror at grazing;
 grime and condensation raise roughness and scatter light from both sides; faces looking into a lit room reflect the
 room.
@@ -421,6 +432,27 @@ first build.
 
 ## Camera, lens and post
 
+- **Highlight shoulder that preserves RGB ratios (BARBARA).** Above scene-linear peak 1, map the peak through
+  `1 - (4/9)/(1 + .75*ln(peak))` and scale RGB together. Value and slope meet the old curve at the knee, so the
+  hotspot rolls off without bleaching the bark or shifting its hue.
+  - Where: `packages/kit/forest/post.ts`; `highlightShoulder` in `forest/settings.ts`, enabled by BARBARA's
+    `games/barbara/src/world-view.ts` adapter. The kit default stays off. Kit approved the game default.
+  - Cost: scalar logarithm and RGB scaling in the existing composite, no pass or texture. Isolated GPU delta
+    unmeasured; the earlier whole candidate camp was roughly 12–13 ms on mini/Metal at 1600×900 High, not the
+    shoulder's cost. Same operation on all tiers.
+  - Proof: fixed near-bark clipping 9.52% → 0%, hotspot detail .001762 → .009900 at equal exposure .354.
+    See [Woods round 7](../perf/woods-autoresearch.md#round-7-source-filtered-bloom-and-camp-delta-2026-10-22).
+- **Contain bloom at the source (BARBARA).** The scene writes a negative HDR-alpha mask on nearby rough, non-emissive
+  surfaces. Limit those source taps before the first bloom downsample; bulbs, windows, torch lenses and the held
+  map retain their halos. Never cap the final bloom by the destination pixel's radiance: halos fall on dark air.
+  - Where: `packages/kit/forest/shaders.ts` and `forest/post.ts`, through the optional
+    `PostFinishOptions.bloomSource` hook in `gpu/{look-shaders,shaders}.ts`. Kit approved round 7 for Woods.
+  - Cost: existing alpha channel and 13 source-tap tests/scales; no extra pass, texture or sample. Isolated GPU
+    delta unmeasured. Other consumers' generated WGSL is unchanged when the hook is unset.
+  - Proof: trunk-edge excess over no-bloom falls 94.6%; bulb/torch halo display-luminance contributions remain
+    .187510/.027323. The mask is full within 3 m, fades to 6 m, and skips roughness below .4 to preserve reflections.
+  - Pitfalls: MSAA and source filtering mix tags at silhouettes, allowing a small fringe and partial attenuation
+    of subpixel emitters over tagged surfaces. Broad head-on torch haze remains even with bloom off.
 - **Grade from received light.** Outbreak drives selective colour from the irradiance written into HDR alpha, with
   unlit saturation at 0.06 (`games/outbreak/src/look/world.ts`). Tonemappers, split tone, halation and grain are in
   `packages/kit/gpu/look.ts`.
@@ -462,6 +494,13 @@ first build.
 - **TAA and upscaling.** Halton jitter, depth reprojection, a YCoCg variance clip, a reactive mask and RCAS
   (`packages/kit/gpu/temporal.ts`). Outbreak option (MSAA stays the default): TAA + upscale 0.67 saves 2.6–3.9 ms;
   TAA at native costs 0.6–2.9 ms. Passes in the scene take the jittered camera from the frame binding.
+- **Signed metadata needs signed history.** `gpu/temporal.ts`'s `sampleHistory` currently clamps all four channels
+  to >= 0 after Catmull–Rom sampling. Current-frame alpha is signed, but history loses Woods' negative bloom mask
+  and Outbreak's negative flash mask. The later neighbourhood clamp restores a uniform negative area; at mixed
+  edges, especially during motion, positive history weakens suppression. A fix should clamp RGB only and retain
+  alpha until the existing neighbourhood clamp, with a moving-edge regression covering both signed masks and
+  nonnegative roughness/shroud consumers. Left unchanged in the camp pass: cross-game temporal verification is
+  broader than a cheap local fix, and settled stills do not prove that behaviour.
 - **History in motion.** Volume slots keep their history while the camera moves, clipped to mean ± 1.25σ and blended
   in a luminance-compressed space (`VolumeInput.moving`). Exception: the fog's in-scatter follows the view ray, so a
   kept fog history made the Lot's booth halo jump; it stays at 1.

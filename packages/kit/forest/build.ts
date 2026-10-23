@@ -18,7 +18,7 @@ import { deriveDeadfall, mulberry, segDist, smoothNoise } from "../sim/forest-de
 import { LAYER, type ForestModels, type ModelPart } from "./assets"
 import { VertexWriter, readVertex, type RGBA } from "./mesh"
 
-export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51, cable: 52, concrete: 53, path: 54 } as const
+export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51, cable: 52, concrete: 53, path: 54, campWood: 55, ash: 56, litter: 57, charcoal: 58 } as const
 
 export const CHUNK = 16
 /** How far past the level's edge the backdrop forest goes (m). */
@@ -742,7 +742,7 @@ function terrain(w: VertexWriter, world: ForestWorld, x0: number, z0: number, st
     let trodden = 0
     if (detail) for (const path of walks) trodden = Math.max(trodden, smooth(1.3, 0.45, segDist(path, x, z) + patches * 0.18))
     trail = Math.max(trail, trodden)
-    const damp = detail ? Math.max(trodden * 0.9, camp * smooth(0.05, 0.65, patches) * 0.35) : 0
+    const damp = detail ? Math.max(trodden * 0.16, camp * smooth(0.05, 0.65, patches) * 0.12) : 0
     const mud = Math.max(damp, lake ? smooth(lake.level + 0.9, lake.level + 0.1, H(x, z)) : 0)
     if (detail) return [moss * (1 - trail) * (1 - camp), trail, mud, 0]
     return [moss * (1 - trail), Math.max(trail, camp), mud, 0]
@@ -782,7 +782,7 @@ function placeModel(w: VertexWriter, part: ModelPart, x: number, y: number, z: n
   }
 }
 
-function logMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number, length: number, r: number, seed: number, sides: number, ground?: (x: number, z: number) => number) {
+function logMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number, length: number, r: number, seed: number, sides: number, ground?: (x: number, z: number) => number, charred = false) {
   const ca = Math.cos(yaw), sa = Math.sin(yaw)
   const rand = mulberry(seed)
   const segs = Math.max(3, Math.round(length / (sides > 6 ? 0.6 : 1.5)))
@@ -820,7 +820,7 @@ function logMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number, 
     const q = [vertex(k, i), vertex(k, i + 1), vertex(k + 1, i + 1), vertex(k + 1, i)]
     for (const idx of [0, 2, 1, 0, 3, 2]) {
       const v = q[idx]!
-      w.vert(v.p[0]!, v.p[1]!, v.p[2]!, v.n[0]!, v.n[1]!, v.n[2]!, [0.9, 0, 0, 0], MAT.bark, layer, v.uv[0]!, v.uv[1]!)
+      w.vert(v.p[0]!, v.p[1]!, v.p[2]!, v.n[0]!, v.n[1]!, v.n[2]!, [0.9, 0, 0, 0], charred ? MAT.charcoal : MAT.bark, layer, v.uv[0]!, v.uv[1]!)
     }
   }
   // Broken ends: a recessed, uneven cut of the stump scan's end grain inside the splinters.
@@ -834,7 +834,7 @@ function logMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number, 
         const v = vertex(k, ii), th = (ii / sides) * TAU
         return { p: [v.p[0]! - ca * inset * 0.5, v.p[1]!, v.p[2]! - sa * inset * 0.5], uv: [0.5 + Math.cos(th) * 0.3, 0.5 + Math.sin(th) * 0.3] }
       })
-      for (const v of end < 0 ? pts : [pts[0]!, pts[2]!, pts[1]!]) w.vert(v.p[0]!, v.p[1]!, v.p[2]!, ca * end, 0, sa * end, [0.3, 0, 0, 0], MAT.prop, LAYER.stump, v.uv[0]!, v.uv[1]!)
+      for (const v of end < 0 ? pts : [pts[0]!, pts[2]!, pts[1]!]) w.vert(v.p[0]!, v.p[1]!, v.p[2]!, ca * end, 0, sa * end, [0.3, 0, 0, 0], charred ? MAT.charcoal : MAT.prop, LAYER.stump, v.uv[0]!, v.uv[1]!)
     }
   }
   // Branch stubs: snapped limbs along the upper half, the lower ones pushed into the ground.
@@ -901,6 +901,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
   const cp = world.camp!
   const rand = mulberry(world.seed + 404)
   const warm: Vec3 = [1, 0.62, 0.3]
+  const wood = detail ? MAT.campWood : MAT.wood
   for (const b of cp.buildings) {
     const ch = chunks.at(b.x, b.z)
     const w = ch.near[0], f = ch.far[0]
@@ -911,7 +912,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     const floor = detail && b.porch ? H(entry[0], entry[2]) + 0.5 : ground + 0.45
     for (const target of [w, f]) {
       // Walls (thin boxes) leave a gap where every window goes; roof is a gable of two slabs.
-      box(target, b.x, floor + b.h / 2, b.z, b.yaw, b.w, b.h, b.d, MAT.wood, LAYER.planks, 1.6)
+      box(target, b.x, floor + b.h / 2, b.z, b.yaw, b.w, b.h, b.d, wood, LAYER.planks, 1.6)
       box(target, b.x, detail ? (ground + floor) / 2 : ground + 0.22, b.z, b.yaw, b.w + 0.2, detail ? floor - ground : 0.45, b.d + 0.2, MAT.prop, LAYER["rock-lichen"], 1.5)
       const pitch = 0.5, run = b.d / 2 + 0.5, rise = Math.tan(pitch) * run
       for (const side of [-1, 1]) {
@@ -928,41 +929,45 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     }
     if (b.porch) {
       const pd = 2.6
-      box(w, ...(L(0, floor - 0.08, b.d / 2 + pd / 2) as [number, number, number]), b.yaw, b.w * 0.8, 0.16, pd, MAT.wood, LAYER.planks, 1.2, [0, 0, 0.3, 0])
+      box(w, ...(L(0, floor - 0.08, b.d / 2 + pd / 2) as [number, number, number]), b.yaw, b.w * 0.8, 0.16, pd, wood, LAYER.planks, 1.2, [0, 0, detail ? 0.08 : 0.3, 0])
       if (detail) {
-        const edge = b.d / 2 + pd, width = b.w * 0.26 - 0.14
+        const edge = b.d / 2 + pd, width = b.w * 0.45
         const landing = L(0, 0, edge + 0.9), grade = H(landing[0], landing[2])
         const rises = Math.max(2, Math.min(6, Math.ceil((floor - grade) / 0.17))), rise = (floor - grade) / rises
         // Full-depth horizontal treads meet closed risers, from the landing up
         // to the deck. No diagonal support projects above the walking surface.
         for (let i = 0; i < rises - 1; i++) {
           const top = floor - (i + 1) * rise, z = edge + 0.14 + i * 0.3
-          box(w, ...L(0, top - 0.025, z), b.yaw, width, 0.05, 0.34, MAT.wood, LAYER.planks, 0.7)
-          box(w, ...L(0, top - 0.025 - rise / 2, z + 0.13), b.yaw, width - 0.04, rise - 0.05, 0.07, MAT.wood, LAYER.planks, 0.7)
+          box(w, ...L(0, top - 0.025, z), b.yaw, width, 0.05, 0.34, wood, LAYER.planks, 0.7)
+          box(w, ...L(0, top - 0.025 - rise / 2, z + 0.13), b.yaw, width - 0.04, rise - 0.05, 0.07, wood, LAYER.planks, 0.7)
         }
         // The deck itself is the last tread, with a riser down to the top step.
-        box(w, ...L(0, floor - rise / 2, edge - 0.035), b.yaw, width, rise, 0.07, MAT.wood, LAYER.planks, 0.7)
+        box(w, ...L(0, floor - rise / 2, edge - 0.035), b.yaw, width, rise, 0.07, wood, LAYER.planks, 0.7)
         for (const side of [-1, 1]) {
           const x = side * (width / 2 - 0.07), end = edge + (rises - 1) * 0.3
           timber(w, L(x, floor - rise - 0.14, edge - 0.02), L(x, grade - 0.08, end), 0.1, 0.18)
         }
         const pad = L(0, 0, edge + (rises - 1) * 0.3 + 0.12), padY = H(pad[0], pad[2])
-        box(w, pad[0], padY - 0.025, pad[2], b.yaw, width + 0.18, 0.07, 0.4, MAT.concrete, 0)
-        // Fascia and rear supports make the dark space beneath read as a crawlspace.
-        box(w, ...L(0, floor - 0.17, edge - 0.06), b.yaw, b.w * 0.8, 0.18, 0.12, MAT.wood, LAYER.planks, 1)
-        for (const x of [-0.4, 0.4]) porchPost(w, L(x * b.w, floor - 0.16, b.d / 2 + 0.1), floor - 0.16, b.yaw, H)
+        box(w, pad[0], padY - 0.035, pad[2], b.yaw, width + 0.12, 0.07, 0.4, MAT.prop, LAYER["rock-lichen"], 1.2)
+        // Fascia makes the dark space beneath read as a crawlspace.
+        box(w, ...L(0, floor - 0.17, edge - 0.06), b.yaw, b.w * 0.8, 0.18, 0.12, wood, LAYER.planks, 1)
       }
-      for (const px of [-0.4, -0.13, 0.13, 0.4]) {
+      for (const px of detail ? [-0.4, 0.4] : [-0.4, -0.13, 0.13, 0.4]) {
         const p = L(px * b.w, floor + 1.25, b.d / 2 + pd - 0.1)
         if (detail) porchPost(w, p, floor + 2.5, b.yaw, H)
         else box(w, ...p, b.yaw, 0.14, 2.5, 0.14, MAT.wood, LAYER.planks, 1)
       }
+      if (detail) {
+        // The roof is supported at its four corners, leaving the stair and door clear.
+        for (const px of [-0.4, 0.4]) porchPost(w, L(px * b.w, floor + 1.25, b.d / 2 + 0.12), floor + 2.5, b.yaw, H)
+        cabinEntry(w, b.w, b.d, b.yaw, floor, L, world.seed)
+      }
       const p = L(0, floor + 2.55, b.d / 2 + pd / 2)
       roofSlab(w, p, b.yaw, b.w * 0.85, pd + 0.4, 0.18)
       // Porch lamp.
-      const lamp = L(0, floor + 2.25, b.d / 2 + (detail ? pd - 0.4 : 0.25))
+      const lamp = L(detail ? -0.7 : 0, floor + 2.25, b.d / 2 + (detail ? 0.35 : 0.25))
       bulb(w, lamp[0]!, lamp[1]!, lamp[2]!, 0.07, 3)
-      lights.push({ x: lamp[0]!, y: lamp[1]!, z: lamp[2]!, axis: [0, -1, 0], color: [1, 0.68, 0.38], power: 2.4, range: 9, cosOuter: Math.cos(1.25), kind: "porch" })
+      lights.push({ x: lamp[0]!, y: lamp[1]!, z: lamp[2]!, axis: [0, -1, 0], color: [1, 0.68, 0.38], power: 2.4, range: detail ? 13 : 9, cosOuter: Math.cos(1.25), kind: "porch" })
     }
     // Windows on both long walls; the lit ones glow and throw a pool outside.
     const count = Math.max(1, Math.round(b.w / 3.2))
@@ -985,7 +990,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       }
       if (lit > 0) {
         const p = L(wx, wy, zz + side * 0.25)
-        lights.push({ x: p[0]!, y: p[1]!, z: p[2]!, axis: [n[0]!, -0.35, n[2]!], color: warm, power: lit * (b.kind === "mess-hall" ? 2.6 : 1.4), range: 11, cosOuter: Math.cos(1.2), kind: "window" })
+        lights.push({ x: p[0]!, y: p[1]!, z: p[2]!, axis: [n[0]!, -0.35, n[2]!], color: warm, power: lit * (b.kind === "mess-hall" ? 2.6 : 1.4), range: detail && b.kind === "mess-hall" ? 16 : 11, cosOuter: Math.cos(1.2), kind: "window" })
       }
     }
     chunks.extend(b.x, b.z, ground, floor + b.h + 3)
@@ -1032,7 +1037,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       bulb(ch.near[0], p[0], p[1] - (detail ? 0.105 : 0.06), p[2], 0.035, 1.6 + rand() * 0.5)
       // Local bulb light reaches its own socket/cable, not the ground. Existing
       // grouped lights still provide the camp's ground illumination.
-      if (detail) lights.push({ x: p[0], y: p[1] - 0.105, z: p[2], axis: [0, -1, 0], color: [1, 0.7, 0.4], power: 0.045, range: 0.9, cosOuter: -1, kind: "bulb", surfaceOnly: true })
+      if (detail) lights.push({ x: p[0], y: p[1] - 0.105, z: p[2], axis: [0, -1, 0], color: [1, 0.7, 0.4], power: 0.008, range: 0.9, cosOuter: -1, kind: "bulb", surfaceOnly: true })
       if (i % 3 === 1) lights.push({ x: p[0], y: p[1] - 0.06, z: p[2], axis: [0, -1, 0], color: [1, 0.7, 0.4], power: 0.55, range: 7, cosOuter: -1, kind: "bulb" })
     }
     for (const p of pts) {
@@ -1058,9 +1063,10 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
         // when the terrain's coarse vertex weights miss it between grid points.
         const n = Math.ceil(len / 0.3)
         const at = (i: number, side: number): Vec3 => {
-          const t = i / n, width = 0.65 + 0.08 * Math.sin(t * 13 + b.x)
-          const x = start[0] + dx * t + dz / len * side * width, z = start[1] + dz * t - dx / len * side * width
-          return [x, H(x, z) + 0.018, z]
+          const t = i / n, width = 0.7 + smoothNoise(world.seed + 406, t * len * 0.8, b.x + side * 3) * 0.18
+          const bend = Math.sin(t * Math.PI) * Math.sin(t * 5 + b.x) * 0.32
+          const x = start[0] + dx * t + dz / len * (side * width + bend), z = start[1] + dz * t - dx / len * (side * width + bend)
+          return [x, H(x, z) + 0.012, z]
         }
         for (let i = 0; i < n; i++) {
           const a = at(i, -1), bb = at(i, 1), c = at(i + 1, 1), d = at(i + 1, -1)
@@ -1110,16 +1116,49 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     if (p.kind === "picnic-table") table(p.x, y, p.z, p.yaw)
     else if (p.kind === "fire-pit") {
       const stones = models["rocks-b"]
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * TAU, part = stones[i % stones.length]!
+      if (detail) {
+        const centre: Vec3 = [p.x, y + 0.025, p.z]
+        for (let i = 0; i < 32; i++) {
+          const a = i / 32 * TAU, b = (i + 1) / 32 * TAU
+          const edge = (angle: number): Vec3 => {
+            const r = 1.12 + 0.035 * Math.sin(angle * 7)
+            const x = p.x + Math.cos(angle) * r, z = p.z + Math.sin(angle) * r
+            return [x, H(x, z) + 0.025, z]
+          }
+          const aa = edge(a), bb = edge(b)
+          const normal = norm(cross(bb.map((v, j) => v - centre[j]!), aa.map((v, j) => v - centre[j]!)))
+          for (const v of [centre, bb, aa]) ch.near[0].vert(v[0], v[1], v[2], normal[0]!, normal[1]!, normal[2]!, [0, 0, 0, 0], MAT.ash, 0, (v[0] - p.x) / 1.12, (v[2] - p.z) / 1.12)
+        }
+      }
+      const count = detail ? 15 : 10
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * TAU, part = stones[i % stones.length]!
         const ext = Math.max(part.max[0]! - part.min[0]!, part.max[2]! - part.min[2]!)
-        const sc = (detail ? 0.43 : 0.32) / ext
-        const x = p.x + Math.cos(a) * 0.75, z = p.z + Math.sin(a) * 0.75
-        placeModel(ch.near[0], part, x, (detail ? H(x, z) : y) - part.min[1]! * sc - (detail ? 0.02 : 0.05), z, a, [sc, sc, sc], MAT.prop, LAYER["rocks-b"], () => [0.1, 0, 0, 0])
+        const sc = (detail ? 0.49 + hash01(i + world.seed) * 0.1 : 0.32) / ext
+        const radius = detail ? 1.06 + hash01(i * 7 + world.seed) * 0.06 : 0.75
+        const x = p.x + Math.cos(a) * radius, z = p.z + Math.sin(a) * radius
+        const sy = detail ? sc * 0.7 : sc
+        // Scans share a sheet origin. Centre each stone before rotating it around
+        // the ring; otherwise their source offsets scatter them up to a metre away.
+        const yaw = detail && part.max[0]! - part.min[0]! > part.max[2]! - part.min[2]! ? a + Math.PI / 2 : a
+        const cx = detail ? (part.min[0]! + part.max[0]!) * sc / 2 : 0
+        const cz = detail ? (part.min[2]! + part.max[2]!) * sc / 2 : 0
+        placeModel(ch.near[0], part, x - cx * Math.cos(yaw) + cz * Math.sin(yaw), (detail ? H(x, z) : y) - part.min[1]! * sy - (detail ? 0.025 : 0.05), z - cx * Math.sin(yaw) - cz * Math.cos(yaw), yaw, [sc, sy, sc], MAT.prop, LAYER["rocks-b"], () => [0.1, 0, 0, 0])
+      }
+      if (detail) {
+        const debris = mulberry(world.seed + 407)
+        for (let i = 0; i < 24; i++) {
+          const a = debris() * TAU, r = Math.sqrt(debris()) * 0.87, yaw = debris() * TAU
+          const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r, size = 0.04 + debris() * 0.09
+          box(ch.near[0], x, H(x, z) + 0.035, z, yaw, size, 0.02, size * 0.65, MAT.charcoal, LAYER["bark-spruce"], 0.3)
+        }
       }
       for (let i = 0; i < 4; i++) {
         const a = rand() * TAU
-        logMesh(ch.near[0], p.x + Math.cos(a) * 0.15, y + 0.06, p.z + Math.sin(a) * 0.15, a, 0.7, 0.05, Math.floor(rand() * 1e6), 6)
+        if (detail) {
+          const x = p.x + Math.cos(a) * 0.18, z = p.z + Math.sin(a) * 0.18
+          logMesh(ch.near[0], x, H(x, z) + 0.13 + i * 0.025, z, a, 0.85, 0.095, world.seed + i * 37, 8, undefined, true)
+        } else logMesh(ch.near[0], p.x + Math.cos(a) * 0.15, y + 0.06, p.z + Math.sin(a) * 0.15, a, 0.7, 0.05, Math.floor(rand() * 1e6), 6)
       }
     } else if (p.kind === "flagpole") {
       box(ch.near[0], p.x, y + 4, p.z, 0, 0.09, 8, 0.09, MAT.paint, 0, 1, [0.6, 0.6, 0.62, 0.4])
@@ -1148,6 +1187,25 @@ function roofSlab(w: VertexWriter, mid: readonly number[], yaw: number, width: n
   }
 }
 
+/** Closed weathered door, small panes and split firewood under the porch roof. */
+function cabinEntry(w: VertexWriter, width: number, depth: number, yaw: number, floor: number, L: (x: number, y: number, z: number) => Vec3, seed: number) {
+  const z = depth / 2
+  box(w, ...L(0, floor + 1.02, z + 0.035), yaw, 0.94, 2.02, 0.06, MAT.campWood, LAYER.planks, 1.25, [0.7, 0, 0, 0])
+  for (const side of [-1, 1]) box(w, ...L(side * 0.52, floor + 1.06, z + 0.085), yaw, 0.1, 2.12, 0.14, MAT.campWood, LAYER.planks, 1.2)
+  box(w, ...L(0, floor + 2.12, z + 0.085), yaw, 1.14, 0.12, 0.14, MAT.campWood, LAYER.planks, 1.2)
+  box(w, ...L(0, floor + 1.43, z + 0.074), yaw, 0.64, 0.86, 0.018, MAT.paint, 0, 1, [0.008, 0.012, 0.011, 0])
+  for (const x of [-0.34, 0, 0.34]) box(w, ...L(x, floor + 1.43, z + 0.094), yaw, 0.035, 0.92, 0.045, MAT.campWood, LAYER.planks, 1.2)
+  for (const y of [0.98, 1.43, 1.88]) box(w, ...L(0, floor + y, z + 0.094), yaw, 0.7, 0.035, 0.045, MAT.campWood, LAYER.planks, 1.2)
+  box(w, ...L(0.36, floor + 0.9, z + 0.13), yaw, 0.045, 0.16, 0.055, MAT.cable, 0)
+  // Narrow corner boards break the uninterrupted wall box.
+  for (const side of [-1, 1]) box(w, ...L(side * (width / 2 - 0.045), floor + 1.28, z + 0.035), yaw, 0.09, 2.56, 0.08, MAT.campWood, LAYER.planks, 1.1, [0.25, 0, 0, 0])
+  const random = mulberry(seed + Math.round(L(0, 0, 0)[0] * 31))
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 4 - row; i++) {
+    const p = L(width * 0.3 + (i - (3 - row) / 2) * 0.21, floor + 0.12 + row * 0.18, z + 0.46)
+    logMesh(w, ...p, yaw + Math.PI / 2, 0.58 + random() * 0.15, 0.105, Math.floor(random() * 1e6), 8)
+  }
+}
+
 function leafMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number, size: number, shade: number) {
   const c = Math.cos(yaw), s = Math.sin(yaw)
   const points = [[-1, 0, 0], [-0.3, 0.01, 0.45], [0.65, 0.025, 0.3], [1, 0.04, 0], [0.5, 0.01, -0.35], [-0.35, 0, -0.4]]
@@ -1156,14 +1214,14 @@ function leafMesh(w: VertexWriter, x: number, y: number, z: number, yaw: number,
   for (let i = 0; i < points.length; i++) {
     const a = points[i]!, b = points[(i + 1) % points.length]!
     const n = norm(cross(a.map((v, j) => v - centre[j]!), b.map((v, j) => v - centre[j]!)))
-    for (const p of [centre, a, b]) w.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, color, MAT.paint, 0, 0, 0)
+    for (const p of [centre, a, b]) w.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, color, MAT.litter, 0, 0, 0)
   }
 }
 
 function porchPost(w: VertexWriter, p: Vec3, top: number, yaw: number, height: (x: number, z: number) => number) {
-  const grade = height(p[0], p[2]), base = grade + 0.12
-  box(w, p[0], grade + 0.045, p[2], yaw, 0.34, 0.15, 0.34, MAT.concrete, 0)
-  if (top > base) box(w, p[0], (base + top) / 2, p[2], yaw, 0.14, top - base, 0.14, MAT.wood, LAYER.planks, 1)
+  const grade = height(p[0], p[2]), base = grade + 0.05
+  box(w, p[0], grade + 0.015, p[2], yaw, 0.22, 0.09, 0.22, MAT.prop, LAYER["rock-lichen"], 0.6)
+  if (top > base) box(w, p[0], (base + top) / 2, p[2], yaw, 0.14, top - base, 0.14, MAT.campWood, LAYER.planks, 1)
 }
 
 /** Rectangular timber with its long axis between two points (stair stringers). */

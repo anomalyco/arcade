@@ -91,7 +91,7 @@ function forestWorld(world: WoodsWorld, campDetail = false): ForestWorld {
   const fw = toForestWorld(world)
   // Presentation-only gathering point. The old adapter never supplied a fire
   // pit, so the renderer's ring geometry and the paths to it could not appear.
-  if (campDetail && fw.camp) fw.camp = { ...fw.camp, props: [...(fw.camp.props ?? []), { kind: "fire-pit", x: world.camp.x - 4, z: world.camp.z + 2, yaw: 0 }] }
+  if (campDetail && fw.camp) fw.camp = { ...fw.camp, props: [...(fw.camp.props ?? []), { kind: "fire-pit", x: world.camp.x - 7, z: world.camp.z + 6.5, yaw: 0 }] }
   const bulbs = world.lamps.filter((l) => l.kind === "string").sort((a, b) => a.x - b.x)
   const camp = fw.camp && bulbs.length > 1 ? (() => {
     const x0 = bulbs[0]!.x, x1 = bulbs[bulbs.length - 1]!.x, z = bulbs[0]!.z, top = Math.max(...bulbs.map((b) => b.y))
@@ -115,7 +115,7 @@ export class WorldView {
   /** Loads the forest's scanned assets and builds `world`. */
   static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, world: WoodsWorld, opts: { smoke?: boolean; quality?: QualityTier } = {}): Promise<WorldView> {
     // The catalogue night sky is on here (Today one setting away); the software-GPU smoke keeps Today.
-    const settings = { highlightShoulder: true, campDetail: false, skyMode: opts.smoke ? "today" as const : "physical" as const }
+    const settings = { highlightShoulder: true, campDetail: true, skyMode: opts.smoke ? "today" as const : "physical" as const }
     const forest = await createForestView(gpu, forestWorld(world, settings.campDetail), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings })
     const view = new WorldView(forest)
     view.models(world)

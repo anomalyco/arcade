@@ -27,6 +27,7 @@ import { forestPost } from "./post"
 import { FOREST_WIND_DIR } from "./wind"
 import { stepForestExposure, forestExposureTarget } from "./exposure"
 import { indexForestMesh } from "./index-mesh"
+import { appendForestLights } from "./lights"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
 import type { LabControl } from "../lab-navigation"
@@ -325,15 +326,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       if (!t.on) continue
       frameLights.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[2], h: t.pos[1], r: s.torchReach, color: torchColor, power: torchPower * (t.level ?? 1), size: 0.02, unshadowed: true, beam: { axis: t.dir, halfAngle } })
     }
-    // Gameplay lights retain their slots when optional camp dressing fills the budget.
-    for (const l of f.lights ?? []) frameLights.push(l)
-    if (local && bounce.power > 0.01) frameLights.push({ id: 2000, x: bounce.x, y: bounce.z, h: bounce.y, r: 9, color: bounce.color, power: bounce.power, size: 0.6, unshadowed: true })
-    for (const [i, l] of build.campLights.entries()) {
-      const k = l.kind === "bulb" ? s.stringLights : s.windows
-      if (k <= 0) continue
-      frameLights.push({ id: 3000 + i, x: l.x, y: l.z, h: l.y, r: l.range, color: l.color, power: l.power * k, size: l.kind === "window" ? 0.5 : 0.05, unshadowed: true,
-        ...(l.cosOuter > 0 ? { spot: { axis: l.axis, cosOuter: l.cosOuter, cosInner: Math.min(0.999, l.cosOuter + 0.35) } } : {}) })
-    }
+    appendForestLights(frameLights, f.lights ?? [], local && bounce.power > 0.01
+      ? { id: 2000, x: bounce.x, y: bounce.z, h: bounce.y, r: 9, color: bounce.color, power: bounce.power, size: 0.6, unshadowed: true }
+      : undefined, build.campLights, s)
     lights.update(frameLights, [])
 
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).

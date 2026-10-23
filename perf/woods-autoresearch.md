@@ -1,5 +1,92 @@
 # Woods look benchmark
 
+## BARBARA camp port (2026-10-22)
+
+Kit approved the round 8–11 candidate as BARBARA's default: grounded porch steps, stacked firewood,
+the stone ring with ash/logs, and preserved darkness. The remaining tabletop, path visibility and fine-detail
+gaps are accepted. `barbara-camp` reuses this worktree and starts from main after BARBARA #447.
+The shared forest build/shader/post/view files at `a50f9d5e` already match that main base byte-for-byte;
+neither `93238eca` nor `a50f9d5e` needs another implementation commit. Only the final `b43c36d2` camp delta is ported.
+
+`games/barbara/src/world-view.ts` enables `campDetail` while retaining the physical sky. The shared kit default
+stays false. `woods.campDetail` remains a reload setting that Looks presets can bundle; toggling it rebuilds
+through `WorldView.setWorld`. The Looks and flare owners were notified of these integration points.
+
+Surface lights retain their existing order: torches, game sources, bounce, camp. The extracted
+`appendForestLights` helper is used by the production view. Two saturation regressions exercise it through
+the real `SceneLights` packer, including a shadowed lantern and unshadowed flare, and a full gameplay budget.
+Camp sources are all unshadowed, so the packer's stable shadow-first sort cannot promote them over game lights.
+
+Port checks passed through HiveMind on mini: BARBARA client/scripts and server typechecks, production build,
+and 21 targeted tests (forest build/exposure/light packing and GPU look defaults), with `--max-concurrency 4`.
+Pro was below its 20 GiB disk floor; HiveMind routed the job to mini after admission waited. No new capture or
+timing run was needed for the port; the approved round-11 build and shader sources are carried verbatim.
+
+This port awaits review before PR creation. Shadow sampling, animated leaf shadows and caster admission will
+each get one measurement on `barbara-shadow-pops` after camp integration; round 5 has not distinguished them yet.
+
+## Camp review: rounds 8–11 (2026-10-22)
+
+The approved bloom/shoulder head `a50f9d5e` was fast-forwarded into `woods`; the build from that worktree was copied
+to the existing 5322 preview. Its served HTML and JS matched the build byte for byte, and Pro returned HTTP 200.
+`docs/realism.md` now records both techniques, their costs and the signed TAA history-alpha limitation. Shared
+`gpu/temporal.ts` is unchanged: moving-edge and cross-game coverage is needed before changing that clamp.
+
+At final link verification, other work had removed the `woods` worktree and replaced 5322 with the BARBARA preview
+from `/Users/kit/worktrees/arcade/barbara/games/barbara/dist` (head `d8f42026`, rename/release PR #447).
+`/arcade/barbara/?quality=high` returns 200; the old `/arcade/woods/` URL now returns 404. That newer preview is left
+under its owner's control. The camp commit remains local on `woods-autoresearch`; integration must carry its adapter
+default into `games/barbara/src/world-view.ts` and account for the intervening shared-forest changes.
+
+Camp remained opt-in through four single-capture revisions. The final Today | candidate | existing-target
+triptychs show a clear structural improvement: wider stairs meet the ground, corner posts leave the door clear,
+the cabin has a framed glazed door and stacked wood, and a coherent cold fire ring replaces the empty clearing.
+The material pass keeps wood matte and blends path strips through the existing terrain recipe. The last revision
+puts the porch lamp beside the door and breaks up the smooth ash bed with scanned ground detail and small charred
+chips. Existing mess-hall window spill reaches farther, at unchanged power. Sky and global night settings are unchanged.
+
+**Decision:** promote `campDetail: true` in the Woods adapter only. The kit default stays false and the Lab switch
+keeps Today available. This is ready for review as an improvement over Today, not a claim of matching the targets:
+the target gathering area is brighter, its tabletop is clearer, and its surfaces have finer detail.
+
+[Review and full-size images](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/round8-11/review.html).
+The artifact folder holds each revision's captures, source hashes, check log and score, plus a trial ledger.
+
+| Revision | Hypothesis / change | Camp distance ↓ | Ring distance ↓ | Decision |
+|---|---|---:|---:|---|
+| Today, final matched pair | Approved shoulder/bloom, camp detail off | .052317 | .083010 | Control |
+| 8 | Door, wider steps, small footings, matte wood/path, closer ring | .060079 | .083512 | Keep structure; paths read as strips, ring too dark |
+| 9 | Use terrain shading for path edges; extend mess-hall spill; ash texture | .060059 | .081391 | Paths improve; ring exposes off-centre scanned stones |
+| 10 | Centre each scanned stone; orient long side tangentially; textured closed charred logs | .060059 | .081688 | Ring reads as a ring; ash is too uniform |
+| 11 | Lamp beside door; darker textured ash and small coal chips | .051682 | .081115 | Retain; both views improve over Today |
+
+Mean target distance .067664 → .066399 (−1.87%). This is the existing tone/composition guide against unregistered
+paint-overs, not a realism score. Candidate p5 is .004205 camp / .004755 ring (both <.025). Dark coverage changes
+44.58% → 43.19% camp and 62.25% → 60.47% ring; that small loss is reported rather than called a darkness gain.
+The multi-torch, signal, bark and held-map proofs were not rerun for this camp-only revision.
+
+Final captures: Pro/Metal, High, 1600×900, seed 1987, time 12 s, 240 settling frames, headless/muted, two variants
+at `camp,fireRing`, no walking probe. All four revisions have zero browser/GPU errors. Round 8 unexpectedly spilled
+from mini to Studio after two minutes despite `--worker mini`; its timing is excluded. Later jobs used
+`HIVEMIND_STRICT_PIN=1` plus `AUTORESEARCH_HOST`. Mini admission timed out before round 9 ran; Pro's fresh checkout
+first failed typecheck because ignored `shared/build.gen.ts` was absent. Running `build-id.ts` first fixed that setup
+failure. Neither failed admission/setup attempt produced a capture.
+
+Checks: round 8 passed Woods typecheck, production build and 19 targeted build/exposure/look tests. Each subsequent
+source revision passed Woods typecheck, production build and the two forest-build tests, always with
+`bun test --max-concurrency 4`. No broad suites. Round 11's rough camp sample was ~20 ms on shared Pro, with prior
+revisions ~14–18 ms; these unpaired samples do not establish incremental cost or a 12 ms budget. Final visible
+triangles 780,622 → 789,329, draw calls 468 → 468, lights 21 → 42. No new pass or texture allocation.
+
+All 14 source hashes matched immediately after the final capture. The only later rendering-source edit is the
+one-line adapter default `campDetail: false → true`; the captured candidate explicitly used true. The artifact's
+`provenance.json` checks that exact difference without changing the original capture manifest. No repeat capture.
+
+With camp complete, round 5 identifies **torch shadows** as the dominant measured popping layer: disabling shadows
+reduced excursions 578.056 → 185.028/frame (~68%); forcing all-near ferns after that gave 184.878, and disabling
+floor-scatter raster gave 578.033. That does not yet separate shadow sampling, animated leaf shadows and caster
+admission. No pop-in fix is included in this camp pass.
+
 The production forest renderer, seed 1987, High, 1600×900, DPR 1, frozen poses and lights at time 12 s.
 Headless Metal and muted. Run on the Mac mini with approved HiveMind browser admission:
 
