@@ -1,9 +1,11 @@
 import { BUILD } from "../shared/build.gen"
 import {
   type Crew,
+  type CrewEvent,
   type Outcome,
   type Role,
   createShip,
+  ensureFleet,
   crewName,
   hasRoom,
   joinCrew,
@@ -21,15 +23,15 @@ import {
   tickCrew,
   wreckParked,
 } from "../shared/crew"
-import { DECK_JET_ROUND_DAMAGE, DeckJets, isParked, type DeckJetWeapon, type DeckRound, crashFalloff, deckRoundWeapon } from "../shared/deck-jets"
+import { DECK_JET_ROUND_DAMAGE, DeckJets, isParked, type DeckJetEvent, type DeckJetWeapon, type DeckRound, crashFalloff, deckRoundWeapon } from "../shared/deck-jets"
 import { bombDamage, blastDamage } from "../shared/combat"
 import { fleetSpawn } from "../shared/spawn"
 import { kick, promote, setLock } from "../shared/squad"
 import { type Archipelago, archipelagoFor } from "../shared/islands"
-import { Objective, type ObjectiveShip, packObjective, rulesOf } from "../shared/objective"
+import { Objective, type ObjectiveEvent, type ObjectiveRules, type ObjectiveShip, packObjective, rulesOf } from "../shared/objective"
 import { CombatWorld, type CombatEvent, type GroundShip } from "../shared/combat"
 import { BOW_Z, DECK_X0, DECK_X1, ISLAND, STERN_Z } from "../shared/carrier-spec"
-import { Fleet, type ShipDamageKind, deckOpen, hullLimits, packHull, settled } from "../shared/fleet"
+import { Fleet, type FleetEvent, type ShipDamageKind, type ShipHit, deckOpen, hullLimits, packHull, settled } from "../shared/fleet"
 import { opById, playerBoat, slotIsBoat } from "../shared/ops"
 import {
   BOAT,
@@ -58,10 +60,11 @@ import { playerVehicle } from "../shared/ops"
 import { makePlane, shipToWorld, worldToShip } from "../shared/plane"
 import { type ClientMsg, compactPlane, DEV_MESSAGES, type PlaneEntry, type PlaneTuple, PLANE_MODE, type ShipTuple, type StatTuple, type World, decodeClient, encode } from "../shared/protocol"
 import { RoomBots } from "./bots"
+import type { BotCmd, BotInfo } from "../shared/bots"
 import { ChatLimiter, hearsChat } from "../shared/chat"
 import { vehicleCode } from "../shared/vehicles"
 import { makeTarget, type Target } from "../shared/weapons"
-import { GunneryWorld, type Interceptable, asInterceptable, packGunBoom, packTurret, samDamage, shellDamage, shipHitOf, unpackGunFire } from "../shared/gunnery"
+import { GunneryWorld, type GunneryEvent, type Interceptable, asInterceptable, packGunBoom, packTurret, samDamage, shellDamage, shipHitOf, unpackGunFire } from "../shared/gunnery"
 import { type Sea, makeSea, seaHeight } from "../shared/sea"
 import { SHIP, type Ship, type ShipControls, headingTo, makeShip, shipStep } from "../shared/ship"
 import { type CollideEntry, ShipCollider, hullSolid } from "../shared/ship-collide"
@@ -69,6 +72,31 @@ import { RoomTime, TIME_OVERRIDE_LEAD, type TimeOverride, packTime, timeOverride
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type WeatherOverride, type WeatherSea, makeWeather, makeWeatherSea, overrideTo, packOverride, unpackWeather } from "../shared/weather"
 
 export type Conn = { send(data: string | Uint8Array): void; close(code?: number, reason?: string): void }
+
+/**
+ * What happened in the room, for an observer that is not a client (scripts/balance: the headless match simulator).
+ * The room calls `RoomOptions.onEvent` with each as it applies it; nothing in the room depends on it.
+ */
+export type RoomEvent =
+  | { k: "crew"; e: CrewEvent }
+  | { k: "combat"; e: CombatEvent }
+  | { k: "gunnery"; e: GunneryEvent }
+  | { k: "fleet"; e: FleetEvent }
+  | { k: "objective"; e: ObjectiveEvent }
+  /** Damage `dmg` actually done to a carrier by `hit` (refused hits are not reported). */
+  | { k: "shiphit"; hit: ShipHit; dmg: number }
+  | { k: "fire"; owner: number; seq: number; kind: "missile" | "bomb"; target: number }
+  | { k: "gfire"; owner: number; seq: number; kind: "sam" | "shell" }
+  | { k: "flare"; owner: number }
+  | { k: "deckkill"; e: DeckJetEvent }
+
+export type RoomOptions = {
+  /** Dev mode: DEV_MESSAGES and bots (see `RoomCore.dev`). */
+  dev?: boolean
+  /** Most bots the room runs (default shared/bots.ts BOT_ROOM_MAX); the headless simulator fills a whole room. */
+  botMax?: number
+  onEvent?: (e: RoomEvent) => void
+}
 
 /** A joined connection silent this long is dropped. Clients ping every 2 s, but hidden tabs can throttle timers to
  *  once a minute. */
@@ -218,14 +246,20 @@ export class RoomCore {
   /** Dev rooms: the bots (server/bots.ts), crew players without a socket. */
   private bots: RoomBots | null
 
+  private onEvent: ((e: RoomEvent) => void) | null
+
   constructor(
     private clock: () => number = Date.now,
     private random: () => number = randomU32,
-    opts: { dev?: boolean } = {},
+    opts: RoomOptions = {},
   ) {
     this.dev = opts.dev === true
+    this.onEvent = opts.onEvent ?? null
     this.bots = this.dev
       ? new RoomBots({
+          max: opts.botMax,
+          objective: () => this.objective?.state ?? null,
+          hull: (ship) => this.fleet.hulls.get(ship),
           crew: () => this.crew,
           now: () => this.clock(),
           seaTime: (now) => this.seaTime(now),
@@ -250,6 +284,28 @@ export class RoomCore {
 
   get players(): number {
     return this.seen.size
+  }
+
+  /**
+   * Opens a world with no connection (the headless simulator, scripts/balance): seed `seed`, epoch now, the objective
+   * on `rules`. Nothing happens if a world is already open. Bots then fill it through `botCommand`.
+   */
+  openHeadless(seed: number, rules?: ObjectiveRules): void {
+    if (this.world) return
+    this.makeWorld({ seed: seed >>> 0, epoch: this.clock() })
+    if (rules) this.objective!.setRules(rules, 0)
+    // Every carrier comes out at once (a first player's join does this in a room with connections).
+    this.apply(null, { events: ensureFleet(this.crew!, this.clock()) })
+  }
+
+  /** The bots as the dev panel lists them (state, what each is doing). */
+  botList(): BotInfo[] {
+    return this.bots?.list() ?? []
+  }
+
+  /** A bot command without a connection (dev rooms; the headless simulator). Returns the error a client would get. */
+  botCommand(cmd: BotCmd): string | null {
+    return this.bots ? this.bots.command(cmd) : "dev-only"
   }
 
   /** The simulated ships by crew ship id (for tests and the Room's reports). */
@@ -382,7 +438,7 @@ export class RoomCore {
           // Spread over the island and the deck by where the shooter is (the client doesn't say where they hit).
           const l = worldToShip(ship, a[0], a[1], a[2], [0, 0, 0])
           const onIsland = l[1] > ISLAND.y0 && Math.abs(l[2] - (ISLAND.z0 + ISLAND.z1) / 2) < 120 && l[0] < 0
-          this.fleet.hit({ ship: msg.ship, by: id, team: f.team, w: "gun", x: onIsland ? (ISLAND.x0 + ISLAND.x1) / 2 : 0, y: onIsland ? ISLAND.y0 + 10 : 26, z: onIsland ? (ISLAND.z0 + ISLAND.z1) / 2 : 0, near: 0, n }, this.seaTime(now))
+          this.hitShip({ ship: msg.ship, by: id, team: f.team, w: "gun", x: onIsland ? (ISLAND.x0 + ISLAND.x1) / 2 : 0, y: onIsland ? ISLAND.y0 + 10 : 26, z: onIsland ? (ISLAND.z0 + ISLAND.z1) / 2 : 0, near: 0, n }, this.seaTime(now))
           this.flushFleet(now)
         }
         return
@@ -395,6 +451,7 @@ export class RoomCore {
         const at = Math.max(t - 1, Math.min(t, m[1]))
         this.targetsAt(t)
         if (!this.combat.fire({ owner: id, seq: m[0], t: at, x: m[2], y: m[3], z: m[4], vx: m[5], vy: m[6], vz: m[7], target: m[8], kind })) return
+        this.onEvent?.({ k: "fire", owner: id, seq: m[0], kind, target: m[8] })
         this.sendOthers(id, encode({ type: "fire", id, m: [m[0], at, m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9]] }))
         return
       }
@@ -403,6 +460,7 @@ export class RoomCore {
         const t = this.seaTime(now)
         const at = Math.max(t - 1, Math.min(t, f[0]))
         if (!this.combat.flare(id, at, f[1], f[2], f[3], f[4], f[5], f[6])) return
+        this.onEvent?.({ k: "flare", owner: id })
         this.sendOthers(id, encode({ type: "flare", id, f: [at, f[1], f[2], f[3], f[4], f[5], f[6]] }))
         return
       }
@@ -419,6 +477,7 @@ export class RoomCore {
         l.t = Math.max(t - 1, Math.min(t, l.t))
         this.syncGunneryGround()
         if (!this.gunnery.fire(l, g.team)) return
+        this.onEvent?.({ k: "gfire", owner: id, seq: l.seq, kind: l.kind })
         this.sendOthers(id, encode({ type: "gfire", id, g: [msg.g[0], msg.g[1], msg.g[2], msg.g[3], l.t, msg.g[5], msg.g[6], msg.g[7], msg.g[8], msg.g[9], msg.g[10], msg.g[11]] }))
         return
       }
@@ -674,7 +733,8 @@ export class RoomCore {
       const sim = this.sims.get(s.id)
       if (sim) list.push({ team: s.team, x: sim.ship.x, z: sim.ship.z, active: (s.helm !== null || s.pilots.length > 0) && !this.fleet.sinking(s.id) })
     }
-    o.step(t, list)
+    const happened = o.step(t, list)
+    if (this.onEvent) for (const e of happened) this.onEvent({ k: "objective", e })
     const st = o.state
     const key = `${st.round}|${st.end}|${st.cycle}|${st.next.length}|${st.zones.map((z) => `${z.holder},${z.cap},${z.present}`).join(";")}`
     const moving = st.end < 0 && st.zones.some((z) => z.present || (z.progress > 0 && z.progress < 1))
@@ -705,10 +765,17 @@ export class RoomCore {
     for (const b of this.collider.step(list, t)) {
       const sa = shipOf(crew, b.a)
       const sb = shipOf(crew, b.b)
-      if (sb && b.damageA > 0) this.fleet.hit({ ship: b.a, by: sb.helm ?? sb.captain ?? -1, team: sb.team, w: "ram", x: b.ax, y: 4, z: b.az, near: 0, amount: b.damageA }, t)
-      if (sa && b.damageB > 0) this.fleet.hit({ ship: b.b, by: sa.helm ?? sa.captain ?? -1, team: sa.team, w: "ram", x: b.bx, y: 4, z: b.bz, near: 0, amount: b.damageB }, t)
+      if (sb && b.damageA > 0) this.hitShip({ ship: b.a, by: sb.helm ?? sb.captain ?? -1, team: sb.team, w: "ram", x: b.ax, y: 4, z: b.az, near: 0, amount: b.damageA }, t)
+      if (sa && b.damageB > 0) this.hitShip({ ship: b.b, by: sa.helm ?? sa.captain ?? -1, team: sa.team, w: "ram", x: b.bx, y: 4, z: b.bz, near: 0, amount: b.damageB }, t)
       this.sendAll(encode({ type: "bump", a: b.a, b: b.b, k: Math.round(b.k * 100) / 100 }))
     }
+  }
+
+  /** Every hit on a carrier goes through here (shared/fleet.ts decides, friendly fire refused there). */
+  private hitShip(h: ShipHit, t: number): number {
+    const dmg = this.fleet.hit(h, t)
+    if (dmg > 0) this.onEvent?.({ k: "shiphit", hit: h, dmg })
+    return dmg
   }
 
   private settleHulls(t: number): void {
@@ -759,6 +826,7 @@ export class RoomCore {
     if (!events.length) return
     const t = this.seaTime(this.clock())
     for (const e of events.splice(0)) {
+      this.onEvent?.({ k: "gunnery", e })
       if (e.k === "gboom") {
         this.sendAll(encode({ type: "gboom", b: packGunBoom(e) }))
         this.deckBlast(e.x, e.y, e.z, e.owner, this.gunnery.gunners.get(e.owner)?.team, e.kind, e.kind === "sam" ? samDamage : shellDamage)
@@ -767,7 +835,7 @@ export class RoomCore {
       else if (e.k === "ship") {
         const team = this.gunnery.gunners.get(e.owner)?.team ?? (this.crew ? playerOf(this.crew, e.owner)?.team : undefined) ?? -1
         const h = shipHitOf(e.w, e.near)
-        this.fleet.hit({ ship: e.ship, by: e.owner, team, w: h.w, x: e.x, y: e.y, z: e.z, near: h.near, n: (e.n ?? 1) * h.n, amount: h.amount }, t)
+        this.hitShip({ ship: e.ship, by: e.owner, team, w: h.w, x: e.x, y: e.y, z: e.z, near: h.near, n: (e.n ?? 1) * h.n, amount: h.amount }, t)
       } else if (e.k === "intercept" && e.store === 0) this.combat.intercept(e.owner, e.seq)
     }
     this.flushCombat()
@@ -797,7 +865,7 @@ export class RoomCore {
       const l = worldToShip(g, x, y, z, [0, 0, 0])
       const m = 12
       if (l[0] < DECK_X0 - m || l[0] > DECK_X1 + m || l[2] < STERN_Z - m || l[2] > BOW_Z + m || l[1] < -15 || l[1] > ISLAND.y1 + m) continue
-      this.fleet.hit({ ship: g.id!, by: id, team, w: "crash", x: l[0], y: l[1], z: l[2], near: 0 }, t)
+      this.hitShip({ ship: g.id!, by: id, team, w: "crash", x: l[0], y: l[1], z: l[2], near: 0 }, t)
       this.deckBlast(x, y, z, id, team, "crash", crashFalloff)
       return
     }
@@ -807,6 +875,7 @@ export class RoomCore {
   private flushFleet(now: number): void {
     const crew = this.crew
     for (const e of this.fleet.events.splice(0)) {
+      if (e.k !== "hull") this.onEvent?.({ k: "fleet", e })
       if (e.k === "hull") this.hullsDirty = true
       else if (e.k === "sinking") {
         const s = crew && shipOf(crew, e.ship)
@@ -986,6 +1055,7 @@ export class RoomCore {
     const crew = this.crew
     for (const e of this.deckJets.events.splice(0)) {
       if (!crew) continue
+      this.onEvent?.({ k: "deckkill", e })
       this.sendAll(encode({ type: "deckkill", ship: e.ship, slot: e.slot, by: e.by, w: e.w }))
       this.apply(null, wreckParked(crew, e.ship, e.slot, now))
     }
@@ -1013,7 +1083,7 @@ export class RoomCore {
     if (!g || !this.crew) return 0
     const l = worldToShip(g, at[0], at[1], at[2], [0, 0, 0])
     const team = by >= 0 ? (playerOf(this.crew, by)?.team ?? -1) : -1
-    const done = this.fleet.hit({ ship: shipId, by, team, w: kind, x: l[0], y: l[1], z: l[2], near: 0, amount }, this.seaTime(this.clock()))
+    const done = this.hitShip({ ship: shipId, by, team, w: kind, x: l[0], y: l[1], z: l[2], near: 0, amount }, this.seaTime(this.clock()))
     this.flushFleet(this.clock())
     return done
   }
@@ -1047,10 +1117,11 @@ export class RoomCore {
     let tally = false
     for (const e of events.splice(0) as CombatEvent[]) {
       if (this.bots?.absorb(e)) continue
+      this.onEvent?.({ k: "combat", e })
       if (e.k === "ship") {
         // A missile or bomb on a carrier (or a bomb's near miss): the fleet decides (friendly fire is refused there).
         const team = this.combat.fighters.get(e.owner)?.team ?? (this.crew ? playerOf(this.crew, e.owner)?.team : undefined) ?? -1
-        this.fleet.hit({ ship: e.ship, by: e.owner, team, w: e.w, x: e.x, y: e.y, z: e.z, near: e.near }, this.combat.t)
+        this.hitShip({ ship: e.ship, by: e.owner, team, w: e.w, x: e.x, y: e.y, z: e.z, near: e.near }, this.combat.t)
         continue
       }
       if (e.k === "boom") {
@@ -1136,6 +1207,7 @@ export class RoomCore {
     // the next sortie relays a new one).
     for (const id of this.planes.keys()) if (!this.crew || (playerOf(this.crew, id)?.plane ?? -1) < 0) this.planes.delete(id)
     for (const e of out.events) {
+      this.onEvent?.({ k: "crew", e })
       if (e.k === "recover" || e.k === "launch") this.planes.delete(e.player)
       // A launch is a fresh jet in the fight; a recovery (or leaving) takes it out.
       if (e.k === "launch") {
@@ -1214,19 +1286,9 @@ export class RoomCore {
     }
     if (!this.world) {
       const resume = msg.resume && msg.resume.epoch <= now ? msg.resume : null
-      const world = (this.world = resume ?? { seed: this.random() >>> 0, epoch: now })
-      this.crew = makeCrew(world.seed)
-      this.weatherSea = makeWeatherSea(makeSea(world.seed))
-      this.sea = this.weatherSea.sea
-      this.roomWeather = new RoomWeather(world.seed)
-      this.roomTime = new RoomTime(world.seed)
-      this.arch = archipelagoFor(world.seed)
-      this.objective = new Objective(this.arch, (now - world.epoch) / 1000)
-      const goal = this.arch.islands[0]
-      this.heading = goal ? headingTo(0, 0, goal.x, goal.z) : 0
-      this.sims.clear()
+      this.makeWorld(resume ?? { seed: this.random() >>> 0, epoch: now })
     }
-    const world = this.world
+    const world = this.world!
     const crew = this.crew!
     for (const [tok, d] of this.departed) if (d.until <= now) this.departed.delete(tok)
     let prevTok = msg.token && this.departed.has(msg.token) ? msg.token : undefined
@@ -1295,6 +1357,21 @@ export class RoomCore {
     conn.send(this.hullsFrame())
     if (this.objective) conn.send(this.objectiveFrame())
     this.broadcast(conn)
+  }
+
+  private makeWorld(world: World): void {
+    const now = this.clock()
+    this.world = world
+    this.crew = makeCrew(world.seed)
+    this.weatherSea = makeWeatherSea(makeSea(world.seed))
+    this.sea = this.weatherSea.sea
+    this.roomWeather = new RoomWeather(world.seed)
+    this.roomTime = new RoomTime(world.seed)
+    this.arch = archipelagoFor(world.seed)
+    this.objective = new Objective(this.arch, (now - world.epoch) / 1000)
+    const goal = this.arch.islands[0]
+    this.heading = goal ? headingTo(0, 0, goal.x, goal.z) : 0
+    this.sims.clear()
   }
 
   /** Drops joined connections that went silent without a close event. */

@@ -6,11 +6,16 @@
 
 import { opById, isOpId } from "./ops"
 
-/** What a bot's brain does, per kind of operation it runs. */
-export const JET_BEHAVIORS = ["straight", "orbit", "eight", "evasive", "dogfight", "bomber"] as const
-export const BOAT_BEHAVIORS = ["idle", "patrol", "attack"] as const
+/**
+ * What a bot's brain does, per kind of operation it runs. "match" plays the objective (server/bot-match.ts): helms sail
+ * for the capture zones, hold and contest them, ram and retreat; jets pick a mission (CAP, intercept, strike a carrier
+ * or its parked jets, return to land and rearm); boats harass the side's strike target and come home to be recovered
+ * when hurt. Gunners have no separate match brain: "engage" already defends the ship.
+ */
+export const JET_BEHAVIORS = ["straight", "orbit", "eight", "evasive", "dogfight", "bomber", "match"] as const
+export const BOAT_BEHAVIORS = ["idle", "patrol", "attack", "match"] as const
 export const GUN_BEHAVIORS = ["hold", "engage"] as const
-export const HELM_BEHAVIORS = ["stop", "cruise", "circle", "chase"] as const
+export const HELM_BEHAVIORS = ["stop", "cruise", "circle", "chase", "match"] as const
 export type JetBehavior = (typeof JET_BEHAVIORS)[number]
 export type BoatBehavior = (typeof BOAT_BEHAVIORS)[number]
 export type GunBehavior = (typeof GUN_BEHAVIORS)[number]
@@ -219,6 +224,15 @@ export function botInfoOf(v: unknown): BotInfo | null {
   if (typeof o.state !== "string" || o.state.length > 24 || typeof o.note !== "string" || o.note.length > 64 || !isNum(o.hp) || !s) return null
   return { id: o.id as number, name: o.name, role: o.role, ship: o.ship as number, group: o.group as number, state: o.state, note: o.note, hp: o.hp, s }
 }
+
+/**
+ * A full carrier crew playing the match (8 = CREW.capacity): the helm, both Hornets, the F-35C, the boat and three of
+ * the five gun mounts (one CIWS, one SAM and the 5-inch). Each is a ship operation id (the bot's role).
+ */
+export const MATCH_CREW: readonly string[] = ["helm", "hornet", "hornet", "f35", "boat", "ciws-port", "sam-stbd", "gun-5in"]
+
+/** The behavior a match bot of operation `role` runs. */
+export const matchBehavior = (role: string): BotBehavior => (botKind(role) === "gun" ? "engage" : "match")
 
 /** Callsigns: a bot is "BOT·VIPER" (CREW.nameMax is 16). */
 export const BOT_CALLSIGNS = ["VIPER", "JESTER", "ICEMAN", "COUGAR", "HANGMAN", "PHOENIX", "ROOSTER", "SLIDER", "MERLIN", "GOOSE", "STINGER", "HOLLY", "WOLF", "RAPTOR", "BANDIT", "SPECTRE", "COBRA", "HAVOC", "TALON", "RAVEN", "GHOST", "BLAZE", "NOMAD", "ZERO"]

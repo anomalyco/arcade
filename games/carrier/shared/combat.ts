@@ -611,7 +611,7 @@ export type CombatEvent =
    * A missile or bomb struck carrier `ship` (direct: `near` 0, ship-local x, y, z of the hit), or a bomb burst in the
    * water `near` m from its hull (ship-local point of the burst). shared/fleet.ts turns it into damage.
    */
-  | { k: "ship"; ship: number; owner: number; w: WeaponKind; x: number; y: number; z: number; near: number }
+  | { k: "ship"; ship: number; owner: number; seq: number; w: WeaponKind; x: number; y: number; z: number; near: number }
   /** A missile turned onto a flare. */
   | { k: "decoy"; owner: number; seq: number }
 
@@ -952,7 +952,7 @@ export class CombatWorld {
       const before = worldToShip(sh, px, py, pz, lq)
       // Came down through the deck: it burst on the deck.
       if (before[1] >= DECK_Y && lp[1] < DECK_Y) lp[1] = DECK_Y
-      this.events.push({ k: "ship", ship: sh.id, owner: m.owner, w: m.kind, x: lp[0], y: lp[1], z: lp[2], near: 0 })
+      this.events.push({ k: "ship", ship: sh.id, owner: m.owner, seq: m.seq, w: m.kind, x: lp[0], y: lp[1], z: lp[2], near: 0 })
       return
     }
     if (kind !== "sea" || m.kind !== "bomb" || !g.ships) return
@@ -960,7 +960,7 @@ export class CombatWorld {
       if (sh.id === undefined || Math.abs(m.x - sh.x) > 260 || Math.abs(m.z - sh.z) > 260) continue
       const l = worldToShip(sh, m.x, seaY, m.z, lp)
       const d = waterlineDistance(l[0], l[2])
-      if (d <= FLEET.near) this.events.push({ k: "ship", ship: sh.id, owner: m.owner, w: "bomb", x: l[0], y: 0, z: l[2], near: Math.max(0.5, d) })
+      if (d <= FLEET.near) this.events.push({ k: "ship", ship: sh.id, owner: m.owner, seq: m.seq, w: "bomb", x: l[0], y: 0, z: l[2], near: Math.max(0.5, d) })
     }
   }
 

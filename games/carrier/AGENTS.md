@@ -47,6 +47,13 @@
   CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); G full map (hold, tap to pin; the radar and target markers show by themselves in flight, CONTRACTS.md "Pilot's map"); T chat to everyone, Y to your carrier's crew (Tab in the input switches; Enter sends, Esc cancels; the input owns the keyboard; `src/ui/chat.ts`, rules `shared/chat.ts`); M mute; ` dev panel (dev builds). Shared rules: `shared/{crew,squad,ops}.ts`.
 - Objective: capture zones (CONTRACTS.md "Capture zones"): hold a 650 m zone alone to score; zones move every
   5 minutes; first carrier to 1,200 points wins the round.
+- Balance: `bun scripts/balance.ts` plays many full 32-bot matches headlessly on the real `RoomCore` (no browser, no
+  sockets, the clock driven directly: ~20-45× real time per core, every core in parallel, deterministic per seed) and
+  reports match length, zone play, ship damage by source, time to sink, kills by weapon, hit rates and more with 95%
+  intervals, plus JSON and an HTML report in `captures/balance/<run>/`. Override any tunable without editing source
+  (`--set FLEET.bomb=60`, `--sweep COLLIDE.harmMax=300,650`, `--overrides file.json`), give sides or roles their own
+  skill (`--team1.skill=0.9`, `--role.gun-5in.accuracy=0.3`), and `--assert` exits 1 on degenerate outcomes. The match
+  bots behind it are CONTRACTS.md "Bots"; run it after any balance change and quote its numbers.
 - Sound: one mix in `src/audio/mixer.ts` (`CARRIER_MIX` on the kit's `AudioRuntime`); every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
   `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`) and is a shared library id the Lab can audition (`SLOT_LIBRARY_ID`). Sounds tab of the
   dev panel (or `?sounds=1`): audition every take and pick by ear; Audio tab: levels. See CONTRACTS.md "Sound".
