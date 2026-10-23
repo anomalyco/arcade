@@ -7,7 +7,7 @@ await using budget = browserBudget()
 const { chromium } = budget
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "woods"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -73,17 +73,17 @@ try {
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
   // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" || game === "outbreak" || game === "woods" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" || game === "outbreak" || game === "barbara" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
   // requestAnimationFrame: rAF polls stall while a software GPU is busy compiling or drawing.
   const ready = await page.waitForFunction(game => {
-    if (game === "woods") {
+    if (game === "barbara") {
       const status = document.querySelector("#hud")?.textContent
       if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
       // Under ?smoke the woods draw two frames at low trunk density, then pause.
-      return window.woods?.ready && window.woods.frames >= 2 ? "woods ready" : false
+      return window.woods?.ready && window.woods.frames >= 2 ? "barbara ready" : false
     }
     if (game === "nightshift") {
       const status = document.querySelector("#hud")?.textContent
@@ -144,7 +144,7 @@ try {
     }))
     console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
   }
-  if (game === "woods") {
+  if (game === "barbara") {
     const exposure = await page.evaluate(() => {
       const w = window.woods, forest = w.view.forest, s = forest.settings
       if (w.renderer.sceneMeterStatus !== "off") throw new Error("smoke unexpectedly enabled the meter")
@@ -172,7 +172,7 @@ try {
       } finally { Object.assign(s, saved); update(input) }
       return samples
     })
-    console.log(`woods: pre-0c2cdc70 smoke exposure parity (${exposure.length} exact matches)`)
+    console.log(`barbara: pre-0c2cdc70 smoke exposure parity (${exposure.length} exact matches)`)
     await page.evaluate(() => window.woods?.renderer.passContext.device.queue.onSubmittedWorkDone())
   }
   if (game === "nightshift") {

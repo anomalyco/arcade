@@ -27,7 +27,7 @@ proven animation techniques to animation.md, not here.
 - **Separate highlight clipping from bloom, and foliage geometry from shadow motion (Woods, round 5 candidate).**
   The opt-in log shoulder in `forest/post.ts` bounds the peak while preserving RGB ratios: fixed close-bark clipping
   9.52% → 0%, hotspot high-pass detail 3.24×, equal exposure. Bloom still leaves a pale patch relative to the target.
-  The slow walk in `games/woods/scripts/autoresearch-motion.ts` records video and per-layer near/far counts:
+  The slow walk in `games/barbara/scripts/autoresearch-motion.ts` records video and per-layer near/far counts:
   disabling torch shadows cuts reprojected excursions 578.06 → 185.03/frame; forcing near ferns adds only .15/frame.
   Large spikes also occur without visible-count changes. This implicates shadow behaviour, not a measured fern-LOD
   fix; moving illumination also affects the metric. No foliage change retained. See `perf/woods-autoresearch.md`.
@@ -65,12 +65,12 @@ proven animation techniques to animation.md, not here.
   6.09/255 road, 15.70 lot and 9.58 booth; these include the newer lamp/fog/window treatment and do not establish
   visual parity or a before/after improvement. Evidence is in `lot-2026-10-20/detail-iteration-5` in the gallery.
 
-- **Shared distant sounds and a gust field that travels (Woods).** `games/woods/shared/distant.ts` keeps the dread
+- **Shared distant sounds and a gust field that travels (Woods).** `games/barbara/shared/distant.ts` keeps the dread
   schedule as plain seeded data stepped with only + − × ÷ √ (rejection-sampled directions, no trig) inside
   `stepWoods`, so the room picks sound, take, place and emission time and each client adds its own travel delay (d / 343 m/s), distance
   low-pass and forest reverb. Canopy wind is four voices 26 m around the listener, each reading a gust field that
   moves downwind at 7 m/s, so gusts audibly cross the trees; exposure from local relief puts the ridge 11.5 dB over a
-  hollow. Measured in Chrome offline renders (`games/woods/scripts/audio-proof.ts`, gallery `woods-2026-10-21/audio`).
+  hollow. Measured in Chrome offline renders (`games/barbara/scripts/audio-proof.ts`, gallery `woods-2026-10-21/audio`).
 
 - **Shared quiet first-person walking (Lot / Night Shift).** `client/walk` and `client/walk-camera` share the
   actual-displacement contact clock and critically damped presentation; Night Shift's adapter keeps chair impacts
@@ -1547,13 +1547,13 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
   bounds: this is a retained improvement for review, not a complete target match. Stronger toes and weakly adaptive
   fixed keys were rejected. The classic centre meter remains selectable. See `perf/woods-autoresearch.md` and the
   exposure checkpoint linked there; the prior uniform p5 guard rejects two targets themselves.
-- Kit: with everyone's lights on "the whole screen seems kind of washed out". Measured at one pose with 0/1/2/4 torches (`games/woods/scripts/capture.ts` shots `l0`–`l4`, a `woods.debug.dark` list hides chosen torches): one torch lifted the frame's 5th-percentile luma from 0.004 to 0.086 and left 0 % of pixels below 0.05; lens glare and bloom made no difference.
+- Kit: with everyone's lights on "the whole screen seems kind of washed out". Measured at one pose with 0/1/2/4 torches (`games/barbara/scripts/capture.ts` shots `l0`–`l4`, a `woods.debug.dark` list hides chosen torches): one torch lifted the frame's 5th-percentile luma from 0.004 to 0.086 and left 0 % of pixels below 0.05; lens glare and bloom made no difference.
 - Causes, all in the fog volume (`packages/kit/gpu/fog-scatter.ts`): the global cone `leak` (1.5 % of peak, all round the lamp) added to a torch's beam profile radiated about as much flux as the beam; torches were also baked into the bank's isotropic glow map; the bank scaled beam in-scatter by up to 7× with no matching extinction. Fixes: profiled (`FogLamp.beam`) lamps take no leak, torches pass `uplight: 0` (as Outbreak's do), and the `bankExtinction` hook dims each beam sample by the bank's path-mean σ on the lamp and eye legs.
 - Auto exposure metered one raycast point of the local beam, so a level beam (hit 40 m) read as dark and opened +1.5 stops while four beams lit the fog. `LuminanceMeter` (`packages/kit/gpu/meter.ts`, `Renderer.setMeter`) reduces the scene-referred image after the fog to 64×36 block means and reads them back through a 3-buffer ring a few frames late; the first version keyed on its centre-weighted mean × `meterGain` 3 (now the selectable reference model). Captures that step frames in a loop must yield (`setTimeout 0`) for `mapAsync` to land.
 - Your own beam is seen as backscatter. The fixed 15 % isotropic share in the lamp phase nearly triples HG(0.75)'s backscatter and drew Kit's "solid wedge"; it is now `FogSettings.phaseFloor` (default 0.15, forest 0.03).
 - Result at 1/2/4 torches: p5 0.020/0.016/0.024 (was 0.086/0.114/0.094), mean ≈ 0.10 (was 0.19–0.23), 31–46 % dark (was 0 %). Sheet: `~/code/home/artifacts/woods-2026-10-21/look/washout/index.html`.
 - Boot: the forest build called the woods terrain function ~4 M times; 66 ns each in Bun but ~4 µs each in the page, so `?smoke` took 29–68 s against the 55 s deadline. `buildForest` now samples the game's height once on the terrain mesh's 1 m grid (`forestHeightGrid`, out to the last terrain chunk plus 12 m) and reads the same triangles back (`gridHeight`): ~0.29 M calls, smoke boots in 5–11 s, and props stand on the surface as drawn.
-- The build runs on a worker (`packages/kit/forest/offthread.ts` `ForestBuilder`, `build-worker.ts`): the page samples the grid (the game's height is a function, so it can't cross), the world without `height` and the models go over by transfer, and the build comes back by transfer; the geometry is byte for byte the page's (`forest/build.test.ts`). Spawn the worker before the asset fetches, or its script queues behind the 58 texture images on the host's six connections (that cost 2 s). Six alternating A/B boots on pro: frame 2 median 7.3 s → 6.7 s; the worker's build is ~1.4× slower than the same build on the page, so the win is the overlap with texture decode and a main thread free for the loading screen, not 2–3 s. Boot marks: `woods:grid`, `:models`, `:worker`, `:textures`, `:build`, `:world`, `:frame1/2` (`scripts/smoke.mjs` prints them on a timeout; `games/woods/scripts/boot-profile.ts` prints them and the top self time).
+- The build runs on a worker (`packages/kit/forest/offthread.ts` `ForestBuilder`, `build-worker.ts`): the page samples the grid (the game's height is a function, so it can't cross), the world without `height` and the models go over by transfer, and the build comes back by transfer; the geometry is byte for byte the page's (`forest/build.test.ts`). Spawn the worker before the asset fetches, or its script queues behind the 58 texture images on the host's six connections (that cost 2 s). Six alternating A/B boots on pro: frame 2 median 7.3 s → 6.7 s; the worker's build is ~1.4× slower than the same build on the page, so the win is the overlap with texture decode and a main thread free for the loading screen, not 2–3 s. Boot marks: `woods:grid`, `:models`, `:worker`, `:textures`, `:build`, `:world`, `:frame1/2` (`scripts/smoke.mjs` prints them on a timeout; `games/barbara/scripts/boot-profile.ts` prints them and the top self time).
 - The forest's fog changes are opt-ins, so the Lot, Outbreak and Night Shift compile the classic shader byte for byte (checked against woods 003c7733 for every game's real hooks; `fog-scatter.test.ts` pins the hashes): `fogScatterVolume({ torches: true })` gives beam-profiled torches without leak, the d²/(d²+size²) near field and `FogSettings.phaseFloor`; `bankLocal` or `bankExtinction` give the stratified bank (floor from the game, soft shoulder, closed-form depth).
 
 ### Lot storm: one strike envelope, rain only where lit (2026-10-21)
@@ -1790,7 +1790,7 @@ Candidates from the code audits; measure and playtest before moving any into the
   strobe". Three causes: solo bots were drawn at the 60 Hz sim tick (every other frame repeated on a 120 Hz screen, and
   0 or 2 ticks a frame when rAF wobbles at 60 Hz); bot and remote headings snap (a new heading is set in one tick), so
   the beam axis jumped up to 40° in a frame; and battery flicker was a 0.15/0.75 square wave read on the sim or 15 Hz
-  snapshot clock. Fixes in `games/woods`: `SoloSession.frame(dt, alpha)` draws a copy of each friend between their
+  snapshot clock. Fixes in `games/barbara`: `SoloSession.frame(dt, alpha)` draws a copy of each friend between their
   last two ticks (`state` stays the sim), `FriendsView` puts each beam's direction on an exact critically damped
   spring (`beamSettle` 0.12 s) and eases brightness over 40 ms, and `beamLevel` is a soft sputter evaluated on the
   page clock. `scripts/jitter.ts` (raw `?smooth=0` against smoothed, same worker): solo bots on a 120 Hz clock 53% →

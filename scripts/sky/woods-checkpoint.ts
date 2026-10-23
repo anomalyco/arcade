@@ -8,7 +8,7 @@ import type { ForestView } from "../../packages/kit/forest/view"
 
 const out = resolve(process.env.SKY_OUT ?? "captures/sky-woods")
 await mkdir(out, { recursive: true })
-const root = resolve("games/woods/dist/arcade/woods")
+const root = resolve("games/barbara/dist/arcade/barbara")
 const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
   const path = new URL(req.url).pathname.replace(/^\/arcade\/woods\//, "")
   const file = resolve(root, path || "index.html")
@@ -33,7 +33,7 @@ try {
     const configure = GPUCanvasContext.prototype.configure
     GPUCanvasContext.prototype.configure = function(c) { configure.call(this, { ...c, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC }) }
   })
-  await page.goto(`http://127.0.0.1:${server.port}/arcade/woods/?bench=1&quality=high`, { timeout: 120000 })
+  await page.goto(`http://127.0.0.1:${server.port}/arcade/barbara/?bench=1&quality=high`, { timeout: 120000 })
   await page.waitForFunction(() => typeof woods !== "undefined" && woods.frames > 2, undefined, { timeout: 240000 })
   await page.evaluate(() => {
     woods.autoplay = true; woods.paused = true; woods.camera.flashlight = false

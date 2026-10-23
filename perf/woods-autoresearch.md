@@ -5,11 +5,11 @@ Headless Metal and muted. Run on the Mac mini with approved HiveMind browser adm
 
 ```sh
 hivemind run --worker mini --kind browser --browser-approval "Kit: Astra autoresearch on the woods look" -- bun -e '
-  const build = Bun.spawn(["bun", "run", "build"], {cwd: "games/woods", stdout: "inherit", stderr: "inherit"});
+  const build = Bun.spawn(["bun", "run", "build"], {cwd: "games/barbara", stdout: "inherit", stderr: "inherit"});
   if (await build.exited) process.exit(1);
   process.env.AUTORESEARCH_OUT = "captures/woods-autoresearch/run";
-  await import("./games/woods/scripts/autoresearch.ts")'
-uv run games/woods/scripts/autoresearch-score.py captures/woods-autoresearch/run ~/code/home/artifacts/woods-2026-10-21
+  await import("./games/barbara/scripts/autoresearch.ts")'
+uv run games/barbara/scripts/autoresearch-score.py captures/woods-autoresearch/run ~/code/home/artifacts/woods-2026-10-21
 ```
 
 HiveMind may spill an occupied mini to another worker. Check its receipt and the adapter in `capture.json`; do not label
@@ -144,7 +144,7 @@ deferred at the mandatory paint-over checkpoint.
 
 - [Paint-over checkpoint](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/exposure-checkpoint/index.html)
 - [Full exposure report](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/EXPOSURE-REPORT.md)
-- [Live retained preview](https://studio.taila8e7c7.ts.net:5322/arcade/woods/?quality=high)
+- [Live retained preview](https://studio.taila8e7c7.ts.net:5322/arcade/barbara/?quality=high)
 
 ## Round 3: exposure reset, near-field fog and indexed templates
 
@@ -205,8 +205,8 @@ assertions at 3.18 KB/s/client; the post-reload Worker log is free of the inheri
 
 - [Before/after and fresh paint-over checkpoint](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/index-checkpoint/index.html)
 - [Full ledger](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/LEDGER.md)
-- [Look preview](https://studio.taila8e7c7.ts.net:5322/arcade/woods/?quality=high)
-- [Room preview](https://studio.taila8e7c7.ts.net:5298/arcade/woods/)
+- [Look preview](https://studio.taila8e7c7.ts.net:5322/arcade/barbara/?quality=high)
+- [Room preview](https://studio.taila8e7c7.ts.net:5298/arcade/barbara/)
 
 ## Review follow-up: optional clear near air
 

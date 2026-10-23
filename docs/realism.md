@@ -56,11 +56,20 @@ links to those instead of repeating them.
 
 ## Lights
 
-**Catalogue night sky.** `packages/kit/sky` draws Yale catalogue stars with atmospheric
-extinction and a pixel-integrated point spread, plus a NASA-textured lunar disk. The
-host supplies scene radiance calibration and owns exposure. `moonLight()` supplies
-direction and lux for lighting. Today remains the default. See [night-sky ledger](../perf/night-sky.md)
-for the isolated +0.204 ms mini/Metal measurement and its scope.
+**Catalogue night sky (`night-sky`).** `packages/kit/sky` draws 9,096 Yale catalogue stars with
+temperature colours, atmospheric extinction, sidereal rotation and a pixel-integrated point spread. Airglow and
+a faint procedural Galactic band sit behind a NASA-textured, half-degree Moon. The host supplies linear scene
+units per cd/m² and owns exposure. `moonLight()` supplies lux and direction for the host's shadowed lighting.
+- Where: on by default in Barbara (through `@arcade/kit/forest`, Today one setting away; its software-GPU smoke keeps
+  Today); opt-in adapters in Lot, Night Shift, Outbreak and the shared world/Sky station, where Today is the default.
+- Cost: initial sky-only mini Metal proof, 1920×1080 MSAA4, +0.204 ms median (MAD 0.028 ms); this precedes the
+  lunar occultation and mip-filtering follow-up. No whole-game cost claim.
+- Stability: integrated star energy varies 0.035% across 32 subpixel positions. Translation-free sky TAA drifts
+  0.031 px after 64 m camera travel in the isolated production-pass fixture.
+- Kit: turned it on for Barbara at its ship. Calibrated exposure and cloud composition remain integration work.
+  Measurements and boundaries: [night-sky ledger](../perf/night-sky.md), [woods integration](../perf/night-sky-woods.md).
+- Pitfalls: do not use a long-exposure photograph's brightness as an eye-level target; do not raise forest ambient
+  to make stars visible. Moon mips filter in linear light, and the unlit disk also occludes stars.
 
 **Physical lights and surfaces.** GGX with height-correlated Smith, Karis sphere-light widening so a fixture
 mirrors as a patch, geometric specular AA, and a split-sum sky reflection with a fitted env BRDF. Reads as wet
@@ -186,7 +195,7 @@ also stamps base darkening and edge tone into `v.color.a` on its buildings and p
 
 ## Fog, mist and volumetrics
 
-- **Clear air near you (Woods):** `packages/kit/forest/view.ts` scales torch in-scatter from 10% at the eye to 100% at 8 m, with −0.25-stop compensation only while your torch is on; measured renderer GPU delta −0.031 to +0.053 ms (mini/Metal, High, 1600×900, three views; [measurements](../perf/woods-autoresearch.md#review-follow-up-optional-clear-near-air)). Default on in unshipped Woods and its Lab page at Kit's request; **Kit's final visual decision is pending**. Mist → Clear air near you → off restores Today, including its exposure target, after adaptation settles; smoke stays Today.
+- **Clear air near you (Woods):** `packages/kit/forest/view.ts` scales torch in-scatter from 10% at the eye to 100% at 8 m, with −0.25-stop compensation only while your torch is on; measured renderer GPU delta −0.031 to +0.053 ms (mini/Metal, High, 1600×900, three views; [measurements](../perf/woods-autoresearch.md#review-follow-up-optional-clear-near-air)). Default on in Barbara and its Lab page at Kit's request; **Kit's final visual decision is pending**. Mist → Clear air near you → off restores Today, including its exposure target, after adaptation settles; smoke stays Today.
 
 **Lamp airlight in height fog.** Exponential height fog with closed-form optical depth; each pixel takes 4
 equiangular samples per lamp along the view ray, so every lamp hangs in the air with a soft cone. Half resolution with

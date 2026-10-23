@@ -4,7 +4,7 @@ import { defineStation } from "./define"
 // The woods game itself at the camera lab's fixed night spot (`?lab=camera` runs `stageCameraLab`: 70 m north of camp,
 // your torch on, two friends searching with theirs, the sim running without pointer lock; the `woods.camera.stage`
 // command puts you back). Click the woods to walk and look.
-const page = "/arcade/woods/?lab=camera"
+const page = "/arcade/barbara/?lab=camera"
 const set = (key: string, value: number | boolean | string): StationCommand => ({ command: "scene.set-param", args: { key, value } })
 
 // Two groups that compose: a Look (resets every camera setting, then its preset), then one realism effect on top.
@@ -43,9 +43,9 @@ export default defineStation({
     { label: "GPU per look", value: "under 1 ms", source: "~/code/home/artifacts/woods-2026-10-21/camera-lab/index.html" },
     { label: "Eyes (all off)", value: "no final pass, same path as today", source: "packages/kit/gpu/post/camera-artifacts.test.ts" },
   ],
-  paths: ["games/woods/src/camera-look.ts", "games/woods/src/eyeshine.ts", "packages/kit/gpu/post/camera-artifacts.ts", "packages/kit/gpu/post/final-chain.ts"],
+  paths: ["games/barbara/src/camera-look.ts", "games/barbara/src/eyeshine.ts", "packages/kit/gpu/post/camera-artifacts.ts", "packages/kit/gpu/post/final-chain.ts"],
   branches: ["woods-camera"],
-  links: [{ label: "Play the woods", href: "/arcade/woods/" }],
+  links: [{ label: "Play Barbara", href: "/arcade/barbara/" }],
   layout: {
     right: [{ widget: "controls", groups: ["Camera look"], title: "Camera look" }],
     dock: [{ widget: "variants" }],
