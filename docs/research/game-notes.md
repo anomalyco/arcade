@@ -31,6 +31,13 @@ proven animation techniques to animation.md, not here.
   Use replays and unit tests for logic work, scoped to changed games. Real play is for iterating on that game's
   look or feel; unchanged games do not need repeated play. Long difficulty and soak coverage remains separate.
 
+- **Measure decoded WebRTC audio, not just connected peers.** Chromium can exchange Opus RTP with a live remote
+  track while a WebAudio-only sink receives zero samples. `packages/kit/voice/client.ts` keeps a muted media element
+  per remote stream to start decoding; the audible path remains the positional/radio graph. The two-context
+  `scripts/prove-voice.ts` proof measured received RMS 0.03392 at 2 m, 0.00073 at 30 m and 0.00139 behind an
+  obstruction on Pro. Offline replay of the received PCM was silent beyond proximity range while radio at 300 m
+  remained nonzero. `addTrack` also avoids a recvonly answer from a separately created transceiver.
+
 - **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
   halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
   non-emissive surfaces in HDR alpha; `forest/post.ts` limits those source taps before the bloom downsample.

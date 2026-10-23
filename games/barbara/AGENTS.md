@@ -55,6 +55,19 @@
 
 ## Sound
 
+- Room microphone chat: `src/voice-chat.ts` adapts `@arcade/kit/voice` to the rendered heads, forest reverb and
+  tree/terrain occlusion. The shared shell owns opt-in, voice volume/mode, mic mute and player mutes; V holds the
+  radio, B holds nearby push-to-talk, N mutes the mic, M keeps muting game output. It is absent from solo. Consented
+  chat keeps the shared context running in the lobby/menu while `WoodsAudio.quiet()` silences the world mix.
+  `server/room.ts` supplies optional Worker TURN credentials through authenticated room signalling. See
+  [voice-chat.md](../../docs/voice-chat.md) for setup and the silent two-client proof.
+
+- Voice stays opt-in and STUN-only until Kit adds TURN. In Cloudflare's **anomaly** account, create an Arcade key
+  under **Realtime → TURN**, and save the key ID and API token in the team's secret store. On Pro, use the anomaly
+  Wrangler profile to set `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` on **arcade-barbara** via stdin (never client config
+  or command arguments). Then verify two clients on distinct networks with relay-only ICE in a diagnostic build.
+  The server mints one-hour credentials; a temporarily exhausted mint budget returns STUN with a ten-second retry.
+
 - `src/audio/index.ts` `WoodsAudio`: library cues (`src/sfx.ts`), shared quiet footsteps (#398 levels, unchanged) and the soundscape, mixed in `WoodsMix` (feet at master × effects, woods at master × ambience, mute, one −6 dBFS limiter). Nothing is created or fetched before Begin (`audio.begin()` from the start screen's click; the bank's own any-gesture unlock is off) or a Lab audition. Then it plays while you are playing or have the knobs open; a hidden tab, lost pointer lock or the start screen stops every scheduled one-shot and suspends the context, so nothing plays late. Each file is fetched with `res.ok` checked and caught alone; a failed file is skipped (a one-shot uses another take) and fetched again every 10 s; the beds wait for all five bed files. LabPanel › Sound: wind, leaves, crickets, lake/dock, string-light buzz, room tone, road flares, distant-sound loudness, reverb, audition a distant sound, solo a layer; "how often" is a feel knob (`FEEL.distantRate`, solo only; a room uses 1).
 - `src/audio/soundscape.ts`: one Web Audio graph for live and `OfflineAudioContext`. Canopy wind from four points 26 m around you, each following `gustAt` (gust fronts sweep downwind at 7 m/s) and scaled by canopy density there and your `windExposure` (ridge ≈ 10 dB over a hollow); trunk creaks and branch knocks at real nearby trees in gusts; brown-noise room tone; leaves; crickets by `insectLevel` (thin out 25–140 m from camp, hush for 7 s after heavy steps); the lake at the nearest shore point, dock creaks, the string lights' synthesized 120 Hz buzz at the nearest bulb; indoors (cabin/mess hall rects) everything outside goes through a 480 Hz low-pass and the walls bed comes in. Positional one-shots get travel delay (343 m/s), `distanceGain` (−6 dB per 3.2× past 20 m), `distanceCutoff` low-pass, HRTF panning and a procedural forest reverb whose share grows with distance.
 - Road flares (`Soundscape.flareStrike`, `Soundscape.flares`, layer `flares`): the cap's scrape (`flare.strike`) where it's struck, the catch (`flare.ignite`) `FLARE_SCRAPE` later, and a positional hiss loop (`flare.burn`) on the nearest four burning, `0.75 / max(1.5 m, d)` × level, distance low-pass and reverb. Offline (`flare-proof.ts`): hiss −36.5 LUFS momentary max at 1 m, −45 at 5 m, −60 at 30 m; strike and catch −29 LUFS.

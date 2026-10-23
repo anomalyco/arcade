@@ -27,6 +27,7 @@ its own docs folder. Root `AGENTS.md` indexes visual work by task.
 - [threading.md](threading.md): worker ownership, dependencies, browser limits and ranked threading experiments.
   Read before moving CPU work off-thread or changing worker protocols.
 - [audio-design.md](audio-design.md): the shared audio engine and Audio Lab. Read before changing game sound.
+- [voice-chat.md](voice-chat.md): opt-in room voice, proximity and walkie audio, BARBARA's adapter, TURN setup and silent two-client proofs.
 - [sfx-library.md](sfx-library.md): the shared sound library (semantic ids, variants, licences, loudness targets),
   its offline generation and curation pipeline, and Outbreak's positional sound. Read before adding or replacing a
   sound; [sfx-inventory.md](sfx-inventory.md) measures every sound file in the repository.

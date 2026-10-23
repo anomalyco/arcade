@@ -5,6 +5,7 @@ import type { ShellFlow } from "./flow"
 import type { ShellLobby } from "./lobby"
 import type { ShellLoading } from "./page"
 import type { ShellRow, ShellSettings } from "./settings"
+import type { ShellVoice } from "./voice"
 
 /** A speaker with two waves and a cross; `data-level` on an ancestor shows muted, low or high. */
 export const SPEAKER_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9h4l5-4v14l-5-4H4z"/><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path class="as-w1" d="M16 9.5a3.5 3.5 0 0 1 0 5"/><path class="as-w2" d="M18.5 7a7 7 0 0 1 0 10"/><path class="as-x" d="M16 9l5 6M21 9l-5 6"/></g></svg>`
@@ -22,6 +23,7 @@ const TIER: Record<QualityTier, string> = { ultra: "Ultra", high: "High", balanc
 export type ShellPhase = "loading" | "title" | "paused" | "settings"
 
 export type ShellViewOptions = {
+  voice?: ShellVoice
   title: string
   subtitle?: string
   /** Play alone's label and small print (`Play alone` / `you and three campers`). */
@@ -131,6 +133,7 @@ export class ShellView {
     })
     const redraw = () => this.render()
     this.offs.push(settings.subscribe(redraw), flow.subscribe(redraw), onKeyLayoutChange(() => this.render(true)))
+    if (o.voice) this.offs.push(o.voice.subscribe(() => this.render()))
     if (lobby) this.offs.push(lobby.subscribe(redraw))
     if (loading) this.offs.push(loading.subscribe(redraw))
     // `blocked` (the Lab panel) changes outside the shell; one boolean read a frame keeps the overlay honest.
@@ -190,7 +193,7 @@ export class ShellView {
     if (phase !== this.decorPhase && this.o.decor) this.decor.innerHTML = this.o.decor(phase)
     this.decorPhase = phase
     const l = this.lobby
-    const key = [phase, this.muteCap(), l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels, l?.hasSolo].join("|")
+    const key = [phase, this.muteCap(), l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels, l?.hasSolo, this.o.voice?.enabled, this.o.voice?.pending, this.o.voice?.error].join("|")
     if (force || key !== this.layout) {
       this.layout = key
       this.card.toggleAttribute("data-enter", enter)
@@ -248,6 +251,18 @@ export class ShellView {
 
   private sync(): void {
     const s = this.settings
+    const voice = this.o.voice
+    if (voice) {
+      for (const el of this.card.querySelectorAll<HTMLInputElement>("[data-voice]")) {
+        const kind = el.dataset.voice
+        if (kind === "enabled") el.checked = voice.enabled
+        if (kind === "volume" && el.ownerDocument.activeElement !== el) el.value = String(Math.round(voice.volume * 100))
+      }
+      for (const b of this.card.querySelectorAll<HTMLButtonElement>("[data-act=voice-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === voice.mode))
+      const mic = this.card.querySelector<HTMLElement>("[data-act=voice-mic]")
+      if (mic) { mic.textContent = voice.micMuted ? "Unmute mic" : "Mute mic"; mic.setAttribute("aria-pressed", String(voice.micMuted)) }
+      for (const el of this.card.querySelectorAll<HTMLInputElement>("[data-voice-player]")) el.checked = voice.muted.has(el.dataset.voicePlayer!)
+    }
     for (const input of this.overlay.querySelectorAll<HTMLInputElement>("input[data-vol]")) {
       const v = s.volume(input.dataset.vol as never)
       if (input.ownerDocument.activeElement !== input) input.value = String(v)
@@ -279,8 +294,9 @@ export class ShellView {
     }
     // The line under the wordmark: what needs saying now (a bad code, a refused lock), else the screen's own line.
     // It holds two lines' height whatever it says, so the menu under it never moves.
-    const message = (this.phase === "title" && this.lobby?.message) || (this.flow.lockRefused && this.phase !== "settings" ? "Click again to play." : "")
-    const line = message || this.subText()
+    const titleVoice = this.phase === "title" ? voice : undefined
+    const message = (this.phase === "title" && this.lobby?.message) || titleVoice?.error || (this.flow.lockRefused && this.phase !== "settings" ? "Click again to play." : "")
+    const line = message || (titleVoice?.pending ? "Connecting microphone…" : this.subText())
     if (this.sub.textContent !== line) this.sub.textContent = line
     this.sub.classList.toggle("as-alert", Boolean(message))
     this.root.toggleAttribute("data-arming", this.flow.arming)
@@ -312,7 +328,7 @@ export class ShellView {
     else if (l?.friends)
       body = `${l.hasQuick ? this.item("quick", o.quickLabel ?? "Quick match", { primary: true, disabled: l.busy }) : ""}${l.hasSolo ? this.item("solo", o.soloLabel ?? "Play alone", { primary: !l.hasQuick, note: o.soloNote }) : ""}${this.item("friends", "Play with friends", { primary: !l.hasQuick && !l.hasSolo, note: o.friendsNote, disabled: l.busy })}<div class="as-join as-row"><span>Room</span><input type="text" data-field="code" placeholder="Room code or invite link" autocomplete="off" spellcheck="false" /><button class="as-inline" data-act="join">Join</button></div>${name}`
     else body = `${this.item(l ? "solo" : "play", o.playLabel ?? o.soloLabel ?? "Play", { primary: true })}${name}`
-    return `${body}${this.item("settings", "Settings")}`
+    return `${body}${this.voiceHtml(false)}${this.item("settings", "Settings")}`
   }
 
   private syncQuality(): void {
@@ -369,7 +385,21 @@ export class ShellView {
       : ""
     const sections = s.sections.map((sec) => `<div class="as-head">${esc(sec.title)}</div>${sec.rows.map((r) => this.rowHtml(sec.id, r)).join("")}`).join("")
     const controls = `<div class="as-head">Controls</div><label class="as-field"><span>Reduce camera motion</span><input type="checkbox" data-act="reduce-motion"${s.reduceMotion ? " checked" : ""} /><i></i></label><div class="as-field"><span>Key labels</span><div class="as-seg as-seg2">${KEY_LABEL_OPTIONS.map((k) => `<button data-act="key-labels" data-mode="${k.value}" aria-pressed="${s.keyLabels === k.value}">${esc(k.label)}</button>`).join("")}</div></div>`
-    return `<div class="as-settings">${sound ? `<div class="as-head">Sound</div>${vol}${mute}` : ""}${quality}${sections}${controls}</div>${this.item("back", "Done", { primary: true })}`
+    return `<div class="as-settings">${sound ? `<div class="as-head">Sound</div>${vol}${mute}` : ""}${this.voiceHtml(true)}${quality}${sections}${controls}</div>${this.item("back", "Done", { primary: true })}`
+  }
+
+  /** The title offers voice as one menu item; Settings holds the rest once it is on. */
+  private voiceHtml(settings: boolean): string {
+    const v = this.o.voice
+    if (!v) return ""
+    if (!settings) return this.item("voice-toggle", v.enabled ? "Turn off voice chat" : "Turn on voice chat", { disabled: v.pending })
+    const toggle = `<label class="as-field"><span>Voice chat</span><input type="checkbox" data-voice="enabled"${v.enabled ? " checked" : ""} /><i></i></label>`
+    const message = v.pending ? "Connecting microphone…" : v.error
+    const status = message ? `<div class="as-note" role="status">${esc(message)}</div>` : ""
+    if (!v.enabled) return `<div class="as-head">Voice</div>${toggle}${status}`
+    const players = this.lobby?.players.filter((p) => !p.you).map((p) => `<label class="as-field"><span>Mute ${esc(p.name || "…")}</span><input type="checkbox" data-voice-player="${esc(p.id)}" /><i></i></label>`).join("") ?? ""
+    const mode = `<div class="as-field"><span>Nearby voice</span><div class="as-seg as-seg2">${(["open", "push"] as const).map((m) => `<button data-act="voice-mode" data-mode="${m}" aria-pressed="${v.mode === m}">${m === "open" ? "Open mic" : "Push to talk"}</button>`).join("")}</div></div>`
+    return `<div class="as-head">Voice</div>${toggle}${status}<label class="as-field"><span>Voice volume</span><input type="range" data-voice="volume" min="0" max="100" step="5" /></label>${mode}<div class="as-field"><span>Microphone</span><button class="as-pick as-mute" data-act="voice-mic" aria-pressed="false">Mute mic</button></div>${players}`
   }
 
   private rowHtml(section: string, r: ShellRow): string {
@@ -384,6 +414,12 @@ export class ShellView {
     if (!t || (t as HTMLButtonElement).disabled) return
     const l = this.lobby
     switch (t.dataset.act) {
+      case "voice-mic":
+        return this.o.voice?.toggleMic()
+      case "voice-toggle":
+        return void this.o.voice?.setEnabled(!this.o.voice.enabled)
+      case "voice-mode":
+        return this.o.voice?.setMode(t.dataset.mode === "push" ? "push" : "open")
       case "play":
         return this.flow.play()
       case "solo":
@@ -431,6 +467,12 @@ export class ShellView {
 
   private input(e: Event): void {
     const t = e.target as HTMLInputElement
+    if (t.dataset.voice) {
+      if (t.dataset.voice === "enabled") void this.o.voice?.setEnabled(t.checked)
+      if (t.dataset.voice === "volume") this.o.voice?.setVolume(Number(t.value) / 100)
+      return
+    }
+    if (t.dataset.voicePlayer) return this.o.voice?.mute(t.dataset.voicePlayer, t.checked)
     if (t.dataset.vol) {
       this.settings.setVolume(t.dataset.vol as never, Number(t.value))
     } else if (t.dataset.act === "reduce-motion") this.settings.setReduceMotion(t.checked)

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { InputOps } from "./net/jitter-buffer"
 import { type Activity, type Conn, DEFAULT_GRACE_MS, DEFAULT_MSG_BURST, type IdleState, RoomCore } from "./net/room-core"
+import { VoiceRoom } from "./net/voice"
 
 type In = { mx: number; press: boolean }
 const ops: InputOps<In> = {
@@ -90,6 +91,32 @@ function client(room: TestRoom) {
 }
 
 describe("RoomCore seats", () => {
+  test("voice requires a seat and is removed on disconnect and idle kick", async () => {
+    const room = new TestRoom()
+    room.voice = new VoiceRoom()
+    const a = client(room), b = client(room)
+    const join = (c: ReturnType<typeof client>) => room.message(c.conn, '{"type":"voice.join"}')
+    const flush = () => new Promise<void>((resolve) => queueMicrotask(() => queueMicrotask(resolve)))
+    join(a)
+    await flush()
+    expect(a.got).toHaveLength(0)
+    const wa = a.hello()!, wb = b.hello()!
+    join(a); join(b)
+    await flush()
+    expect(a.got.some((m) => m.type === "voice.ready")).toBe(true)
+    room.close(a.conn)
+    expect(b.got.at(-1)).toMatchObject({ type: "voice.members", members: [{ id: wb.id }] })
+    room.now.t = 100_000
+    room.step()
+    expect(b.closed).toBe(4002)
+    // Even a late message from the kicked socket cannot re-enrol that old public identity.
+    b.got.length = 0
+    join(b)
+    await flush()
+    expect(b.got).toHaveLength(0)
+    expect(wa.id).not.toBe(wb.id)
+  })
+
   test("welcome carries a private token distinct from the public id", () => {
     const room = new TestRoom()
     const w = client(room).hello()!

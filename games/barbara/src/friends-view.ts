@@ -106,6 +106,14 @@ export class FriendsView {
     return this.realistic && this.real ? this.real.casters(from, reach) : []
   }
 
+  /** Actual displayed head, for positional chat and its speaking marker. */
+  head(id: number, world: WoodsWorld): V3 | null {
+    const real = this.realistic ? this.real?.head(id) : null
+    if (real) return real
+    const a = this.avatars.get(id), h = a?.body?.head.p
+    return a && h ? [h[0], h[1] + standHeight(world, a.x, a.y), h[2]] : null
+  }
+
   /** Where `p`'s beam points and how bright it is this frame, eased unless `smooth` is off. */
   private aim(p: Player, level: number, dt: number): Aim {
     const target = viewDir(p.yaw, p.pitch)
