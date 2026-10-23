@@ -178,6 +178,10 @@ export class Camera {
   dist = 24
   traumaSquared = true
   zoomOffset = 0
+  /** Orbit around the target (radians): 0 looks north from the south, the top-down default every game uses. */
+  yaw = 0
+  /** Height of the look-at point above the ground; raise it for a chase or over-the-shoulder view. */
+  lookHeight = 0
   readonly shakeSettings: CameraShakeSettings
   private lx = 0
   private lz = 0
@@ -391,11 +395,13 @@ export class Camera {
     this.lastOffset.zoom = zoom
     this.lastOffset.roll = roll
 
-    const target = [this.x + jx, 0, this.z + jz]
+    const target = [this.x + jx, this.lookHeight, this.z + jz]
     const dist = this.dist + zoom
     const h = Math.cos(this.pitch) * dist
-    this.eye = [target[0]!, Math.sin(this.pitch) * dist, target[2]! + h]
-    const view = mat4.lookAt(this.eye, target, [Math.sin(roll), Math.cos(roll), 0])
+    const sy = Math.sin(this.yaw)
+    const cy = Math.cos(this.yaw)
+    this.eye = [target[0]! + sy * h, this.lookHeight + Math.sin(this.pitch) * dist, target[2]! + cy * h]
+    const view = mat4.lookAt(this.eye, target, [Math.sin(roll) * cy, Math.cos(roll), -Math.sin(roll) * sy])
     const proj = mat4.perspective(this.fov, aspect, 2, 400)
     this.viewProj = mat4.multiply(proj, view)
     return this.viewProj as Float32Array

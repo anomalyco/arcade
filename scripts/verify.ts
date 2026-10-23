@@ -69,7 +69,7 @@ const jobs = budget("--jobs", "ARCADE_VERIFY_JOBS", "HIVEMIND_JOBS")
 const repo = resolve(import.meta.dir, "..")
 const testWorkers = budget("--test-workers", "ARCADE_VERIFY_TEST_WORKERS", "HIVEMIND_TEST_WORKERS")
 
-const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"]
+const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara", "timber"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
 
 type Target = { name: string; dirs: string[]; game?: string; independent?: boolean; check?: string }

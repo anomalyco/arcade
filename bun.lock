@@ -184,6 +184,20 @@
         "wrangler": "^4.149.0",
       },
     },
+    "games/timber": {
+      "name": "@arcade/timber",
+      "dependencies": {
+        "@arcade/kit": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.2",
+        "@webgpu/types": "^0.1.74",
+        "playwright-core": "^1.64.0",
+        "typescript": "7.1.0-beta",
+        "vite": "^8.3.4",
+        "wrangler": "^4.149.0",
+      },
+    },
     "games/walkers": {
       "name": "walkers",
       "dependencies": {
@@ -238,6 +252,8 @@
     "@arcade/lot": ["@arcade/lot@workspace:games/lot"],
 
     "@arcade/nightshift": ["@arcade/nightshift@workspace:games/nightshift"],
+
+    "@arcade/timber": ["@arcade/timber@workspace:games/timber"],
 
     "@cloudflare/kv-asset-handler": ["@cloudflare/kv-asset-handler@0.5.0", "", {}, "sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg=="],
 

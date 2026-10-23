@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>TIMBER</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d1016; color: #e8eef4; font-family: monospace; overflow: hidden; }
+      #view { width: 100vw; height: 100vh; display: block; }
+      #hud { position: fixed; bottom: 12px; left: 14px; pointer-events: none; font-size: 13px; display: flex; gap: 12px; align-items: center; opacity: 0.85; }
+      #status { position: fixed; top: 12px; left: 14px; pointer-events: none; font-size: 13px; display: flex; gap: 12px; align-items: center; }
+      #status .meter { width: 120px; height: 10px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.35); }
+      #status .meter.hp { width: 150px; }
+      #status .meter i { display: block; height: 100%; background: #e2483c; }
+      #status .cd { opacity: 0.7; }
+      #status .tag { padding: 2px 6px; font-weight: bold; letter-spacing: 0.08em; }
+      #status .tag.lj { background: #a3241b; }
+      #status .tag.sv { background: #23617a; }
+      #status .eng { opacity: 0.8; }
+      #status .eng.on { color: #ffb347; opacity: 1; }
+      #status .part { opacity: 0.35; border: 1px solid rgba(255, 255, 255, 0.3); padding: 1px 5px; }
+      #status .part.held { opacity: 0.85; border-color: #ffd36b; }
+      #status .part.in { opacity: 1; background: rgba(120, 220, 120, 0.3); border-color: #8be08b; }
+      #status, #feed, #hud, #clock, #hint { text-shadow: 0 1px 2px #000; }
+      #clock { position: fixed; top: 34px; left: 14px; font-size: 18px; pointer-events: none; letter-spacing: 0.08em; }
+      #hint { position: fixed; bottom: 54px; left: 50%; transform: translateX(-50%); font-size: 14px; pointer-events: none; display: none;
+        background: rgba(0, 0, 0, 0.45); padding: 6px 12px; }
+      .arrow { position: fixed; left: -9px; top: -9px; width: 0; height: 0; display: none; pointer-events: none;
+        border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 18px solid #ff5a3c; filter: drop-shadow(0 0 6px #ff5a3c); }
+      #truckping { border-left-color: #ffd36b; filter: drop-shadow(0 0 4px #ffd36b); }
+      #glare { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle, #fff 0%, #ffe9e0 40%, rgba(255, 200, 190, 0.7) 100%); }
+      .tb-picks { display: flex; gap: 10px; margin: 8px 0; }
+      .tb-picks button { flex: 1; display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px 12px; cursor: pointer;
+        font: inherit; color: inherit; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.25); }
+      .tb-picks button.on { border-color: #ffb347; background: rgba(255, 179, 71, 0.15); }
+      .tb-picks small { opacity: 0.75; line-height: 1.4; }
+      #feed { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 13px; text-align: right; line-height: 1.6; text-shadow: 0 1px 2px #000; }
+      #banner { position: fixed; inset: 0; display: none; flex-direction: column; gap: 10px; align-items: center; justify-content: center; pointer-events: none; text-shadow: 0 2px 6px #000; }
+      #banner b { font-size: 34px; letter-spacing: 0.06em; }
+      #banner span { font-size: 14px; display: flex; gap: 8px; align-items: center; }
+      #cut { position: fixed; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; display: none; pointer-events: none;
+        -webkit-mask: radial-gradient(circle, transparent 11px, #000 12px); mask: radial-gradient(circle, transparent 11px, #000 12px); }
+      #bars { position: fixed; inset: 0; pointer-events: none; }
+      #bars .bar { position: absolute; left: 0; top: 0; width: 44px; height: 4px; background: rgba(0, 0, 0, 0.55); }
+      #bars .bar i { display: block; height: 100%; }
+      #bars .bar.down { height: 6px; }
+      #bars .bar.down i { background: #e2483c; }
+      #bars .bar.down b { position: absolute; left: 0; top: 0; height: 100%; background: #8be08b; }
+      #bars .tagline { position: absolute; left: 0; top: 0; font-size: 12px; color: #ffb347; text-shadow: 0 1px 2px #000; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="glare"></div>
+    <div id="bars"></div>
+    <div id="ping" class="arrow"></div>
+    <div id="truckping" class="arrow"></div>
+    <div id="clock"></div>
+    <div id="hint"></div>
+    <div id="cut"></div>
+    <div id="status"></div>
+    <div id="feed"></div>
+    <div id="banner"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

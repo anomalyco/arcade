@@ -7,7 +7,7 @@ await using budget = browserBudget()
 const { chromium } = budget
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara", "timber"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -96,6 +96,11 @@ try {
       if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
       // Under ?smoke the Lot submits exactly two frames, then pauses.
       return window.lot?.ready && window.lot.frames >= 2 ? "lot ready" : false
+    }
+    if (game === "timber") {
+      const status = document.querySelector("#hud")?.textContent
+      if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
+      return document.querySelector(".arcade-shell") && window.timber?.frames >= 2 ? "timber ready" : false
     }
     if (game === "lab") {
       const notice = document.querySelector("[data-lab-notice]")?.textContent
