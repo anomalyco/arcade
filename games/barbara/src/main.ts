@@ -229,6 +229,7 @@ async function main() {
     else if (what === "thunder") storm.thunder()
     else if (what === "gust") storm.gust()
     else if (what === "creature") creature.trigger()
+    else if (what === "flare") flareTrigger()
     else if (what === "distant") void audio.auditionNow(DISTANT_SOUNDS[Math.floor(Math.random() * DISTANT_SOUNDS.length)]!)
   }
   panel.addControls(lookState as unknown as Bag as Record<string, string>, [
@@ -236,7 +237,7 @@ async function main() {
     { key: "woods.lookNote", label: "This look", group: LOOKS_SECTION, type: "readout", read: () => LOOKS[lookState.look].note },
     { key: "woods.triggers.lightning", label: "Lightning strike", group: LOOKS_SECTION, type: "buttons", items: (["near", "mid", "far"] as const).map((d) => ({ key: `woods.trigger.${d}`, label: d === "near" ? "Near" : d === "mid" ? "Mid" : "Far", run: () => trigger(d) })) },
     { key: "woods.triggers.sound", label: "Sounds", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.thunder", label: "Thunder only", run: () => trigger("thunder") }, { key: "woods.trigger.distant", label: "A distant sound", run: () => trigger("distant") }] },
-    { key: "woods.triggers.woods", label: "In the woods", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.gust", label: "A gust", run: () => trigger("gust") }, { key: "woods.trigger.creature", label: "The creature", run: () => trigger("creature") }] },
+    { key: "woods.triggers.woods", label: "In the woods", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.gust", label: "A gust", run: () => trigger("gust") }, { key: "woods.trigger.creature", label: "The creature", run: () => trigger("creature") }, { key: "woods.triggers.flare", label: "A flare", run: () => trigger("flare") }] },
   ])
   const askedLook = params.get("look") ?? lookState.look
   if (askedLook !== "today" && askedLook in LOOKS) pickLook(askedLook as LookId)
