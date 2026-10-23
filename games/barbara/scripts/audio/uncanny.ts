@@ -3,12 +3,11 @@
 //
 //   bun scripts/audio/uncanny.ts analyze [src.id…]   pitch tracks of the curated takes, to pick and cut by
 //   bun scripts/audio/uncanny.ts compose            writes $WORK/composed/<id>/<n>.f32 (+ .wav, .json); `sounds.ts build` encodes them
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { decode } from "../../../../scripts/sfx/decode"
 import { pitchTrack, SR } from "./dsp"
 
-const game = new URL("../../", import.meta.url).pathname
 export const work = process.env.WOODS_SFX_WORK ?? join(process.env.TMPDIR ?? "/tmp", "opencode/woods-sfx")
 
 type Candidate = { name: string; take: number; raw: string; pcm: string; tags?: string; stats: { durationSeconds: number; momentaryMaxLufs: number } }
