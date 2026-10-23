@@ -17,7 +17,7 @@ for (const file of args) {
   const { width, height } = info.streams[0]
   const png = "data:image/png;base64," + Buffer.from(await Bun.file(file).arrayBuffer()).toString("base64")
   const frame = await decode({ png, width, height, exposure: 1, time: 0 })
-  rows.push({ file, ...qualityGates(frame, {}, { slabBrightness: 0.012, slabMaxCv: 0.3 }) })
+  rows.push({ file, ...qualityGates(frame, {}, { slabBrightness: 0.012, slabMaxCv: 0.3 }, regression ? "fail" : "warn") })
   await Bun.write(`${out}/${rows.length}-${basename(file)}`, Bun.file(file))
 }
 await Bun.write(`${out}/history.json`, JSON.stringify(rows, null, 2))

@@ -22,7 +22,8 @@ include `?qualityGate` and the desired quality tier. `--out` changes the output 
 a fresh browser/page capture of the first state after the warm sweep. The whole command shares one 180 s
 `browserBudget()`, including cold samples, and launches headless with audio muted.
 
-Exit 0 means every requested state and gate passed with no browser errors. A gate failure, unsupported requested
+Exit 0 means every requested state completed without failed gates or browser errors; advisory warnings are allowed.
+A gate failure, unsupported requested
 probe, browser error or incomplete run exits nonzero. Read `scoreboard.json` (`complete`, `pass`, `errors`, `fatal`,
 per-state `gates`) before using `index.html` or `contact-sheet.svg`. `ledger.md` includes capture timings.
 Incomplete runs overwrite the previous success status before server startup. Old image files may remain in a reused
@@ -46,6 +47,9 @@ directory; only rows in the current scoreboard belong to that run.
 IDs are unique safe filenames. Unknown fields, invalid control values and invalid thresholds fail validation.
 Top-level `limits` override defaults; each row can override them again. Record why a threshold differs from the
 default in the proof report. Keep resolution fixed when comparing the 300-pixel subject-area threshold.
+Slab checks default to `"warn"` because legitimate nearby surfaces can match the heuristic. Set
+`"slabSeverity": "fail"` at the top level or on a state to make slab findings fatal; a state overrides the top level.
+Warnings remain visible in the scoreboard, contact sheet, console and ledger without changing `pass` or the exit code.
 
 - BARBARA supports all six Looks and `trail`, `left`, `right`, `lake` cameras. It stages a fixed solo scene with
   friends, freezes simulation time and disables scheduled lightning. Omit `time`. The subject probe toggles the
@@ -74,9 +78,10 @@ thresholds, not a claim that the image looks good:
 | Milky wash | More than 85% of pixels are in tiles with mean ≥0.04 and coefficient of variation <0.08 |
 | Subject area | Fewer than 300 pixels differ by at least 4/255 in any encoded channel inside the subject region |
 | Subject contrast | Absolute signed Weber contrast <0.2 over those changed pixels |
-| Slab | A low-variance, box-filling component moves under a small camera translation |
+| Slab (advisory by default) | A low-variance, box-filling component moves under a small camera translation |
 | Albedo | More than 1% of explicitly masked diffuse samples fall outside linear [0.03,0.89]; an empty requested mask fails |
 | Repeated frame | More than 0.5% of pixels change by ≥4 encoded levels without a state change |
+| Shell overlay | A visible shell menu or loading screen intersects the canvas; capture aborts |
 
 Weber is `(mean_on - mean_off) / max(mean_off, 0.005)`. Positive and negative contrasts both count. The denominator
 floor prevents tiny near-black quantization changes from claiming infinite visibility. Signed cancellation can make
@@ -85,7 +90,8 @@ a mixed bright/dark subject fail conservatively; `absoluteWeber` is also recorde
 Slab candidates must occupy ≥0.2% of the frame (at least 16 pixels), fill ≥70% of their bounding box, and have
 coefficient of variation ≤0.12 above luminance 0.65. The night spec uses brightness 0.012 and CV 0.3, calibrated on the
 archived rain-drip defect. With a shift, the candidate must lose >25% of its original footprint and move ≥1% of frame
-width, or disappear. A candidate without a shift fails as `slab-needs-probe`; it is not yet a confirmed near-camera slab.
+width, or disappear. A candidate without a shift warns as `slab-needs-probe`; it is not yet a confirmed near-camera slab.
+Both slab findings fail only with `slabSeverity: "fail"`.
 This heuristic can flag legitimate nearby flat surfaces and can miss irregular or textured defects.
 
 p5, p50, p95, dark share and tile contrast are recorded for diagnosis. The plan's proposed p5 and dark-share bands
@@ -122,12 +128,15 @@ Both current spider views passed (Weber 0.305/0.224, 21,104/530 changed pixels).
 an unlit subject failed at 0.013. All spider repeats matched exactly. BARBARA repeats changed at most 0.095% of pixels,
 below the 0.5% limit. Both adapters and cold samples completed in 58.7 s with no browser errors.
 
-BARBARA passes 22/24 states. The night slab heuristic falsely flags the genuine nearby trunk at the left frame edge
+The original strict-slab proof passed 22/24 states. The night slab heuristic falsely flags the genuine nearby trunk at the left frame edge
 in `newmoon-torch` and `groundfog-torch`. Matched shifts confirm that it moves; they cannot distinguish a legitimate
-trunk from a flat rain drip. The scoreboard keeps these failures visible. This is a conservative preflight with known
-false positives, not a zero-false-positive visual acceptance test.
+trunk from a flat rain drip. Slab checks now default to advisory warnings, so those two findings do not fail the shipped
+sweep. Inspect warnings before presenting evidence; the heuristic is not a zero-false-positive visual acceptance test.
+After the review fix and rebase, the shipped 12-state BARBARA spec passed in 19.6 s on mini Metal with three advisory
+slab warnings and no browser errors. `scripts/quality/shell-proof.ts` also verified that visible menus/loading screens
+block capture while hidden, transparent and off-canvas overlays do not.
 
-The archived BARBARA near-strike r1 still is rejected: one 4,428-pixel component at `(361,29,47,130)`, CV 0.288.
+With strict slab checking opted in, the archived BARBARA near-strike r1 still is rejected: one 4,428-pixel component at `(361,29,47,130)`, CV 0.288.
 The repaired r2 still has no candidate and passes available gates. Reproduce that CPU-only regression with:
 
 ```sh
@@ -135,7 +144,9 @@ bun scripts/quality/history.ts --regression /path/to/r1/strike-near-peak.png /pa
 ```
 
 Route decoding through HiveMind cargo with the two files available on the worker. No historical matched shift pair
-exists, so this proves rejection pending a probe, not retrospective motion classification. Spider r2 has videos only;
+exists. `--regression` opts into strict slab failure and asserts old-fails/repaired-passes; ordinary historical inspection
+keeps slab findings advisory. Captures check shell overlays separately but do not composite other DOM HUD elements.
+This proves rejection pending a probe, not retrospective motion classification. Spider r2 has videos only;
 the dark-shell state above recreates the failure class, not the exact old renderer. The plan's proposed four-defect /
 eight-good-frame historical recall target remains unverified.
 

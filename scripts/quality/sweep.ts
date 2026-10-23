@@ -76,7 +76,7 @@ export async function sweep(budget: ReturnType<typeof browserBudget>, url: strin
       const without = c.without ? await decode(c.without) : undefined
       const shifted = c.shifted ? await decode(c.shifted) : undefined
       const albedo = c.albedo ? { frame: await decode(c.albedo.capture), mask: c.albedo.mask } : undefined
-      const result = qualityGates(frame, { without, shifted, region: c.on.region, albedo }, { ...spec.limits, ...row.limits })
+      const result = qualityGates(frame, { without, shifted, region: c.on.region, albedo }, { ...spec.limits, ...row.limits }, row.slabSeverity ?? spec.slabSeverity)
       let changed = 0
       for (let i = 0; i < frame.width * frame.height; i++) if ([0, 1, 2].some(k => Math.abs(frame.data[i * 4 + k]! - repeated.data[i * 4 + k]!) >= 4)) changed++
       const unstableShare = changed / (frame.width * frame.height)
@@ -90,7 +90,7 @@ export async function sweep(budget: ReturnType<typeof browserBudget>, url: strin
       if (c.without) await save(out, `${row.id}-without`, c.without)
       if (c.shifted) await save(out, `${row.id}-shift`, c.shifted)
       rows.push({ ...row, milliseconds: c.milliseconds, width: c.on.width, height: c.on.height, exposure: c.on.exposure, time: c.on.time, ...result })
-      console.log(`${result.pass ? "PASS" : "FAIL"} ${row.id}: ${Math.round(c.milliseconds)}ms ${result.gates.filter(g => g.status === "fail").map(g => `${g.id}=${g.value}`).join(" ")}`)
+      console.log(`${result.pass ? "PASS" : "FAIL"} ${row.id}: ${Math.round(c.milliseconds)}ms ${result.gates.filter(g => g.status === "fail" || g.status === "warn").map(g => `${g.status} ${g.id}=${g.value}`).join(" ")}`)
       // Durable progress if a later state or the shared browser deadline fails.
       await writeFile(`${out}/scoreboard.json`, JSON.stringify({ version: 1, complete: false, pass: false, bootMs, rows, errors }, null, 2))
     }
@@ -109,10 +109,11 @@ export async function sweep(budget: ReturnType<typeof browserBudget>, url: strin
   const cols = 3, tw = 480, th = Math.round(tw * spec.height / spec.width), cell = th + 48
   const tiles = await Promise.all(rows.map(async (r, i) => {
     const png = Buffer.from(await Bun.file(`${out}/${r.id}.png`).arrayBuffer()).toString("base64")
-    return `<g transform="translate(${i % cols * tw},${Math.floor(i / cols) * cell + 44})"><image width="${tw}" height="${th}" href="data:image/png;base64,${png}"/><text x="8" y="${th + 20}" fill="${r.pass ? "#87dca1" : "#ff8f8f"}">${escape(r.id)} · ${r.pass ? "PASS" : "FAIL"}</text><text x="8" y="${th + 39}" fill="#ccc">p5 ${r.metrics.p5.toFixed(4)} · white ${(100 * r.metrics.whiteShare).toFixed(2)}%${r.subject ? ` · Weber ${r.subject.weber.toFixed(2)} · ${r.subject.changedPixels}px` : ""}</text></g>`
+    const warnings = r.gates.filter(g => g.status === "warn").length
+    return `<g transform="translate(${i % cols * tw},${Math.floor(i / cols) * cell + 44})"><image width="${tw}" height="${th}" href="data:image/png;base64,${png}"/><text x="8" y="${th + 20}" fill="${!r.pass ? "#ff8f8f" : warnings ? "#ffd480" : "#87dca1"}">${escape(r.id)} · ${r.pass ? "PASS" : "FAIL"}${warnings ? ` (${warnings} warning)` : ""}</text><text x="8" y="${th + 39}" fill="#ccc">p5 ${r.metrics.p5.toFixed(4)} · white ${(100 * r.metrics.whiteShare).toFixed(2)}%${r.subject ? ` · Weber ${r.subject.weber.toFixed(2)} · ${r.subject.changedPixels}px` : ""}</text></g>`
   }))
   await writeFile(`${out}/contact-sheet.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="${cols * tw}" height="${Math.ceil(rows.length / cols) * cell + 44}"><rect width="100%" height="100%" fill="#111"/><g font-family="sans-serif" font-size="14"><text x="10" y="28" fill="white">${pass ? "PASS" : "FAILED / DIAGNOSTIC ONLY"} · game exposure · ${rows.length}/${spec.states.length} states</text>${tiles.join("")}</g></svg>`)
   await writeFile(`${out}/index.html`, `<!doctype html><meta charset="utf-8"><title>Quality gates</title><style>body{margin:20px;background:#111;color:#ddd;font:16px system-ui}img{width:100%}a{color:#acd}</style><h1>${pass ? "Passed" : "Failed: diagnostic captures"}</h1><a href="scoreboard.json">Scoreboard and settings</a><img src="contact-sheet.svg">`)
-  await writeFile(`${out}/ledger.md`, `# Quality sweep\n\n${pass ? "PASS" : "FAIL"}; ${rows.length}/${spec.states.length} states; boot ${bootMs.toFixed(0)} ms.\n\n| State | Result | Warm ms | Failed gates |\n|---|---|---:|---|\n${rows.map(r => `| ${r.id} | ${r.pass ? "PASS" : "FAIL"} | ${r.milliseconds.toFixed(0)} | ${r.gates.filter(g => g.status === "fail").map(g => g.id).join(", ")} |`).join("\n")}\n\nCold fresh-browser samples (includes startup and shutdown):\n${cold.map(c => `- ${c.id}: ${c.milliseconds.toFixed(0)} ms cold / ${c.warmMilliseconds.toFixed(0)} ms warm (${(c.milliseconds / c.warmMilliseconds).toFixed(2)}×).`).join("\n")}\n${fatal ?? ""}\n`)
+  await writeFile(`${out}/ledger.md`, `# Quality sweep\n\n${pass ? "PASS" : "FAIL"}; ${rows.length}/${spec.states.length} states; boot ${bootMs.toFixed(0)} ms.\n\n| State | Result | Warm ms | Failures and warnings |\n|---|---|---:|---|\n${rows.map(r => `| ${r.id} | ${r.pass ? "PASS" : "FAIL"} | ${r.milliseconds.toFixed(0)} | ${r.gates.filter(g => g.status === "fail" || g.status === "warn").map(g => `${g.status}: ${g.id}`).join(", ")} |`).join("\n")}\n\nCold fresh-browser samples (includes startup and shutdown):\n${cold.map(c => `- ${c.id}: ${c.milliseconds.toFixed(0)} ms cold / ${c.warmMilliseconds.toFixed(0)} ms warm (${(c.milliseconds / c.warmMilliseconds).toFixed(2)}×).`).join("\n")}\n${fatal ?? ""}\n`)
   return scoreboard
 }

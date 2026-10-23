@@ -29,6 +29,7 @@ branch fills in the row when it merges.
 | Camera feel | `client/walk.ts`, `client/walk-camera.ts`; camera filters off | Shipped | 0.5–1.5 cm translation, 0.1–0.35° roll tied to contacts, no idle sine. |
 | Realistic people | `@arcade/kit/people` ([people.md](people.md)) | Shipped | BARBARA's default; other games still draw blocky people. |
 | Quality tiers that carry the look | `packages/kit/quality.ts`, per-game tier values; optional explicit `ultra` profile | Shipped | A look too heavy for the mini goes into tiers, not cut. Auto stays capped at High. |
+| Rendered-frame quality gates | `packages/kit/proof/legibility.ts`, `scripts/quality-gate.ts` ([guide](quality-gates.md)) | Shipped | BARBARA Looks and Lab spider adapters; slab heuristics warn unless the spec opts into failure. |
 
 ## Order of work
 
@@ -46,8 +47,10 @@ branch fills in the row when it merges.
 ## Gates
 
 The checklist's [pre-flight](quality-checklist.md#5-pre-flight-gates): subject legible at game exposure, no crushed
-or clipped frame, nothing at the lens, stable in motion, an aligned capture beside the target. Automated gates are
-landing on `quality-gates`. GPU timing is reported, not gated.
+or clipped frame, nothing at the lens, stable in motion, an aligned capture beside the target.
+Run `hivemind run --kind browser -- bun scripts/quality-gate.ts barbara --states scripts/quality/states/barbara.json`
+before review; [quality-gates.md](quality-gates.md) documents the spider command and scoreboard. Inspect slab
+warnings; only calibrated specs should make them fatal. GPU timing is reported, not gated.
 
 ## What Kit has decided
 

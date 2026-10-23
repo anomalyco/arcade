@@ -1,8 +1,8 @@
-import { DEFAULT_LIMITS, type Limits } from "../../packages/kit/proof/legibility"
+import { DEFAULT_LIMITS, type Limits, type SlabSeverity } from "../../packages/kit/proof/legibility"
 import type { LookState } from "../../packages/kit/proof/look"
 
-export type SweepState = { id: string; state: LookState; limits?: Limits; probes?: { subject?: boolean; shift?: number; albedo?: boolean } }
-export type SweepSpec = { version: 1; width: number; height: number; settleFrames: number; probeFrames: number; limits?: Limits; states: SweepState[] }
+export type SweepState = { id: string; state: LookState; limits?: Limits; slabSeverity?: SlabSeverity; probes?: { subject?: boolean; shift?: number; albedo?: boolean } }
+export type SweepSpec = { version: 1; width: number; height: number; settleFrames: number; probeFrames: number; limits?: Limits; slabSeverity?: SlabSeverity; states: SweepState[] }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 function keys(v: Record<string, unknown>, allowed: string[]) {
   for (const k of Object.keys(v)) if (!allowed.includes(k)) throw new Error(`Unknown spec key: ${k}`)
@@ -13,9 +13,13 @@ function limits(v: unknown) {
   keys(v, Object.keys(DEFAULT_LIMITS))
   for (const [k, n] of Object.entries(v)) if (typeof n !== "number" || !Number.isFinite(n) || n < 0) throw new Error(`Invalid limit ${k}`)
 }
+function severity(v: unknown) {
+  if (v !== undefined && v !== "warn" && v !== "fail") throw new Error("slabSeverity must be warn or fail")
+}
 export function parseSpec(value: unknown): SweepSpec {
   if (!object(value)) throw new Error("Sweep must be an object")
-  keys(value, ["version", "width", "height", "settleFrames", "probeFrames", "limits", "states"])
+  keys(value, ["version", "width", "height", "settleFrames", "probeFrames", "limits", "slabSeverity", "states"])
+  severity(value.slabSeverity)
   if (value.version !== 1) throw new Error("Unsupported sweep version")
   for (const [k, min, max] of [["width", 64, 3840], ["height", 64, 2160], ["settleFrames", 4, 600], ["probeFrames", 4, 600]] as const) {
     const n = value[k]
@@ -26,7 +30,8 @@ export function parseSpec(value: unknown): SweepSpec {
   const ids = new Set<string>()
   for (const row of value.states) {
     if (!object(row)) throw new Error("Invalid state")
-    keys(row, ["id", "state", "limits", "probes"])
+    keys(row, ["id", "state", "limits", "slabSeverity", "probes"])
+    severity(row.slabSeverity)
     if (typeof row.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(row.id) || ids.has(row.id)) throw new Error("State ids must be unique safe filenames")
     ids.add(row.id)
     if (!object(row.state)) throw new Error("state must be an object")

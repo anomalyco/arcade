@@ -74,7 +74,10 @@ motion and stability gates; the rest waits until the toy graduates.
 Run these before Kit sees anything; a round that fails one is not worth his time.
 
 - Is the subject legible at game exposure, with no crushed or clipped frame and no near-camera slab? (Past misses:
-  the invisible spider, the white rain-drip rectangle on a trunk.) Automated gates are landing on `quality-gates`.
+  the invisible spider, the white rain-drip rectangle on a trunk.) Run
+  `hivemind run --kind browser -- bun scripts/quality-gate.ts barbara --states scripts/quality/states/barbara.json`;
+  for the spider use `lab --states scripts/quality/states/spider.json`. See [quality-gates.md](quality-gates.md)
+  for adapters and the scoreboard. Slab warnings need inspection; calibrated specs can opt into failing them.
 - Is it stable in motion, checked with the game's motion script and not only stills
   ([temporal stability](realism.md#temporal-stability))?
 - Is there an aligned capture at the target's camera and exposure, side by side with the target?

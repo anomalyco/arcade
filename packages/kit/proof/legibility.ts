@@ -1,7 +1,8 @@
 /** CPU-only gates over opaque, display-sRGB RGBA8 frames. Luminance/Weber are linear-light. */
 export type Frame = { width: number; height: number; data: ArrayLike<number> }
 export type Region = { x: number; y: number; width: number; height: number }
-export type Gate = { id: string; status: "pass" | "fail" | "skip"; value: number | null; limit: number | null; note?: string }
+export type Gate = { id: string; status: "pass" | "fail" | "warn" | "skip"; value: number | null; limit: number | null; note?: string }
+export type SlabSeverity = "warn" | "fail"
 export type Limits = {
   minP99?: number; minStddev?: number; maxClipped?: number; maxWhite?: number
   maxFlatShare?: number; flatContrast?: number; washFloor?: number
@@ -133,7 +134,7 @@ export function albedoMetrics(frame: Frame, mask: ArrayLike<number>, range: read
   return { samples, outsideShare: samples ? outside / samples : null }
 }
 
-export function qualityGates(frame: Frame, probes: { without?: Frame; region?: Region; shifted?: Frame; albedo?: { frame: Frame; mask: ArrayLike<number> } } = {}, limits: Limits = {}) {
+export function qualityGates(frame: Frame, probes: { without?: Frame; region?: Region; shifted?: Frame; albedo?: { frame: Frame; mask: ArrayLike<number> } } = {}, limits: Limits = {}, slabSeverity: SlabSeverity = "warn") {
   const l = { ...DEFAULT_LIMITS, ...limits }
   for (const [key, value] of Object.entries(l)) if (!Number.isFinite(value) || value < 0) throw new Error(`Invalid gate threshold ${key}`)
   const metrics = frameMetrics(frame, l), gates: Gate[] = []
@@ -149,8 +150,8 @@ export function qualityGates(frame: Frame, probes: { without?: Frame; region?: R
     gate("subject-weber", Math.abs(subject.weber), l.minWeber, Math.abs(subject.weber) >= l.minWeber)
   } else gates.push({ id: "subject", status: "skip", value: null, limit: null, note: "No counterfactual pair requested" })
   const slabs = slabMetrics(frame, probes.shifted, l)
-  if (slabs.tested) gate("near-camera-slab", slabs.moving.length, 0, !slabs.moving.length)
-  else if (slabs.candidates.length) gates.push({ id: "slab-needs-probe", status: "fail", value: slabs.candidates.length, limit: 0, note: "Flat bright region requires a matched camera-shift probe" })
+  if (slabs.tested) gates.push({ id: "near-camera-slab", status: slabs.moving.length ? slabSeverity : "pass", value: slabs.moving.length, limit: 0, note: "Heuristic also detects legitimate nearby flat surfaces" })
+  else if (slabs.candidates.length) gates.push({ id: "slab-needs-probe", status: slabSeverity, value: slabs.candidates.length, limit: 0, note: "Flat bright region requires a matched camera-shift probe" })
   else gates.push({ id: "near-camera-slab", status: "skip", value: null, limit: null, note: "Camera-shift probe not supplied" })
   const albedo = probes.albedo ? albedoMetrics(probes.albedo.frame, probes.albedo.mask) : null
   if (albedo) {

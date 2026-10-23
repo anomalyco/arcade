@@ -41,6 +41,12 @@ describe("render preflight", () => {
     expect(slabMetrics(slab(0)).tested).toBe(false)
     expect(slabMetrics(slab(0), slab(0)).moving).toHaveLength(0)
     expect(slabMetrics(slab(0), slab(12)).moving).toHaveLength(1)
+    const advisory = qualityGates(slab(0), { shifted: slab(12) })
+    expect(advisory.pass).toBe(true)
+    expect(advisory.gates.find(g => g.id === "near-camera-slab")?.status).toBe("warn")
+    expect(qualityGates(slab(0)).gates.find(g => g.id === "slab-needs-probe")?.status).toBe("warn")
+    expect(qualityGates(slab(0), { shifted: slab(12) }, {}, "fail").pass).toBe(false)
+    expect(qualityGates(slab(0), {}, {}, "fail").gates.find(g => g.id === "slab-needs-probe")?.status).toBe("fail")
   })
   test("albedo only judges the explicit diffuse material mask", () => {
     const f = frame(100, 100, x => x < 50 ? 10 : 180)

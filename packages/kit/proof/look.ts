@@ -39,6 +39,13 @@ export function controlPatch(nav: LabNavigation, values: LabSettings = {}): () =
 /** Copy immediately after the synchronous render, before Chromium discards the presented WebGPU canvas. */
 export function captureCanvas(canvas: HTMLCanvasElement, draw: () => void, meta: () => Omit<LookCapture, "png" | "width" | "height">): LookCapture {
   draw()
+  const bounds = canvas.getBoundingClientRect()
+  for (const overlay of document.querySelectorAll<HTMLElement>(".arcade-shell .as-overlay, .arcade-shell .as-loading")) {
+    const rect = overlay.getBoundingClientRect()
+    if (overlay.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && rect.right > bounds.left && rect.left < bounds.right && rect.bottom > bounds.top && rect.top < bounds.bottom) {
+      throw new Error("shell-overlay: a visible shell menu or loading screen covers the capture canvas")
+    }
+  }
   const copy = document.createElement("canvas")
   copy.width = canvas.width; copy.height = canvas.height
   copy.getContext("2d", { alpha: false })!.drawImage(canvas, 0, 0)

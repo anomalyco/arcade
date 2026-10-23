@@ -8,6 +8,9 @@ test("rejects unsafe output names, duplicate states and unsupported probes befor
   expect(() => parseSpec({ ...spec(), states: [{ id: "today", state: {}, probes: { typo: true } }] })).toThrow()
   expect(() => parseSpec({ ...spec(), states: [{ id: "today", state: {}, probes: { shift: 2 } }] })).toThrow()
   expect(parseSpec(spec()).states).toHaveLength(1)
+  expect(parseSpec({ ...spec(), slabSeverity: "fail", states: [{ id: "today", state: {}, slabSeverity: "warn" }] }).slabSeverity).toBe("fail")
+  expect(() => parseSpec({ ...spec(), slabSeverity: "ignore" })).toThrow()
+  expect(() => parseSpec({ ...spec(), states: [{ id: "today", state: {}, slabSeverity: true }] })).toThrow()
 })
 test("rejects invalid numbers and unknown limits instead of quietly skipping a gate", () => {
   expect(() => parseSpec({ ...spec(), limits: { minWeber: NaN } })).toThrow()
