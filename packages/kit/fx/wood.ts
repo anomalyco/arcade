@@ -88,15 +88,18 @@ export type Chip = {
   live: boolean
 }
 
-// Sawdust is mostly flecks that fall and settle where they land, with a faint haze of the finest dust over them.
-const sawdustSpec: ParticleSpec = { kind: "debris", life: 2.4, size: 0.011, growth: 0, gravity: 5, drag: 4.5, bounce: 0, r: 0.66, g: 0.52, b: 0.33, alpha: 1 }
+// Sawdust is mostly pale flecks that fall and settle where they land, the finest of it hanging in the air as specks
+// that catch a beam, with a faint haze over them.
+const sawdustSpec: ParticleSpec = { kind: "debris", life: 2.4, size: 0.007, growth: 0, gravity: 5, drag: 4.5, bounce: 0, r: 0.74, g: 0.6, b: 0.4, alpha: 1 }
+const moteSpec: ParticleSpec = { kind: "debris", life: 3.5, size: 0.0035, growth: 0, gravity: 0.25, drag: 5, bounce: 0, r: 0.8, g: 0.66, b: 0.46, alpha: 1 }
 const hazeSpec: ParticleSpec = { kind: "soft", life: 1.1, size: 0.05, growth: 0.45, gravity: 0.3, drag: 3.6, bounce: 0, r: 0.6, g: 0.5, b: 0.36, alpha: 0.12 }
 const exhaustSpec: ParticleSpec = { kind: "smoke", life: 1.3, size: 0.04, growth: 0.16, gravity: -0.4, drag: 1.6, bounce: 0, r: 0.42, g: 0.5, b: 0.68, alpha: 0.08, turbulence: 1.2, ease: 1.4 }
 const dustSpec: ParticleSpec = { kind: "soft", life: 2.2, size: 0.5, growth: 1.4, gravity: -0.1, drag: 2.6, bounce: 0, r: 0.4, g: 0.35, b: 0.27, alpha: 0.17 }
 const needleSpec: ParticleSpec = { kind: "debris", life: 2, size: 0.05, growth: 0, gravity: 3, drag: 2.8, bounce: 0.1, r: 0.2, g: 0.4, b: 0.15, alpha: 1 }
 const sparkSpec: ParticleSpec = { kind: "spark", life: 0.35, size: 0.014, growth: -0.01, gravity: 9.81, drag: 1.2, bounce: 0.35, r: 1, g: 0.62, b: 0.25, alpha: 1, temperature: 1.3 }
 const mistSpec: ParticleSpec = { kind: "soft", life: 0.4, size: 0.04, growth: 0.6, gravity: 1.5, drag: 4, bounce: 0, r: 0.2, g: 0.012, b: 0.01, alpha: 0.32 }
-const dropSpec: ParticleSpec = { kind: "debris", life: 1.6, size: 0.02, growth: 0, gravity: 12, drag: 0.8, bounce: 0, r: 0.17, g: 0.008, b: 0.006, alpha: 1 }
+// Drops stretch along their flight into streaks (the water sprite), never cubes.
+const dropSpec: ParticleSpec = { kind: "water", life: 1.2, size: 0.009, growth: 0, gravity: 12, drag: 0.8, bounce: 0, r: 0.2, g: 0.01, b: 0.008, alpha: 1 }
 
 export class WoodFx {
   readonly chips: Chip[]
@@ -171,6 +174,7 @@ export class WoodFx {
     for (let i = this.count(`${key}.dust`, s.woodSawdust * bite, dt); i > 0; i--) {
       const sp = 0.6 + this.rand() * 1.8
       pool.spawn(sawdustSpec, x, y, z, (sx * 0.8 - ax * 0.4 + (this.rand() - 0.5)) * sp, 0.2 + this.rand() * 0.6, (sz * 0.8 - az * 0.4 + (this.rand() - 0.5)) * sp, this.rand() * 100)
+      if (this.rand() < 0.35) pool.spawn(moteSpec, x, y, z, (sx * 0.6 - ax * 0.3 + (this.rand() - 0.5)) * sp, 0.3 + this.rand() * 0.5, (sz * 0.6 - az * 0.3 + (this.rand() - 0.5)) * sp, this.rand() * 100)
       if (this.rand() < 0.25) pool.spawn(hazeSpec, x, y, z, (sx * 0.5 - ax * 0.3) * sp, 0.1 + this.rand() * 0.3, (sz * 0.5 - az * 0.3) * sp, this.rand() * 100)
     }
   }
@@ -207,15 +211,15 @@ export class WoodFx {
 
   /**
    * A motor's exhaust at (x, y, z), blowing out along (dx, dz): thin blue-grey 2-stroke smoke at idle, thick when
-   * revved (`rev` 0..1).
+   * revved (`rev` 0..1). `thin` (0..1) scales how much and how big, for a motor half a metre from the lens.
    */
-  exhaust(pool: Particles, dt: number, key: string, x: number, y: number, z: number, dx: number, dz: number, rev: number): void {
+  exhaust(pool: Particles, dt: number, key: string, x: number, y: number, z: number, dx: number, dz: number, rev: number, thin = 1): void {
     const s = this.settings
     const k = 1 + (s.woodExhaustRev - 1) * Math.max(0, Math.min(1, rev))
-    for (let i = this.count(`${key}.exhaust`, s.woodExhaust * k, dt); i > 0; i--) {
+    for (let i = this.count(`${key}.exhaust`, s.woodExhaust * k * thin, dt); i > 0; i--) {
       const sp = 0.4 + this.rand() * 0.8 * k
-      exhaustSpec.alpha = 0.05 + 0.03 * k
-      exhaustSpec.size = 0.035 + 0.012 * k
+      exhaustSpec.alpha = (0.05 + 0.03 * k) * thin
+      exhaustSpec.size = (0.035 + 0.012 * k) * (0.5 + 0.5 * thin)
       pool.spawn(exhaustSpec, x, y, z, dx * sp + (this.rand() - 0.5) * 0.3, 0.15 + this.rand() * 0.3, dz * sp + (this.rand() - 0.5) * 0.3, this.rand() * 100)
     }
   }
@@ -295,9 +299,11 @@ export class WoodFx {
       const sp = 0.8 + this.rand() * 2.2
       pool.spawn(mistSpec, x, y, z, Math.cos(a) * sp, 0.2 + this.rand() * 0.8, Math.sin(a) * sp, this.rand() * 100)
     }
-    for (let i = 0; i < Math.round(14 * k); i++) {
+    for (let i = 0; i < Math.round(18 * k); i++) {
       const a = dir + (this.rand() - 0.5) * 2
-      const sp = 2 + this.rand() * 5
+      const sp = 1.5 + this.rand() * 5.5
+      // Mostly fine droplets, a few fat ones.
+      dropSpec.size = this.rand() < 0.2 ? 0.016 : 0.006 + this.rand() * 0.006
       pool.spawn(dropSpec, x, y, z, Math.cos(a) * sp, 1 + this.rand() * 3, Math.sin(a) * sp, this.rand() * 100)
     }
   }
@@ -334,8 +340,8 @@ export class WoodFx {
       } else {
         c.vx = c.vy = c.vz = 0
         c.rest = 0
-        // Lying flat (a chip) or on its side (a splinter, a twig).
-        c.pitch = c.kind === 0 ? (this.rand() < 0.5 ? 0 : Math.PI) : Math.PI / 2
+        // Lying flat, either face up (a chip, a splinter), or on its side (a twig).
+        c.pitch = c.kind === 2 ? Math.PI / 2 : this.rand() < 0.5 ? 0 : Math.PI
       }
     }
   }

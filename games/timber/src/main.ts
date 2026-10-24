@@ -52,7 +52,9 @@ import { Dread } from "./dread"
 import { LOOK, LOOK_CONTROLS } from "./look"
 import { type Held, TimberPeople } from "./people-view"
 import { timberSamples, TimberSound } from "./sounds"
-import { drawSawView, sawViewMesh } from "./viewmodel"
+import { drawSawView, SAW_HANDS, sawChainMeshes, sawGlovesMesh, sawViewMesh, type SawModels } from "./viewmodel"
+import { flakeMesh, sliverMesh } from "./debris"
+import { type Crawl, crawlPose, handBack, newCrawl } from "./downed"
 import { TimberView } from "./world-view"
 
 const DT = 1 / 60
@@ -222,7 +224,8 @@ async function main() {
     subtitle: "One lumberjack with a chainsaw. Three of you with axes. Fix the truck and get out of the woods.",
     playLabel: "Into the woods",
     resumeLabel: "Back to the forest",
-    channels: ["master", "effects", "ambience"],
+    channels: ["master", "effects", "engine", "ambience"],
+    labels: { engine: "Engines (saw, truck)" },
     quality,
     pauseOnHidden: true,
     blocked: () => live.panel?.holdsInput ?? false,
@@ -253,12 +256,9 @@ async function main() {
   // The rig's rifle hold, with a chainsaw (or an axe) in the rifle's place.
   const sawParts: PartModels = { ...human, gun: { ...human.gun, rifle: sawModel }, mag: { ...human.mag, rifle: motorModel } }
   const axeParts: PartModels = { ...human, gun: { ...human.gun, rifle: axeModel }, mag: { ...human.mag, rifle: noMag } }
-  const chipMesh = new Mesh()
-  chipMesh.box(-0.5, -0.15, -0.35, 0.5, 0.15, 0.35, WOOD, MAT.lit)
-  const chipModel = r.addModel(chipMesh)
-  const splinterMesh = new Mesh()
-  splinterMesh.box(-0.06, -0.5, -0.03, 0.06, 0.5, 0.03, [WOOD[0] * 1.05, WOOD[1], WOOD[2] * 0.9], MAT.lit)
-  const splinterModel = r.addModel(splinterMesh)
+  // Flakes and slivers, one in three with bark on its underside, picked per chip.
+  const chipModels = [11, 23, 37, 41, 59, 67].map((seed, i) => r.addModel(flakeMesh(seed, i % 3 === 2)))
+  const splinterModels = [5, 17, 29].map((seed, i) => r.addModel(sliverMesh(seed, i === 1)))
   const twigMesh = new Mesh()
   twigMesh.box(-0.03, -0.5, -0.03, 0.03, 0.5, 0.03, [0.22, 0.15, 0.1], MAT.lit)
   twigMesh.box(-0.12, 0.1, -0.12, 0.12, 0.5, 0.12, NEEDLES, MAT.lit)
@@ -266,7 +266,12 @@ async function main() {
   const truckModel = r.addModel(truckMesh())
   const itemModels = { fuel: r.addModel(itemMesh("fuel")), plug: r.addModel(itemMesh("plug")), keys: r.addModel(itemMesh("keys")), gas: r.addModel(itemMesh("gas")) }
   const poolModels = [3, 19, 41, 77].map((s) => r.addModel(poolMesh(s)))
-  const sawViewModel = r.addModel(sawViewMesh())
+  const [chainTop, chainBottom] = sawChainMeshes()
+  const sawView: SawModels = { body: r.addModel(sawViewMesh()), top: r.addModel(chainTop), bottom: r.addModel(chainBottom), gloves: r.addModel(sawGlovesMesh()) }
+  /** How far your saw's chain has run (m), and where its muffler blew last frame (first person). */
+  let sawChain = 0
+  let armsDrawn = false
+  let sawExhaust: { x: number; y: number; z: number; dx: number; dz: number } | null = null
   const torchMesh = new Mesh()
   torchMesh.box(-0.11, -0.017, -0.017, 0.1, 0.017, 0.017, [0.05, 0.05, 0.055], MAT.lit)
   torchMesh.box(0.1, -0.024, -0.024, 0.135, 0.024, 0.024, [0.3, 0.3, 0.32], MAT.shiny)
@@ -319,6 +324,9 @@ async function main() {
   /** Ragdolls: the dead, and the downed (which crawl, so they follow the sim body). */
   let corpses = new Map<number, Ragdoll>()
   let crawlAt = new Map<number, { x: number; y: number }>()
+  /** The downed, face down and dragging themselves along; and the torches they dropped, still on, where they fell. */
+  let crawls = new Map<number, Crawl>()
+  let dropped = new Map<number, { x: number; y: number; yaw: number; on: boolean }>()
   let truckVoice: VoiceHandle | null = null
   let flareFx = new Map<number, FlareFx>()
   let whooshed = new Set<number>()
@@ -339,6 +347,7 @@ async function main() {
   let chaseD = LOOK.chaseDist
   /** The felling cam: a shot side-on to a tree you dropped, on game time so slow-mo stretches it. */
   let fellShot: { tree: number; at: number; x: number; y: number } | null = null
+  let wasFirst = false
   type Pool = { x: number; y: number; at: number; size: number; yaw: number; model: number }
   let pools: Pool[] = []
   let dripAt = new Map<number, number>()
@@ -358,6 +367,8 @@ async function main() {
     camPitch = LOOK.firstPitch
     corpses = new Map()
     crawlAt = new Map()
+    crawls = new Map()
+    dropped = new Map()
     flareFx = new Map()
     whooshed = new Set()
     later = []
@@ -529,8 +540,19 @@ async function main() {
     if (!a?.body || corpses.has(j.id)) return
     const s =
       style === "crush" ? { push: 0.4, lift: 0, spin: 0, buckle: 2.2 } : style === "down" ? { push: 1.6, lift: 0.1, spin: (fx() - 0.5), buckle: 1.4 } : { push: 4.5, lift: 0.5, spin: (fx() - 0.5) * 2, buckle: 0.2 }
-    corpses.set(j.id, ragdoll(a.body, "rifle", j.vx, j.vy, Math.cos(dir), Math.sin(dir), s, WALLS))
+    const rd = ragdoll(a.body, "rifle", j.vx, j.vy, Math.cos(dir), Math.sin(dir), s, WALLS)
+    corpses.set(j.id, rd)
     crawlAt.set(j.id, { x: j.x, y: j.y })
+    if (style === "down") {
+      crawls.set(j.id, newCrawl(rd, j.aim, w.t, j.x, j.y))
+      // The torch leaves the hand and lands a step off, pointing wherever it fell.
+      if (j.role === "survivor" && w.mode === "hunt") {
+        const side = fx() < 0.5 ? -1 : 1
+        const ox = Math.cos(dir) * 0.35 - Math.sin(j.aim) * side * 0.45
+        const oy = Math.sin(dir) * 0.35 + Math.cos(j.aim) * side * 0.45
+        dropped.set(j.id, { x: j.x + ox, y: j.y + oy, yaw: dir + (fx() - 0.5) * 1.6, on: j.torch })
+      }
+    }
   }
 
   const slow = () => {
@@ -685,6 +707,8 @@ async function main() {
         const v = w.jacks[e.jack]!
         corpses.delete(e.jack)
         crawlAt.delete(e.jack)
+        crawls.delete(e.jack)
+        dropped.delete(e.jack)
         avatars.set(e.jack, newAvatar(`jack-${e.jack}`, v.x, v.y, v.aim, "rifle"))
         sound.play("pickup.item", v.x, v.y, { rate: 0.7 })
         say(`${nameOf(e.by)} got ${e.jack === 0 ? "you" : nameOf(e.jack)} up`)
@@ -834,7 +858,12 @@ async function main() {
       if (j.role === "lumberjack" && (j.engine === "on" || j.engine === "pulling")) {
         // The muffler sits on the motor's right side, behind the grip.
         const rev = j.engine === "pulling" ? 0.2 : j.trigger ? 1 : 0
-        if (j.engine === "on" || fx() < 0.15) wood.exhaust(particles, DT, `ex${j.id}`, j.x + ax * 0.2 - ay * 0.32, 0.98, j.y + ay * 0.2 + ax * 0.32, -ay, ax, rev)
+        // Yours in first person comes out of the saw in your hands.
+        const vm = j.id === focusJack().id ? sawExhaust : null
+        if (j.engine === "on" || fx() < 0.15) {
+          if (vm) wood.exhaust(particles, DT, `ex${j.id}`, vm.x, vm.y, vm.z, vm.dx, vm.dz, rev, labSettings.sawExhaust)
+          else wood.exhaust(particles, DT, `ex${j.id}`, j.x + ax * 0.2 - ay * 0.32, 0.98, j.y + ay * 0.2 + ax * 0.32, -ay, ax, rev)
+        }
       }
       if (j.trigger && j.target?.kind === "tree" && j.role === "lumberjack") {
         const t = w.trees[j.target.id]!
@@ -935,9 +964,15 @@ async function main() {
     particles.update(scaledDt, [], () => 0)
     wood.step(scaledDt)
     for (const [id, rd] of corpses) {
+      const j = w.jacks[id]!
+      // Killed where they lay: the ragdoll goes on from the crawl.
+      const cr = crawls.get(id)
+      if (cr && !(j.alive && j.downed)) {
+        handBack(cr, rd)
+        crawls.delete(id)
+      }
       stepRagdoll(rd, scaledDt)
       // The downed crawl: carry their body along with them.
-      const j = w.jacks[id]!
       const at = crawlAt.get(id)
       if (at && j.alive && j.downed) {
         const dx = j.x - at.x
@@ -1083,6 +1118,10 @@ async function main() {
       cam.follow(focus.x, focus.y, Math.cos(focus.aim) * 2.5, Math.sin(focus.aim) * 2.5, elapsed, false)
     }
     let vp = cam.update(aspect)
+    // In and out of first person is a cut (the felling shot, spectating): drop TAA, mist and blur history so it doesn't
+    // smear. The exposure is left alone, so the cut doesn't flash.
+    if (first !== wasFirst) view.forest.renderer.resetTemporalHistory()
+    wasFirst = first
     /** First person: the eye in your head, the camera's shake turned into a small turn and nod, the saw's buzz on top. */
     const fpEye: [number, number, number] = [0, 0, 0]
     if (first) {
@@ -1132,12 +1171,14 @@ async function main() {
 
     // Chips, splinters and twigs, flying and lying, lit by whatever beam they cross.
     const chipLife = L.woodChipLife
-    for (const c of wood.chips) {
-      if (!c.live || !near(c.x, c.z)) continue
+    wood.chips.forEach((c, i) => {
+      if (!c.live || !near(c.x, c.z)) return
       const fade = c.rest < 0 ? 1 : Math.min(1, (chipLife - c.rest) / 3)
-      const model = c.kind === 0 ? chipModel : c.kind === 1 ? splinterModel : twigModel
-      fp.part(model, c.x, c.y + c.size * 0.12, c.z, c.yaw, [c.shade, c.shade, c.shade], c.pitch, 0, 0, 1, c.size * fade)
-    }
+      const model = c.kind === 0 ? chipModels[i % chipModels.length]! : c.kind === 1 ? splinterModels[i % splinterModels.length]! : twigModel
+      // Flying, a flake tumbles on two axes, so its pale face flashes as it turns through a beam.
+      const roll = c.rest < 0 && c.kind !== 2 ? c.pitch * 0.61 + i : 0
+      fp.part(model, c.x, c.y + c.size * 0.05, c.z, c.yaw, [c.shade, c.shade, c.shade], c.pitch, roll, 0, 1, c.size * fade)
+    })
     // Blood pools spread over a few seconds, then stay.
     pools.forEach((p, i) => {
       const k = smooth(-0.4, 3.5, w.t - p.at)
@@ -1168,9 +1209,12 @@ async function main() {
       const hunted = j.role === "survivor" && w.mode === "hunt"
       const partsFor = hunted ? axeParts : sawParts
       const scale = j.role === "lumberjack" ? L.jackScale : 1
-      const rd = corpses.get(j.id)
+      const dead = corpses.get(j.id)
+      const cr = crawls.get(j.id)
+      const crawling = dead && cr && j.alive && j.downed
+      const rd = crawling ? crawlPose(cr, dead, j.x, j.y, j.aim, w.t, L) : dead
       if (rd) {
-        if (real && people.lie(j, rd, scaledDt, scale, eyeV)) drawn.add(j.id)
+        if (real && people.lie(j, rd, scaledDt, scale, eyeV, crawling ? L.crawlLook : 0)) drawn.add(j.id)
         else {
           const dim = j.alive ? 0.85 : 0.6
           emitRagdoll(fp.push, rd, "rifle", [color[0] * dim, color[1] * dim, color[2] * dim], partsFor, j.alive && j.revive > 0 ? 0.05 : 0, 1, 0)
@@ -1217,13 +1261,26 @@ async function main() {
       if (j.carrying && !hidden) fp.part(itemModels[j.carrying], j.x - Math.cos(j.aim) * 0.25, 1.15, j.y - Math.sin(j.aim) * 0.25, j.aim, [1, 1, 1], 0, 0, 0, 1, 0.75)
     }
     people?.hideExcept(drawn)
+    for (const d of dropped.values())
+      if (near(d.x, d.y)) fp.part(torchModel, d.x, 0.025, d.y, d.yaw, [1, 1, 1], 0, 0, 0, 1, 1)
 
     // Your saw in first person, with chips off the bar coming at the lens while you cut.
-    if (first && focus.role === "lumberjack" && focus.id === 0) {
-      const nose = drawSawView(fp, sawViewModel, {
+    const viewSaw = first && focus.role === "lumberjack" && focus.id === 0
+    sawExhaust = null
+    if (!viewSaw) armsDrawn = people?.arms(null) ?? false
+    if (viewSaw) {
+      // The chain runs only on the throttle (the clutch holds it idling), a little slower bogged down in wood.
+      if (focus.engine === "on" && focus.trigger) sawChain += scaledDt * L.sawChain * (1 - 0.3 * cutK)
+      const armsOn = real && L.sawArms > 0
+      const saw = drawSawView(fp, sawView, {
         eye: fpEye, yaw: camYaw, pitch: camPitch + pitchKick, rev: focus.trigger ? 1 : 0, cut: cutK, t: now / 1000,
         on: focus.engine === "on", bob: bobY, sprint: sprintK, buzz: calm ? 0 : L.sawBuzz, lit: L.sawLit,
+        chain: sawChain, gloves: !armsDrawn,
       })
+      armsDrawn = people?.arms(armsOn ? { frame: saw.frame, hands: SAW_HANDS, scale: L.jackScale, lit: L.sawLit, dt: scaledDt, t: w.t } : null) ?? false
+      const nose = saw.nose
+      const ed = Math.hypot(saw.exhaustDir[0], saw.exhaustDir[2]) || 1
+      sawExhaust = { x: saw.exhaust[0], y: saw.exhaust[1], z: saw.exhaust[2], dx: saw.exhaustDir[0] / ed, dz: saw.exhaustDir[2] / ed }
       if (biting && focus.target?.kind === "tree" && playing) wood.toward(scaledDt, "lens", nose[0], nose[1], nose[2], fpEye[0], fpEye[1] - 0.25, fpEye[2], 22 * cutK)
     }
 
@@ -1268,7 +1325,14 @@ async function main() {
         const ease = 1 - Math.exp(-elapsed * 9)
         for (const [i, v] of [lx / ll, ly / ll, lz / ll].entries()) lamp.dir[i] = lamp.dir[i]! + (v - lamp.dir[i]!) * ease
         const dl = Math.hypot(...lamp.dir) || 1
-        torches.push({ id: j.id, pos, dir: [lamp.dir[0] / dl, lamp.dir[1] / dl, lamp.dir[2] / dl], on: j.engine === "on" && L.sawLight > 0, kind: kindOf(j.id), level: L.sawLight })
+        const dir: [number, number, number] = [lamp.dir[0] / dl, lamp.dir[1] / dl, lamp.dir[2] / dl]
+        // Your own, in first person, shines from a little way down its axis: your hands and saw sit on the line to the
+        // kerf, and half a metre from the lens the beam's core blows them out. Its level makes up the shorter throw, so
+        // what it lights stays as bright; `sawFill` stands in for its spill on your hands.
+        const ahead = first && j.id === focus.id ? Math.min(L.sawLampAhead, ll - 0.3) : 0
+        for (let i = 0; i < 3; i++) pos[i] = pos[i]! + dir[i]! * ahead
+        const throwK = ((ll - ahead) / ll) ** 2
+        torches.push({ id: j.id, pos, dir, on: j.engine === "on" && L.sawLight > 0, kind: kindOf(j.id), level: L.sawLight * throwK, ...(watched && watched.state !== "standing" ? { air: L.fellLampAir } : {}) })
       }
     }
     if (tr) {
@@ -1277,13 +1341,26 @@ async function main() {
       for (const [n, side] of [[0, -0.8], [1, 0.8]] as const)
         torches.push({ id: 900 + n, pos: [tr.x + fx2 * 3.1 - fy2 * side, 1.05, tr.y + fy2 * 3.1 + fx2 * side], dir: [fx2 * 0.997, -0.08, fy2 * 0.997], on: tr.started && L.truckLamps > 0, kind: "remote", level: L.truckLamps })
     }
+    // Dropped torches: lying in the leaves, still shining along the ground.
+    for (const [id, d] of dropped) {
+      const dx = Math.cos(d.yaw)
+      const dy = Math.sin(d.yaw)
+      torches.push({ id: 800 + id, pos: [d.x + dx * 0.12, 0.05, d.y + dy * 0.12], dir: [dx * 0.996, -0.09, dy * 0.996], on: d.on && L.droppedTorch > 0, kind: "remote", level: L.droppedTorch * L.torchLevel, air: L.droppedAir, shadows: false })
+    }
     // Only one torch gets the shadow map and drives exposure.
     if (!torches.some((t) => t.kind === "local" && t.on)) for (const t of torches) t.kind = "remote"
     view.lights(torches, [...flareFx.values()].map((f) => f.light()), eye, L)
+    if (first && focus.role === "lumberjack" && focus.engine === "on" && L.sawLight > 0 && L.sawFill > 0) {
+      // Reaches your hands and saw, not the ground.
+      view.lit.scene.push({ x: eye[0], y: eye[2], h: eye[1] + 0.05, r: 1, color: [1, 0.86, 0.68], power: L.sawFill * L.sawLight, size: 0.1, unshadowed: true })
+    }
     if (tr?.started) {
       const fx2 = Math.cos(tr.yaw)
       const fy2 = Math.sin(tr.yaw)
       for (const side of [-0.8, 0.8]) view.glow(tr.x + fx2 * 3.06 - fy2 * side, 1.05, tr.y + fy2 * 3.06 + fx2 * side, L.truckLamps)
+    }
+    for (const d of dropped.values()) {
+      if (d.on && L.droppedTorch > 0) view.glow(d.x + Math.cos(d.yaw) * 0.14, 0.03, d.y + Math.sin(d.yaw) * 0.14, 0.1 * L.droppedTorch)
     }
     hurt.style.opacity = String(cam.damageFlash)
     dread.step(playing ? Dread.target(w, focus, L) : 0, elapsed, L, (v) => (view.forest.settings.vignette = Math.min(1, v)), calm)

@@ -1,4 +1,4 @@
-import { VOLUME_BUSES } from "../audio/volume"
+import { busVolume, VOLUME_BUSES } from "../audio/volume"
 import type { MixCategory } from "../audio/types"
 import type { ShellSettings } from "./settings"
 
@@ -28,7 +28,6 @@ export function audioRuntimeSync(settings: ShellSettings, runtime: ShellAudioRun
     shown = key
     if (runtime.muted !== settings.muted) runtime.setMuted(settings.muted)
     runtime.setVolume((master * settings.volume("master")) / 100)
-    for (const channel of ["effects", "ambience", "voice", "music"] as const)
-      for (const bus of VOLUME_BUSES[channel]) runtime.setBusGain(bus, settings.volume(channel) / 100)
+    for (const bus of new Set(Object.values(VOLUME_BUSES).flat())) runtime.setBusGain(bus, busVolume(settings.volumes, bus))
   }
 }

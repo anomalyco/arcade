@@ -90,7 +90,7 @@ export class Mixer {
   echo!: GainNode
   room!: GainNode
   levels: Levels = { ...DEFAULT_LEVELS }
-  volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
+  volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeEngine: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
   private savedVolumes = ""
   noise!: NoiseBank
   /** Where each kind of sound plugs in. */

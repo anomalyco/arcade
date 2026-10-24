@@ -75,7 +75,7 @@ export class AudioEngine {
   muted = false
   /** M toggles mute (off where the game shell owns mute). */
   muteKey = true
-  volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
+  volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeEngine: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
   private savedVolumes = ""
   private busFade: Record<Bus, number> = { sfx: 1, amb: 1, sting: 1 }
   private duck!: GainNode

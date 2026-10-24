@@ -44,9 +44,11 @@
   milky white (this was the sawing whiteout). Fade with scale or a dimmer tint on an opaque part instead (the fall
   hint does this).
 - Effects: kit `fx/wood.ts` (`WoodFx`, knobs under "Wood fx", `wood*` keys) gives kerf chips and sawdust flecks that
-  fall and settle (with a faint haze of fine dust), 2-stroke exhaust that thickens on rev, hinge splinters, branch
+  fall and settle (with a faint haze of fine dust and lit specks), 2-stroke exhaust that thickens on rev (`thin` scales
+  it for a motor by the lens), hinge splinters, branch
   snaps (on landing and when a crown rakes a standing tree, the `brush` event), a dust ring scaled by mass,
-  chain-on-chain sparks, and dark blood mist and drops. Particles are lit only by `TimberLights.particles` (point
+  chain-on-chain sparks, and dark blood mist and drops (droplets and streaks). The game's chips (`src/debris.ts`) are
+  flat, irregular pale flakes and slivers with a bark-dark side that tumble as they fly. Particles are lit only by `TimberLights.particles` (point
   lights with plan cones at each beam and lamp, `fxLight`/`fxLightReach`), so exhaust and dust show only where a beam
   crosses them. The game adds a crack-snap-groan sound sequence, a crown whoosh, landing shake (`landingShake`),
   slow-mo on a crush or a domino of 3+ (`slowMoTime`/`slowMoScale`) and chain kickback on the camera (`sawKick`).
@@ -58,15 +60,21 @@
   lumberjack is m04 in a dark oxblood work jacket, grown by `jackScale` (1.12), both hands on the saw (`SAW_HANDS`
   through `People.drive`'s `reach`); survivors are the other cast members with the torch in the right hand (the beam
   starts at the torch in it) and the axe in the left, swung while chopping. The downed and the dead are the game's
-  ragdolls posed onto the person (`lie`), so a crush pins the body under the trunk and the downed are dragged as they
-  crawl. The saw, axe and torch models are drawn at the `Held` frames. The blocky shared rig draws anyone still
+  ragdolls posed onto the person (`lie`), so a crush pins the body under the trunk. The downed crawl face down on their
+  forearms (`src/downed.ts`, `crawl*` knobs), and their torch drops and keeps shining along the ground: a ground
+  `ForestTorch` (`800 + id`, `droppedTorch`) with little of its beam in the mist (`droppedAir`, kit `ForestTorch.air`)
+  and no spot shadow (`shadows: false`), since lying in the ground mist it washed the frame grey. The saw, axe and torch models are drawn at the `Held` frames. The blocky shared rig draws anyone still
   loading, the `?smoke` run, and everyone with `realPeople` 0.
 - Lighting (BARBARA's look: physical sky, dark adaptation, highlight shoulder): survivors carry
   `ForestTorch` beams (`torchLevel`; only the player's own can be `local`). The lumberjack's helmet lamp (`sawLight`)
   is wired to the saw and dies with the engine. It sits at 1.72 m × `jackScale`, dim (`torchPower` 85, a 12° cone,
   `torchSpill` 0.02), eases towards the kerf while he cuts, and watches
   the falling tree's mid-trunk for `fellCamTime` after a `fell` (the `lamps` map). It is on the helmet, not the saw,
-  because a lamp 0.4 m from the bark floods the frame. Flares come through `view.lights`; the truck's lamps are
+  because a lamp 0.4 m from the bark floods the frame. In your own first person it shines from `sawLampAhead` (0.8 m)
+  down its axis, its level making up the shorter throw: your hands and saw sit on the line to the kerf, and in the
+  beam's core (50× its spill) they blew out at any albedo. A short-reach warm light at the eye (`sawFill`) stands in for
+  its spill on them. While it watches a falling trunk its beam shows little in the mist (`fellLampAir`): pointed up
+  through it, along the low felling view, it washed the frame grey. Flares come through `view.lights`; the truck's lamps are
   torches 900/901 plus a glow (`truckLamps`). Veiling glare is TIMBER's own (`glare` 0.1, written into the forest
   settings): at the forest's default 0.5 the lamp spot on the ground a metre ahead lifts the whole frame grey.
 - Camera: default `viewStyle: "auto"`, Dead by Daylight's split (`resolvedView()`): you as the lumberjack are in
@@ -75,8 +83,12 @@
   on the Camera knob. First person still runs `cam.follow`/`update` for the shake, then overrides `cam.eye` and
   `cam.viewProj` (`mat4.lookAt`, near 0.05): shake becomes a small yaw/pitch jitter plus the saw's buzz (`sawBuzz`,
   harder revving and in wood), the eye is `firstEye` × `jackScale` plus head bob, and mouse Y pitches the view (locked;
-  unlocked it eases to `firstPitch`, or down into the cut). Your own body isn't drawn; the viewmodel
-  (`src/viewmodel.ts`, gloved hands on an orange saw, dimmed by `sawLit` against the helmet lamp) is, and while the bar
+  unlocked it eases to `firstPitch`, or down into the cut). Your own body isn't drawn; the viewmodel is
+  (`src/viewmodel.ts`): a procedural two-tone saw (worn orange and dark plastic, engine, top handle, rear grip, a bar
+  whose chain visibly runs, `sawChain`), canted so the bar shows past the guard, dimmed by `sawLit`, with a thin
+  exhaust (`sawExhaust`). His Rocketbox arms hold it (`TimberPeople.arms`, `sawArms`): wrists solved onto `SAW_HANDS`
+  with a feedback term for the rig's shortfall, each hand turned to its handle and closed in `SAW_GRIP`, gloves and an
+  oxblood sleeve tinted onto the m04 `hands` and `outfit` pieces. While the bar
   bites wood, chips fly from its nose at the lens (`WoodFx.toward`). Click locks the pointer for mouse look (first,
   chase, shoulder); bots, automation and spectating ease the yaw towards the aim. The chase (`chase*` knobs) is low,
   over the right shoulder, pulled in at trunks. The felling cam (`fellCam*`): when a tree you drop (or one within
@@ -145,5 +157,4 @@ lunge (revved), Q engine, F torch, G flare, hold E revive/shove, R new round. Al
 ## Next phase
 
 1. Frame time: the near trees are the cost (see GPU above).
-2. A proper downed crawl on the people rig (the downed are ragdolls dragged along today).
-3. Multiplayer rooms on the kit room code (`net/room-core`, `net/room-socket`); the sim is already deterministic.
+2. Multiplayer rooms on the kit room code (`net/room-core`, `net/room-socket`); the sim is already deterministic.

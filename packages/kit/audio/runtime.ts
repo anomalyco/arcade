@@ -194,6 +194,8 @@ export class AudioRuntime {
   dazeNode!: BiquadFilterNode
   analyser: AnalyserNode | null = null
   buses!: Record<MixCategory, GainNode>
+  /** Each category's reverb send, scaled with its bus by `setBusGain`, so a player's volume also turns its echo down. */
+  private busSends: Record<MixCategory, GainNode> | null = null
 
   readonly sampleBank: SampleBank
   readonly cues = new Map<string, CueRecipe>()
@@ -338,6 +340,7 @@ export class AudioRuntime {
     this.buses = Object.fromEntries(MIX_CATEGORIES.map(c => [c, mix.buses[spec.route[c]]!])) as Record<MixCategory, GainNode>
     const reverb = mix.sends[spec.reverb]!
     this.verb = reverb.input
+    this.busSends = this.makeBusSends(ctx)
     this.verbOut = reverb.output
     this.reverbWetValue = spec.sends[spec.reverb]!.wet
     this.roomOut = null
@@ -551,6 +554,7 @@ export class AudioRuntime {
     this.verbOut.gain.value = this.reverbWetValue
     this.verb = ctx.createGain()
     this.verb.gain.value = 1
+    this.busSends = this.makeBusSends(ctx)
     this.verb.connect(conv)
     conv.connect(this.verbOut)
     this.verbOut.connect(this.duckNode)
@@ -565,6 +569,17 @@ export class AudioRuntime {
       this.applySpace(0)
     }
     this.attachPacer(ctx)
+  }
+
+  private makeBusSends(ctx: BaseAudioContext): Record<MixCategory, GainNode> {
+    const sends = {} as Record<MixCategory, GainNode>
+    for (const category of MIX_CATEGORIES) {
+      const g = ctx.createGain()
+      g.gain.value = 1
+      g.connect(this.verb)
+      sends[category] = g
+    }
+    return sends
   }
 
   private attachPacer(ctx: BaseAudioContext): void {
@@ -656,6 +671,7 @@ export class AudioRuntime {
   setBusGain(category: MixCategory, level: number, tau = 0.05): void {
     if (!this.ctx || !this.buses) return
     smoothParam(this.buses[category].gain, Math.max(0, level), this.now, tau)
+    if (this.busSends) smoothParam(this.busSends[category].gain, Math.max(0, level), this.now, tau)
   }
 
   duck(seconds: number, depth = 0.45): void {
@@ -956,7 +972,7 @@ export class AudioRuntime {
     voiceGain.connect(voicePan)
     voicePan.connect(busNode)
     voicePan.connect(voiceSend)
-    voiceSend.connect(this.verb)
+    voiceSend.connect(this.busSends?.[cue.category] ?? this.verb)
 
     const samplesPicked: string[] = []
     const sampleSources: { src: AudioBufferSourceNode; baseRate: number }[] = []

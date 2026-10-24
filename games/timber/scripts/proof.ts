@@ -18,7 +18,7 @@ import { browserBudget } from "../../../scripts/browser-budget"
 await using budget = browserBudget()
 const { chromium } = budget
 
-const { values: o } = parseArgs({ options: { out: { type: "string", default: process.env.LEASE_OUT ?? "captures/proof" }, stills: { type: "boolean", default: false }, perf: { type: "boolean", default: false }, sweep: { type: "boolean", default: false } } })
+const { values: o } = parseArgs({ options: { out: { type: "string", default: process.env.LEASE_OUT ?? "captures/proof" }, stills: { type: "boolean", default: false }, perf: { type: "boolean", default: false }, sweep: { type: "boolean", default: false }, vm: { type: "boolean", default: false } } })
 const prefix = "/arcade/timber/"
 const root = resolve("dist/arcade/timber")
 const out = resolve(o.out!)
@@ -152,6 +152,25 @@ const KILL = `
   } else { input.mx = input.my = 0; input.saw = false }
 `
 
+// Saw the survivor down and leave him: watch him crawl off past his dropped torch, then cut the tree beyond him (the
+// chips). With side, a low camera off his shoulder once he's down.
+const down = (side: boolean) => `
+  const me = g.world.jacks[0], s = g.world.jacks[1], t = g.world.trees.at(-1)
+  ${GO}
+  if (s.alive && !s.downed) {
+    const d = Math.hypot(s.x - me.x, s.y - me.y)
+    if (d > 1.15) { go(s.x, s.y); input.saw = d < 2.5 } else { input.mx = input.my = 0; input.aim = Math.atan2(s.y - me.y, s.x - me.x); input.saw = true }
+    return
+  }
+  g.downAt ??= g.world.t
+  ${side ? "if (s.alive) g.auto.camera = { x: s.x, y: s.y, dist: 2.4, pitch: 0.42, yaw: 2.4, height: 0.3, fov: 50 }" : ""}
+  if (g.world.t - g.downAt < 3.2) { input.mx = input.my = 0; input.saw = false; input.aim = Math.atan2(s.y - me.y, s.x - me.x); return }
+  if (t.state === "standing") {
+    const d = Math.hypot(t.x - 0.75 - me.x, t.y - me.y)
+    if (d > 0.15) { go(t.x - 0.75, t.y); input.saw = d < 1 } else { input.mx = input.my = 0; input.aim = 0; input.saw = true }
+  } else { input.mx = input.my = 0; input.saw = false }
+`
+
 /** Whole-frame GPU ms per scene at each fern density: `--perf` (no captures). */
 async function perf() {
   const { context, page } = await open(false)
@@ -235,6 +254,10 @@ if (o.sweep) {
   await sweep()
 } else if (o.perf) {
   await perf()
+} else if (o.vm) {
+  // The first-person saw, the downed crawl and the chips, fast.
+  await stills("vm", "kill", [700, 2600, 4200, 6000, 8500, 10500], null, down(false))
+  await stills("down", "kill", [3200, 4500, 5800], null, down(true))
 } else if (o.stills) {
   await stills("flee", "flee", [1500, 3300, 6000, 7700, 10000], null, FLEE)
   await stills("kill", "kill", [800, 2000, 3500, 5500, 7500], null, KILL)
@@ -249,7 +272,9 @@ if (o.sweep) {
 } else {
   await clip("flee", "flee", 13, FLEE)
   await clip("kill", "kill", 13, KILL)
+  await clip("down", "kill", 13, down(false))
   await stills("still", "flee", [3300], null, FLEE)
+  await stills("kill", "kill", [1600, 2400], null, KILL)
 }
 
 await browser.close()

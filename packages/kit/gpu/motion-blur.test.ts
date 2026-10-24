@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test"
+import { mat4 } from "wgpu-matrix"
 import {
+  blurViewProj,
+  cameraVelocity,
   MotionBlurBurst,
   PreviousTransforms,
   motionBlurControls,
   motionBlurDefaults,
 } from "./motion-blur"
+import { jitterViewProj } from "./temporal"
 
 describe("motion-blur settings, burst impulse, and transform history", () => {
   test("motionBlurDefaults and motionBlurControls cover shutter and impulse burst", () => {
@@ -72,5 +76,26 @@ describe("motion-blur settings, burst impulse, and transform history", () => {
     history.begin()
     history.write("a", a, 0, out, 0)
     expect(out[0]).toBe(1)
+  })
+})
+
+describe("camera velocity under TAA", () => {
+  test("a still camera with per-frame jitter has no velocity when measured with the unjittered matrix", () => {
+    const proj = mat4.perspective(1, 16 / 9, 0.1, 200)
+    const view = mat4.lookAt([3, 1.7, 5], [0, 1, 0], [0, 1, 0])
+    const unjittered = new Float32Array(mat4.multiply(proj, view))
+    const frame = (jx: number, jy: number) => {
+      const f = new Float32Array(unjittered)
+      jitterViewProj(f, jx, jy, 1280, 720)
+      return f
+    }
+    const prevJ = frame(0.25, -0.31)
+    const curJ = frame(-0.4, 0.18)
+    const uv = [0.42, 0.57] as const
+    const z = 0.97
+    const jittered = cameraVelocity(blurViewProj(curJ, null), blurViewProj(prevJ, null), uv, z)
+    expect(Math.hypot(jittered[0] * 1280, jittered[1] * 720)).toBeGreaterThan(0.3)
+    const still = cameraVelocity(blurViewProj(curJ, unjittered), blurViewProj(prevJ, unjittered), uv, z)
+    expect(Math.hypot(still[0] * 1280, still[1] * 720)).toBeLessThan(1e-3)
   })
 })

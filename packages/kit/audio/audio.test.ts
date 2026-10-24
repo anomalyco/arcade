@@ -319,6 +319,10 @@ describe("player volume", () => {
     expect(busVolume(s, "foley")).toBe(0.5)
     expect(busVolume(s, "ambience")).toBe(0.25)
     expect(busVolume(s, "voice")).toBe(0)
+    // Engines sits inside Effects: the engine bus takes both, and a game without the slider keeps Effects alone.
+    expect(busVolume(s, "engine")).toBe(0.5)
+    expect(busVolume({ ...s, volumeEngine: 50 }, "engine")).toBe(0.25)
+    expect(busVolume({ ...s, volumeEffects: 0 }, "engine")).toBe(0)
     const store = new Map<string, string>()
     const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }
     const json = saveVolumeSettings(storage, "demo", s)
