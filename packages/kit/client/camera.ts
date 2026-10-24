@@ -172,7 +172,9 @@ export class HitStop {
  */
 export class Camera {
   pitch = 1.1
-  readonly fov = 0.52
+  /** Vertical field of view (rad) and near plane (m); a low chase view wants a wider lens and a nearer plane. */
+  fov = 0.52
+  near = 2
   x = 0
   z = 0
   dist = 24
@@ -402,7 +404,7 @@ export class Camera {
     const cy = Math.cos(this.yaw)
     this.eye = [target[0]! + sy * h, this.lookHeight + Math.sin(this.pitch) * dist, target[2]! + cy * h]
     const view = mat4.lookAt(this.eye, target, [Math.sin(roll) * cy, Math.cos(roll), -Math.sin(roll) * sy])
-    const proj = mat4.perspective(this.fov, aspect, 2, 400)
+    const proj = mat4.perspective(this.fov, aspect, this.near, 400)
     this.viewProj = mat4.multiply(proj, view)
     return this.viewProj as Float32Array
   }

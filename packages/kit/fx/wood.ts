@@ -88,13 +88,15 @@ export type Chip = {
   live: boolean
 }
 
-const sawdustSpec: ParticleSpec = { kind: "soft", life: 1.4, size: 0.07, growth: 0.5, gravity: 1.2, drag: 3.2, bounce: 0, r: 0.95, g: 0.82, b: 0.6, alpha: 0.5 }
+// Sawdust is mostly flecks that fall and settle where they land, with a faint haze of the finest dust over them.
+const sawdustSpec: ParticleSpec = { kind: "debris", life: 2.4, size: 0.011, growth: 0, gravity: 5, drag: 4.5, bounce: 0, r: 0.66, g: 0.52, b: 0.33, alpha: 1 }
+const hazeSpec: ParticleSpec = { kind: "soft", life: 1.1, size: 0.05, growth: 0.45, gravity: 0.3, drag: 3.6, bounce: 0, r: 0.6, g: 0.5, b: 0.36, alpha: 0.12 }
 const exhaustSpec: ParticleSpec = { kind: "smoke", life: 1.3, size: 0.04, growth: 0.16, gravity: -0.4, drag: 1.6, bounce: 0, r: 0.42, g: 0.5, b: 0.68, alpha: 0.08, turbulence: 1.2, ease: 1.4 }
 const dustSpec: ParticleSpec = { kind: "soft", life: 2.2, size: 0.5, growth: 1.4, gravity: -0.1, drag: 2.6, bounce: 0, r: 0.4, g: 0.35, b: 0.27, alpha: 0.17 }
 const needleSpec: ParticleSpec = { kind: "debris", life: 2, size: 0.05, growth: 0, gravity: 3, drag: 2.8, bounce: 0.1, r: 0.2, g: 0.4, b: 0.15, alpha: 1 }
 const sparkSpec: ParticleSpec = { kind: "spark", life: 0.35, size: 0.014, growth: -0.01, gravity: 9.81, drag: 1.2, bounce: 0.35, r: 1, g: 0.62, b: 0.25, alpha: 1, temperature: 1.3 }
-const mistSpec: ParticleSpec = { kind: "soft", life: 0.7, size: 0.08, growth: 0.9, gravity: 0.6, drag: 3.5, bounce: 0, r: 0.42, g: 0.02, b: 0.02, alpha: 0.42 }
-const dropSpec: ParticleSpec = { kind: "debris", life: 0.6, size: 0.03, growth: 0, gravity: 12, drag: 0.8, bounce: 0.05, r: 0.38, g: 0.01, b: 0.01, alpha: 1 }
+const mistSpec: ParticleSpec = { kind: "soft", life: 0.4, size: 0.04, growth: 0.6, gravity: 1.5, drag: 4, bounce: 0, r: 0.2, g: 0.012, b: 0.01, alpha: 0.32 }
+const dropSpec: ParticleSpec = { kind: "debris", life: 1.6, size: 0.02, growth: 0, gravity: 12, drag: 0.8, bounce: 0, r: 0.17, g: 0.008, b: 0.006, alpha: 1 }
 
 export class WoodFx {
   readonly chips: Chip[]
@@ -169,6 +171,7 @@ export class WoodFx {
     for (let i = this.count(`${key}.dust`, s.woodSawdust * bite, dt); i > 0; i--) {
       const sp = 0.6 + this.rand() * 1.8
       pool.spawn(sawdustSpec, x, y, z, (sx * 0.8 - ax * 0.4 + (this.rand() - 0.5)) * sp, 0.2 + this.rand() * 0.6, (sz * 0.8 - az * 0.4 + (this.rand() - 0.5)) * sp, this.rand() * 100)
+      if (this.rand() < 0.25) pool.spawn(hazeSpec, x, y, z, (sx * 0.5 - ax * 0.3) * sp, 0.1 + this.rand() * 0.3, (sz * 0.5 - az * 0.3) * sp, this.rand() * 100)
     }
   }
 
@@ -272,7 +275,7 @@ export class WoodFx {
       const sp = 0.8 + this.rand() * 2.2
       pool.spawn(mistSpec, x, y, z, Math.cos(a) * sp, 0.2 + this.rand() * 0.8, Math.sin(a) * sp, this.rand() * 100)
     }
-    for (let i = 0; i < Math.round(8 * k); i++) {
+    for (let i = 0; i < Math.round(14 * k); i++) {
       const a = dir + (this.rand() - 0.5) * 2
       const sp = 2 + this.rand() * 5
       pool.spawn(dropSpec, x, y, z, Math.cos(a) * sp, 1 + this.rand() * 3, Math.sin(a) * sp, this.rand() * 100)

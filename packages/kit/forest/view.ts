@@ -20,7 +20,8 @@ import { WET_DEFAULTS } from "../gpu/reflections/wet"
 import { packBeamProfile } from "../gpu/lights/beam"
 import type { ForestWorld, Vec3 } from "../sim/forest-world"
 import { loadForestModels, loadForestTextures, type ForestTextures } from "./assets"
-import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
+import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, treePlacement, intSeed, type ForestBuild } from "./build"
+import { poseKey, poseLog, splitTree, type ForestTreePose, type SplitTree } from "./posed"
 import { boxDistanceXZ, boxInFrustum, nearStatic } from "./cull"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
@@ -132,6 +133,14 @@ export type ForestView = {
    * `unshadowed` (a flare on the ground); the forest's own lights are all unshadowed.
    */
   setOccluders(boxes: readonly { rect: Rect; h: number }[]): void
+  /**
+   * Trees cut and turned over a hinge (felled, falling, lying): every posed tree this frame, by its index in the
+   * world's `trees`. A posed tree's instance hides; its stump and log draw, shade and cast shadows in its place. Trees
+   * left out stand again. `setWorld` clears them.
+   */
+  poseTrees(poses: readonly ForestTreePose[]): void
+  /** A posed tree's bark radius at its cut (m), for the game's fresh-wood faces; null while it stands unposed. */
+  cutRadius(tree: number): number | null
   /** Snap to the new scene's exposure after a camera cut, teleport or respawn. */
   resetExposure(): void
   /** Typed LabPanel rows for every look setting. */
@@ -720,6 +729,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       resetExposure()
     },
     resetExposure,
+    poseTrees(poses) { if (pass.setPoses(poses)) spots.invalidate() },
+    cutRadius: (tree) => pass.cutRadius(tree),
     setOccluders(boxes) { lights.setBoxes(boxes) },
     controls: (prefix = "woods.") => forestLookControls(settings, prefix),
     get quality() { return quality },
@@ -805,6 +816,15 @@ const gpuMesh = (device: GPUDevice, data: ArrayBuffer, indexed = false): GpuMesh
   return mesh
 }
 
+/** A posed tree on the GPU: its stump (static) and log (re-posed into `scratch` when its pose changes). */
+type PosedLog = { src: ArrayBuffer; scratch: ArrayBuffer; mesh: NonNullable<GpuMesh> } | null
+type PosedTree = {
+  tree: number; cut: number; key: string; template: number; chunk: number; offset: number; split: SplitTree
+  box: number[]; stumpBox: number[]
+  stump: { opaque: GpuMesh; masked: GpuMesh }
+  log: { opaque: PosedLog; masked: PosedLog }
+}
+
 const INSTANCE_LAYOUT: GPUVertexBufferLayout = { arrayStride: INSTANCE_FLOATS * 4, stepMode: "instance", attributes: [{ shaderLocation: 8, offset: 0, format: "float32x4" }, { shaderLocation: 9, offset: 16, format: "float32x4" }] }
 
 /** The moonlit lake's GPU side: its uniforms (frame + canopy), cube and group, and its async water pipeline. */
@@ -834,6 +854,13 @@ class ForestPass implements ScenePass {
   private draws: { mesh: NonNullable<GpuMesh>; masked: boolean; first: number; count: number; hidden: number; prefix: { d: number; end: number }[]; template: number; near: boolean; kind: string }[] = []
   private statics: { mesh: NonNullable<GpuMesh>; masked: boolean; near: boolean; chunk: number; d: number; inView: boolean }[] = []
   private trunkGrid = new Map<number, number[]>()
+  /** Ray targets as drawn: a posed tree's trunk stops at its cut. */
+  private trunks: Float32Array
+  private chunkAt = new Map<string, number>()
+  private posed = new Map<number, PosedTree>()
+  /** Chunks with posed trees hidden: their groups without those instances. */
+  private hiddenGroups = new Map<number, { template: number; data: Float32Array }[]>()
+  private posedInView: PosedTree[] = []
   readonly stats = { chunks: 0, instances: 0, drawCalls: 0, triangles: 0 }
   /** Profiling switches (automation only): draw statics, and each template kind. */
   readonly debug = { statics: true, tree: true, fern: true, rock: true, floor: true, prepass: true, indexed: true }
@@ -885,6 +912,8 @@ class ForestPass implements ScenePass {
     this.chunks = build.chunks.map(c => ({ box: c.box, bakedBox: c.bakedBox, cx: c.x + CHUNK / 2, cz: c.z + CHUNK / 2, near: pair(c.near), far: pair(c.far), groups: c.groups }))
     this.water = gpuMesh(d, build.water)
     this.instanceBuf = d.createBuffer({ size: this.instanceData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+    this.trunks = build.trunks.slice()
+    build.chunks.forEach((c, i) => this.chunkAt.set(c.key, i))
     for (let i = 0; i < build.trunks.length; i += 4) {
       const k = this.cell(build.trunks[i]!, build.trunks[i + 1]!)
       let list = this.trunkGrid.get(k)
@@ -894,6 +923,94 @@ class ForestPass implements ScenePass {
   }
 
   private cell(x: number, z: number) { return (Math.floor(x / 4) + 1000) * 4096 + Math.floor(z / 4) + 1000 }
+
+  /** This frame's posed trees (`ForestView.poseTrees`). True when anything drawn moved, so shadows re-render. */
+  setPoses(poses: readonly ForestTreePose[]): boolean {
+    const d = this.ctx.device
+    let moved = false, hiddenChanged = false
+    const keep = new Set<number>()
+    for (const pose of poses) {
+      const t = this.world.trees[pose.tree]
+      if (!t || keep.has(pose.tree)) continue
+      keep.add(pose.tree)
+      let p = this.posed.get(pose.tree)
+      if (p && Math.abs(p.cut - pose.cut) > 1e-4) { this.unpose(pose.tree); p = undefined; hiddenChanged = true }
+      if (!p) {
+        const made = this.makePosed(pose, t)
+        if (!made) continue
+        p = made
+        this.posed.set(pose.tree, p)
+        hiddenChanged = true
+      }
+      const key = poseKey(pose)
+      if (key === p.key) continue
+      p.key = key
+      moved = true
+      const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]
+      for (const part of [p.log.opaque, p.log.masked]) {
+        if (!part) continue
+        poseLog(part.src, part.scratch, p.split, pose, this.world.height, box)
+        d.queue.writeBuffer(part.mesh.buffer, 0, part.scratch)
+      }
+      p.box = box
+    }
+    for (const id of [...this.posed.keys()]) if (!keep.has(id)) { this.unpose(id); hiddenChanged = true; moved = true }
+    if (hiddenChanged) {
+      this.hiddenGroups.clear()
+      const byChunk = new Map<number, PosedTree[]>()
+      for (const p of this.posed.values()) if (p.chunk >= 0) { const l = byChunk.get(p.chunk) ?? []; l.push(p); byChunk.set(p.chunk, l) }
+      for (const [ci, list] of byChunk) {
+        this.hiddenGroups.set(ci, this.chunks[ci]!.groups.map(g => {
+          const drop = list.filter(p => p.template === g.template).map(p => p.offset)
+          if (!drop.length) return g
+          const out = new Float32Array(g.data.length - drop.length * INSTANCE_FLOATS)
+          let at = 0
+          for (let i = 0; i < g.data.length; i += INSTANCE_FLOATS) if (!drop.includes(i)) { out.set(g.data.subarray(i, i + INSTANCE_FLOATS), at); at += INSTANCE_FLOATS }
+          return { template: g.template, data: out }
+        }))
+      }
+      moved = true
+    }
+    return moved
+  }
+
+  cutRadius(tree: number): number | null { return this.posed.get(tree)?.split.cutRadius ?? null }
+
+  private makePosed(pose: ForestTreePose, t: ForestWorld["trees"][number]): PosedTree | null {
+    const d = this.ctx.device
+    const variant = treePlacement({ ...t, seed: intSeed(t.seed) }).variant
+    const template = this.build.templates.findIndex(x => x.name === `${t.species}-${variant}`)
+    if (template < 0) return null
+    const split: SplitTree = splitTree(t, this.build.templates[template]!, this.world.height(t.x, t.z), pose.cut)
+    const ci = this.chunkAt.get(`${Math.floor(t.x / CHUNK)},${Math.floor(t.z / CHUNK)}`) ?? -1
+    let offset = -1
+    const fx = Math.fround(t.x), fz = Math.fround(t.z)
+    const g = ci >= 0 ? this.chunks[ci]!.groups.find(g => g.template === template) : undefined
+    if (g) for (let i = 0; i < g.data.length; i += INSTANCE_FLOATS) if (g.data[i] === fx && g.data[i + 2] === fz) { offset = i; break }
+    const dyn = (src: ArrayBuffer) => {
+      if (!src.byteLength) return null
+      const buffer = d.createBuffer({ size: src.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+      return { src, scratch: new ArrayBuffer(src.byteLength), mesh: { buffer, count: src.byteLength / 32 } }
+    }
+    const tr = pose.tree * 4
+    const top = this.trunks[tr + 3]
+    if (top !== undefined && this.build.trunks[tr] === Math.fround(t.x)) this.trunks[tr + 3] = split.base[1] + pose.cut
+    const stumpBox = [t.x - 1, split.base[1], t.z - 1, t.x + 1, split.base[1] + pose.cut + 0.2, t.z + 1]
+    return {
+      tree: pose.tree, cut: pose.cut, key: "", template, chunk: offset >= 0 ? ci : -1, offset, split, box: stumpBox, stumpBox,
+      stump: { opaque: gpuMesh(d, split.stump.opaque), masked: gpuMesh(d, split.stump.masked) },
+      log: { opaque: dyn(split.log.opaque), masked: dyn(split.log.masked) },
+    }
+  }
+
+  private unpose(id: number) {
+    const p = this.posed.get(id)
+    if (!p) return
+    this.posed.delete(id)
+    for (const m of [p.stump.opaque, p.stump.masked, p.log.opaque?.mesh ?? null, p.log.masked?.mesh ?? null]) m?.buffer.destroy()
+    const tr = id * 4
+    if (tr + 3 < this.trunks.length) this.trunks[tr + 3] = this.build.trunks[tr + 3]!
+  }
 
   /**
    * This frame's lake: `null` draws Today's water. The first moonlit frame compiles the lake's water pipeline (async; Today
@@ -929,6 +1046,7 @@ class ForestPass implements ScenePass {
     this.lake?.buffer.destroy()
     this.instanceBuf.destroy()
     this.field.destroy()
+    for (const id of [...this.posed.keys()]) this.unpose(id)
     const meshes = [this.water, ...this.templates.flatMap(t => [t.near.opaque, t.near.masked, t.far?.opaque ?? null, t.far?.masked ?? null]), ...this.chunks.flatMap(c => [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked])]
     for (const m of meshes) { m?.buffer.destroy(); m?.indexed?.vertices.destroy(); m?.indexed?.indices.destroy() }
   }
@@ -959,7 +1077,7 @@ class ForestPass implements ScenePass {
       if (set.opaque) this.statics.push({ mesh: set.opaque, masked: false, near: baked, chunk: ci, d: bd, inView })
       if (set.masked) this.statics.push({ mesh: set.masked, masked: true, near: baked, chunk: ci, d: bd, inView })
       if (!inView && d > 0) continue
-      for (const g of c.groups) {
+      for (const g of this.hiddenGroups.get(ci) ?? c.groups) {
         const t = this.templates[g.template]!
         // Trees past ~240 m (High) are behind trunks and mist; the terrain still runs to the horizon.
         if (d > (t.kind === "tree" ? q.far + 100 : t.maxDist * (t.kind === "fern" || t.kind === "floor" ? Math.max(0.6, q.near / 35) : 1))) continue
@@ -1020,6 +1138,14 @@ class ForestPass implements ScenePass {
     }
     if (at) this.ctx.device.queue.writeBuffer(this.instanceBuf, 0, this.instanceData.buffer, 0, at * INSTANCE_FLOATS * 4)
     for (const st of this.statics) if (st.inView) tris += st.mesh.count / 3
+    this.posedInView.length = 0
+    for (const p of this.posed.values()) {
+      const b = p.box
+      const box = [Math.min(b[0]!, p.stumpBox[0]!), Math.min(b[1]!, p.stumpBox[1]!), Math.min(b[2]!, p.stumpBox[2]!), Math.max(b[3]!, p.stumpBox[3]!), Math.max(b[4]!, p.stumpBox[4]!), Math.max(b[5]!, p.stumpBox[5]!)]
+      if (!boxInFrustum(planes, box)) continue
+      this.posedInView.push(p)
+      for (const m of this.posedMeshes(p)) tris += m.mesh.count / 3
+    }
     Object.assign(this.stats, { chunks: visible, instances: at, drawCalls: this.draws.length + this.statics.length + 1, triangles: Math.round(tris) })
   }
 
@@ -1032,6 +1158,7 @@ class ForestPass implements ScenePass {
       const masked = phase !== "opaque"
       pass.setPipeline(phase === "opaque" ? this.pipes.opaque : phase === "depth" ? this.pipes.maskedDepth : phase === "single" ? this.pipes.maskedSingle : this.pipes.masked)
       if (this.debug.statics) for (const s of this.statics) if (s.masked === masked && s.inView) { pass.setVertexBuffer(0, s.mesh.buffer); pass.draw(s.mesh.count) }
+      if (this.debug.tree) for (const p of this.posedInView) for (const m of this.posedMeshes(p)) if (m.masked === masked) { pass.setVertexBuffer(0, m.mesh.buffer); pass.draw(m.mesh.count) }
       if (phase === "opaque" && this.water) {
         const lake = this.lakeOn ? this.lake : undefined
         if (lake?.pipe) { pass.setPipeline(lake.pipe); pass.setBindGroup(1, lake.group) }
@@ -1069,13 +1196,26 @@ class ForestPass implements ScenePass {
       if (!n) continue
       out.push({ buffer: d.mesh.buffer, count: d.mesh.count, stride: 32, instances: { buffer: this.instanceBuf, count: n, first: d.first }, ...(d.masked ? { mask: mask! } : {}) })
     }
+    for (const p of this.posed.values()) {
+      if (boxDistanceXZ(p.box, pos[0], pos[2]) > reach && boxDistanceXZ(p.stumpBox, pos[0], pos[2]) > reach) continue
+      for (const m of this.posedMeshes(p)) if (!m.masked || mask) out.push({ buffer: m.mesh.buffer, count: m.mesh.count, stride: 32, ...(m.masked ? { mask: mask! } : {}) })
+    }
     return out
+  }
+
+  private *posedMeshes(p: PosedTree): Generator<{ mesh: NonNullable<GpuMesh>; masked: boolean }> {
+    if (p.stump.opaque) yield { mesh: p.stump.opaque, masked: false }
+    if (p.stump.masked) yield { mesh: p.stump.masked, masked: true }
+    // Not drawn until posed once.
+    if (!p.key) return
+    if (p.log.opaque) yield { mesh: p.log.opaque.mesh, masked: false }
+    if (p.log.masked) yield { mesh: p.log.masked.mesh, masked: true }
   }
 
   /** First thing the ray from `o` along unit `dir` meets within `reach`: terrain, a trunk or a rock. */
   raycast(o: Vec3, dir: Vec3, reach: number) {
     const H = this.world.height
-    const tr = this.build.trunks, rk = this.build.rocks
+    const tr = this.trunks, rk = this.build.rocks
     const ground: [number, number, number] = [0.16, 0.13, 0.1]
     const step = 0.2
     let prev = 0

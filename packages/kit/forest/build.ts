@@ -361,6 +361,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
   const inCamp = (x: number, z: number, pad: number) => (world.camp?.buildings ?? []).some(b => Math.hypot(x - b.x, z - b.z) < Math.max(b.w, b.d) * 0.6 + pad)
   // Clearings (depth inside the nearest, negative outside): ferns thin in from the edge; no saplings or stumps.
   const clearingDepth = (x: number, z: number) => Math.max(-Infinity, ...(world.clearings ?? []).map(c => c.r - Math.hypot(x - c.x, z - c.z)))
+  const fernClearingDepth = (x: number, z: number) => Math.max(-Infinity, ...(world.clearings ?? []).filter(c => !c.ferns).map(c => c.r - Math.hypot(x - c.x, z - c.z)))
   const fernLimit = world.half + 6
   const density = 0.45 * opts.fernDensity * opts.scatter
   // Logs keep the damp under them: ferns and litter crowd their sides and break their line.
@@ -393,7 +394,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     const px = x + rand() * 0.85, pz = z + rand() * 0.85
     // Ferns fill the moist patches and hollows and line the trail edges, where light reaches the floor.
     const patch = Math.min(1, smooth(-0.1, 0.45, smoothNoise(world.seed + 21, px / 9, pz / 9) * 0.6 + smoothNoise(world.seed + 22, px / 3.5, pz / 3.5) * 0.4 + hollowness(world, px, pz) * 0.5) + pathEdge(px, pz) * 0.7 + logEdge(px, pz) * 0.8)
-    if (rand() > patch * density * 2.2 * smooth(3, 0, clearingDepth(px, pz))) continue
+    if (rand() > patch * density * 2.2 * smooth(3, 0, fernClearingDepth(px, pz))) continue
     if (lakeD(px, pz) < 1.06 || onPath(px, pz, 0.35) || occupied(px, pz, 0.25) || inCamp(px, pz, 3)) continue
     const big = rand() < 0.55
     const pick = ferns[big ? Math.floor(rand() * 2) : 2 + Math.floor(rand() * 2)]!

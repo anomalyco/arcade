@@ -55,6 +55,8 @@ export interface ForestClearing {
   x: number
   z: number
   r: number
+  /** Keep the ferns and litter, clearing only what stands (saplings, stumps): a play area whose solids the game owns. */
+  ferns?: boolean
 }
 
 /** Still water. The surface is flat at `level`; the shoreline is where terrain crosses it. */
