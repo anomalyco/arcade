@@ -19,7 +19,7 @@ export const WALLS: readonly Rect[] = [
   [ARENA_HALF, -ARENA_HALF, ARENA_HALF + 1, ARENA_HALF],
 ]
 
-export type ViewStyle = "iso" | "shoulder" | "top"
+export type ViewStyle = "chase" | "iso" | "shoulder" | "top"
 /** `hunt`: one chainsaw lumberjack against survivors with axes. `ffa`: everyone has a saw, last one standing. */
 export type Mode = "hunt" | "ffa"
 export type Role = "lumberjack" | "survivor"
@@ -29,14 +29,7 @@ export const PART_KINDS: readonly PartKind[] = ["fuel", "plug", "keys"]
 export const FEEL = {
   mode: "hunt" as Mode,
   playAs: "survivor" as Role,
-  viewStyle: "iso" as ViewStyle,
-  // Presentation: crowns (and trunks on the camera side) between the camera and the player fade out, so the forest
-  // floor stays readable from above.
-  canopyCut: 9,
-  canopyAlpha: 0.1,
-  night: 0.85,
-  torchPower: 7,
-  torchRange: 16,
+  viewStyle: "chase" as ViewStyle,
   slowMoScale: 0.3,
   slowMoTime: 0.9,
   // Forest.
@@ -156,16 +149,12 @@ export const FEEL_CONTROLS: LabControl[] = [
     group: "Style",
     type: "select",
     options: [
+      { value: "chase", label: "Low chase (mouse look on click)" },
       { value: "iso", label: "High chase (shows fall lines)" },
       { value: "shoulder", label: "Over the shoulder (mouse look)" },
       { value: "top", label: "Top-down" },
     ],
   },
-  range("canopyCut", "Canopy cutaway width", "Style", 0, 20, 0.5, "m"),
-  range("canopyAlpha", "Canopy inside cutaway", "Style", 0, 1, 0.05, "opacity"),
-  range("night", "Night", "Style", 0, 1, 0.05),
-  range("torchPower", "Torch brightness", "Style", 0, 10, 0.1),
-  range("torchRange", "Torch reach", "Style", 2, 40, 0.5, "m"),
   range("slowMoScale", "Slow-mo speed", "Style", 0.05, 1, 0.05, "×"),
   range("slowMoTime", "Slow-mo length (crush, 3+ domino)", "Style", 0, 3, 0.05, "s"),
   range("cutTime", "Saw felling time", "Felling", 0.6, 8, 0.1, "s"),

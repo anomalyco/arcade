@@ -481,7 +481,17 @@ holds, and Ashwood's inner-crown shade.
 - Kit: "his trees are thicker and kind of connect, make a better silhouette".
 
 **Night forest.** Procedural trees and terrain mixed with scanned bark and ground, a mist bank, torches, exposure and
-quality tiers in one renderer (`packages/kit/forest/`). BARBARA, Lab.
+quality tiers in one renderer (`packages/kit/forest/`). BARBARA, Lab, TIMBER.
+
+**Felled forest trees.** `ForestView.poseTrees` splits a real forest tree at the cut into a stump and a log that
+rotates over the hinge, with crown lag, flutter, a whip and thrash on landing, and branches clamped above the ground
+(`packages/kit/forest/posed.ts`). A tree left out stands again, and a log isn't drawn until it has been posed once.
+- Where: TIMBER (`games/timber/src/world-view.ts` `TimberView.pose`).
+- Cost: one re-split per newly posed tree, then a re-skin of the log's mesh per frame while it moves; within noise
+  on the mini.
+- Kit: pending (timber-look review, Oct 23).
+- Pitfall: a translucent kit part (alpha < 1) drawn into the forest pass blew the whole frame out milky white. Use
+  opaque parts, fading with tint or scale.
 
 **Rule-based ground clutter.** Weeds at fence bases, litter at kerbs, gravel in gutters, with padded keep-outs for
 lanes, doors and colliders; raising a density only adds items (`packages/kit/sim/debris.ts`). Lot.

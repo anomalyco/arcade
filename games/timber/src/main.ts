@@ -8,26 +8,20 @@ import { onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { Input } from "@arcade/kit/client/input"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { attachLabPanelControl } from "@arcade/kit/dev-control"
-import { FlareFx, flareSceneLight } from "@arcade/kit/fx/flare"
+import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
+import type { ForestTorch } from "@arcade/kit/forest/view"
+import { FlareFx } from "@arcade/kit/fx/flare"
 import { Particles } from "@arcade/kit/fx/particles"
-import { Splatter, splatterPresets } from "@arcade/kit/fx/splatter"
-import { SplatterSurfaces } from "@arcade/kit/fx/splatter-surfaces"
 import { WoodFx, woodControls, woodDefaults } from "@arcade/kit/fx/wood"
 import { openGpu } from "@arcade/kit/gpu/boot"
-import { FrameParts, SPRITE } from "@arcade/kit/gpu/frame-parts"
-import { createLookSettings } from "@arcade/kit/gpu/look"
-import { MAT, Mesh, packVerts, type Rgb } from "@arcade/kit/gpu/mesh"
-import { Renderer } from "@arcade/kit/gpu/renderer"
-import { flatLighting, newSceneFrame, packSceneFrame, type SceneLight, SceneLights } from "@arcade/kit/gpu/scene-frame"
-import { GpuPerf } from "@arcade/kit/gpu-perf"
+import { FrameParts } from "@arcade/kit/gpu/frame-parts"
+import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { LabPanel } from "@arcade/kit/lab-panel"
-import { QUALITY_PROFILES } from "@arcade/kit/quality"
 import { audioRuntimeSync, createGameShell, createShellQuality, type GameShell } from "@arcade/kit/shell"
 import { mulberry32 } from "@arcade/kit/sim/rng"
 import { SAW_BITE, SAW_ENGINE, TIMBER_SFX, TRUCK_ENGINE } from "../shared/sfx"
 import {
   active,
-  ARENA_HALF,
   createWorld,
   FEEL,
   FEEL_CONTROLS,
@@ -50,7 +44,9 @@ import {
   WALLS,
   type World,
 } from "../shared/sim"
-import { HINGE, predictedFall, standingLean, type Tree, trunkHeightAt } from "../shared/trees"
+import { HINGE, predictedFall, type Tree, trunkHeightAt } from "../shared/trees"
+import { LOOK, LOOK_CONTROLS } from "./look"
+import { TimberView } from "./world-view"
 
 const DT = 1 / 60
 const FFA_NAMES = ["You", "Red", "Gold", "Violet", "Lime", "Rose", "Teal", "Ash"]
@@ -75,80 +71,13 @@ const SURVIVOR_TINTS: Rgb[] = [
   [0.98, 0.5, 0.7],
 ]
 const PART_NAMES: Record<PartKind | "gas", string> = { fuel: "fuel can", plug: "spark plug", keys: "keys", gas: "gas can" }
-const PART_GLOW: Record<PartKind | "gas", Rgb> = { fuel: [0.4, 1, 0.45], plug: [0.7, 0.85, 1], keys: [1, 0.85, 0.3], gas: [1, 0.35, 0.2] }
-
-/** Reference tree the models are built at; each tree is drawn at scale h / TREE_H. */
-const TREE_H = 25
-const CROWNS = [1.6, 2.0, 2.4, 2.8]
-const BARK: Rgb = [0.36, 0.25, 0.17]
-const WOOD: Rgb = [0.93, 0.78, 0.54]
-const NEEDLES: Rgb = [0.16, 0.34, 0.15]
-const CROWN_BASE = 0.45
-
-/** The trunk above the cut, hinged at the origin: the part that pivots. Its butt is fresh wood. */
-function trunkMesh(): Mesh {
-  const m = new Mesh()
-  m.prism(0, 0, 0.25, 0.13, 0, TREE_H, 8, BARK, MAT.lit)
-  return m
-}
-
-/** Torn fibres and the fresh face of the butt, drawn with the trunk once it has gone over. */
-function buttMesh(seed: number): Mesh {
-  const m = new Mesh()
-  const rnd = mulberry32(seed)
-  m.prism(0, 0, 0.245, 0.245, -0.012, 0.004, 8, WOOD, MAT.lit)
-  for (let i = 0; i < 9; i++) {
-    const a = rnd() * Math.PI * 2
-    const d = rnd() * 0.18
-    const len = 0.06 + rnd() * (i < 3 ? 0.32 : 0.12)
-    m.prism(Math.cos(a) * d, Math.sin(a) * d, 0.012 + rnd() * 0.02, 0.002, -len, 0, 4, [WOOD[0] * 0.9, WOOD[1] * 0.85, WOOD[2] * 0.8], MAT.lit)
-  }
-  return m
-}
-
-/** A torn stump: the hinge strip and long fibres stand up out of the cut. */
-function jaggedStumpMesh(seed: number): Mesh {
-  const m = new Mesh()
-  const rnd = mulberry32(seed)
-  m.prism(0, 0, 0.27, 0.25, 0, HINGE, 8, BARK, MAT.lit)
-  m.prism(0, 0, 0.235, 0.235, HINGE - 0.01, HINGE + 0.012, 8, WOOD, MAT.lit)
-  for (let i = 0; i < 11; i++) {
-    const a = rnd() * Math.PI * 2
-    const d = 0.05 + rnd() * 0.17
-    const len = 0.05 + rnd() * (i < 4 ? 0.34 : 0.14)
-    m.prism(Math.cos(a) * d, Math.sin(a) * d, 0.014 + rnd() * 0.025, 0.002, HINGE, HINGE + len, 4, [WOOD[0] * (0.85 + rnd() * 0.15), WOOD[1] * 0.85, WOOD[2] * 0.78], MAT.lit)
-  }
-  return m
-}
-
-/** Both windings, so a thin face shows from either side. */
-function quad2(m: Mesh, a: number[], b: number[], c: number[], d: number[], n: number[], col: Rgb) {
-  m.quad(a, b, c, d, n, col, MAT.lit)
-  m.quad(d, c, b, a, [-n[0]!, -n[1]!, -n[2]!], col, MAT.lit)
-}
-
-/** The face notch on the fall side (+x): a dark mouth with pale lips. */
-function wedgeMesh(): Mesh {
-  const m = new Mesh()
-  const x0 = 0.262
-  const x1 = 0.27
-  quad2(m, [x0, -0.02, -0.21], [x0, 0.19, -0.21], [x0, 0.19, 0.21], [x0, -0.02, 0.21], [1, 0, 0], WOOD)
-  quad2(m, [x1, 0.005, -0.18], [x1, 0.16, -0.18], [x1, 0.16, 0.18], [x1, 0.005, 0.18], [1, 0, 0], [0.06, 0.04, 0.03])
-  return m
-}
-
-/** A stacked conifer crown on the same hinge: three cones, widest at the bottom. */
-function crownMesh(crownR: number): Mesh {
-  const m = new Mesh()
-  const c0 = CROWN_BASE * TREE_H
-  for (let i = 0; i < 3; i++) {
-    const y0 = c0 + i * (TREE_H - c0) * 0.3
-    const y1 = Math.min(TREE_H + 0.8, y0 + (TREE_H - c0) * 0.55)
-    const r = crownR * (1 - i * 0.25)
-    m.prism(0, 0, r, 0.05, y0, y1, 7, [NEEDLES[0] * (1 + i * 0.12), NEEDLES[1] * (1 + i * 0.1), NEEDLES[2]], MAT.lit, 0, true, i * 0.4)
-  }
-  return m
-}
+/** Where along a falling tree the felling cam looks (share of its length). */
+const FELL_AIM = 0.36
+/** A felled tree's mass relative to a 25 m spruce with a 2.2 m crown: scales the landing. */
+const treeMass = (t: Tree) => (t.h / 25) ** 2 * (t.crownR / 2.2)
+const WOOD: Rgb = [0.62, 0.47, 0.3]
+const NEEDLES: Rgb = [0.1, 0.2, 0.09]
+const BLOOD: Rgb = [0.11, 0.008, 0.006]
 
 function sawMesh(): Mesh {
   const m = new Mesh()
@@ -189,31 +118,48 @@ function itemMesh(kind: PartKind | "gas"): Mesh {
     m.box(-0.17, 0, -0.08, 0.17, 0.42, 0.08, c, MAT.lit)
     m.box(-0.12, 0.42, -0.03, 0.04, 0.5, 0.03, [0.15, 0.15, 0.15], MAT.lit)
     m.box(0.08, 0.42, -0.025, 0.14, 0.52, 0.025, [0.7, 0.62, 0.2], MAT.lit)
+    // A reflective band, so a torch beam finds it in the dark.
+    m.box(-0.175, 0.17, -0.085, 0.175, 0.23, 0.085, [0.85, 0.85, 0.8], MAT.retro)
   } else if (kind === "plug") {
     m.box(-0.1, 0, -0.1, 0.1, 0.05, 0.1, [0.35, 0.3, 0.25], MAT.lit)
     m.prism(0, 0, 0.03, 0.03, 0.05, 0.16, 6, [0.92, 0.92, 0.88], MAT.lit)
     m.prism(0, 0, 0.022, 0.022, 0.16, 0.24, 6, [0.6, 0.62, 0.66], MAT.shiny)
+    m.box(-0.105, 0.05, -0.105, 0.105, 0.065, 0.105, [0.85, 0.85, 0.8], MAT.retro)
   } else {
     m.box(-0.12, 0, -0.1, 0.12, 0.03, 0.1, [0.35, 0.3, 0.25], MAT.lit)
     m.box(-0.06, 0.03, -0.015, 0.03, 0.05, 0.05, [0.95, 0.78, 0.2], MAT.shiny)
     m.box(0.03, 0.03, 0, 0.12, 0.045, 0.02, [0.85, 0.85, 0.82], MAT.shiny)
+    m.box(-0.12, 0.03, -0.1, -0.07, 0.04, 0.1, [0.85, 0.85, 0.8], MAT.retro)
   }
   return m
 }
 
-function groundSurfaces(): SplatterSurfaces {
-  const tris: number[] = []
-  const step = 4
-  for (let x = -ARENA_HALF; x < ARENA_HALF; x += step)
-    for (let z = -ARENA_HALF; z < ARENA_HALF; z += step) {
-      tris.push(x, 0, z, x, 0, z + step, x + step, 0, z, 1)
-      tris.push(x + step, 0, z, x, 0, z + step, x + step, 0, z + step, 1)
-    }
-  return new SplatterSurfaces(tris)
+/** A pool of blood at unit radius: an irregular dark disc lying on the ground. */
+function poolMesh(seed: number): Mesh {
+  const m = new Mesh()
+  const rnd = mulberry32(seed)
+  const seg = 18
+  const lobes = Array.from({ length: 4 }, () => [rnd() * Math.PI * 2, 0.15 + rnd() * 0.25] as const)
+  const at = (a: number) => {
+    let r = 0.75 + rnd() * 0.1
+    for (const [c, k] of lobes) r += k * Math.max(0, Math.cos(a - c)) ** 4
+    return [Math.cos(a) * r, 0, Math.sin(a) * r]
+  }
+  const ring = Array.from({ length: seg }, (_, s) => at((s / seg) * Math.PI * 2))
+  for (let s = 0; s < seg; s++) m.facet([0, 0, 0], ring[(s + 1) % seg]!, ring[s]!, BLOOD, MAT.lit)
+  return m
 }
 
-const mix = (a: number, b: number, k: number) => a + (b - a) * k
-const mix3 = (a: readonly number[], b: readonly number[], k: number): [number, number, number] => [mix(a[0]!, b[0]!, k), mix(a[1]!, b[1]!, k), mix(a[2]!, b[2]!, k)]
+const smooth = (e0: number, e1: number, v: number) => {
+  const k = Math.min(1, Math.max(0, (v - e0) / (e1 - e0)))
+  return k * k * (3 - 2 * k)
+}
+const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
+const mixAngle = (a: number, b: number, k: number) => a + wrapAngle(b - a) * k
+/** The camera yaw that sits behind someone aiming at `aim` (sim radians). */
+const yawBehind = (aim: number) => Math.atan2(-Math.cos(aim), -Math.sin(aim))
+/** The sim aim along a camera yaw. */
+const aimOfYaw = (yaw: number) => Math.atan2(-Math.cos(yaw), -Math.sin(yaw))
 
 const controlsHtml = () => {
   const common = [keyPromptHtml("KeyR", "New round"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")]
@@ -231,7 +177,8 @@ const controlsHtml = () => {
   ].join(" ")
 }
 
-type Automation = { input: JackInput | null; camera: { x: number; y: number; dist: number; pitch: number } | null }
+type AutoCamera = { x: number; y: number; dist: number; pitch: number; yaw?: number; height?: number; fov?: number }
+type Automation = { input: JackInput | null; camera: AutoCamera | null }
 type Later = { at: number; run: () => void }
 
 async function main() {
@@ -249,18 +196,19 @@ async function main() {
   const glare = document.getElementById("glare")!
   const params = new URLSearchParams(location.search)
 
-  let renderer: Renderer | null = null
-  const live: { panel: LabPanel | null; shell: GameShell | null; gpuMs: () => number; newRound?: () => void } = { panel: null, shell: null, gpuMs: () => 0 }
+  const smoke = params.has("smoke")
+  const live: { panel: LabPanel | null; shell: GameShell | null; view: TimberView | null; newRound?: () => void } = { panel: null, shell: null, view: null }
+  // Auto starts at High and steps down on slow frames; `?quality=` pins a mode for automation.
   const quality = createShellQuality({
     game: "timber",
-    tiers: QUALITY_PROFILES,
+    tiers: FOREST_QUALITY,
     params,
-    gpuMs: () => live.gpuMs(),
-    onChange: (tier) => {
-      renderer?.setBloomLevels(tier.bloomLevels)
+    onChange: () => {
+      live.view?.forest.setQuality(quality.tier)
       live.shell?.settings.changed()
     },
   }).expose()
+  if (smoke) quality.setMode("low", false)
   const shell = createGameShell({
     game: "timber",
     title: "TIMBER",
@@ -282,24 +230,11 @@ async function main() {
     hud.textContent = gpu
     return
   }
-  const perf = new GpuPerf(gpu.device)
-  renderer = new Renderer(gpu.device, gpu.context, gpu.format)
-  const r = renderer
-  live.gpuMs = () => perf.gpuMs ?? r.lastGpuMs
-  r.setLook(createLookSettings())
-  r.setBloomLevels(quality.profile.bloomLevels)
-
-  const level = new Mesh()
-  level.box(-ARENA_HALF - 6, -0.2, -ARENA_HALF - 6, ARENA_HALF + 6, 0, ARENA_HALF + 6, [0.2, 0.27, 0.14], MAT.lit)
-  // A low earth bank round the woods, so the edge reads.
-  for (const [x0, y0, x1, y1] of WALLS) level.box(x0, 0, y0, x1, 0.9, y1, [0.26, 0.22, 0.16], MAT.lit)
-  const lighting = flatLighting(0, 1, [0.32, 0.36, 0.26])
-  r.setLevel({
-    chunks: [{ data: packVerts(level.v), box: [-ARENA_HALF - 6, -ARENA_HALF - 6, ARENA_HALF + 6, ARENA_HALF + 6] }],
-    glass: [],
-    floor: lighting.floor,
-    bounce: lighting.bounce,
-  })
+  const seed = Number(params.get("seed")) || 1 + Math.floor(Math.random() * 1e6)
+  const w: World = createWorld(seed, FEEL)
+  const view = await TimberView.create(gpu, w, quality.tier, smoke)
+  live.view = view
+  const r = view.renderer
 
   const human = registerPersonModels((m) => r.addModel(m))
   const sawModel = r.addModel(sawMesh())
@@ -311,33 +246,19 @@ async function main() {
   // The rig's rifle hold, with a chainsaw (or an axe) in the rifle's place.
   const sawParts: PartModels = { ...human, gun: { ...human.gun, rifle: sawModel }, mag: { ...human.mag, rifle: motorModel } }
   const axeParts: PartModels = { ...human, gun: { ...human.gun, rifle: axeModel }, mag: { ...human.mag, rifle: noMag } }
-  const trunkModel = r.addModel(trunkMesh())
-  const trunkFadeModel = r.addModel(trunkMesh())
-  // Faded crowns draw through the alpha pipeline; their own models keep the opaque batches opaque.
-  const crownModels = CROWNS.map((c) => r.addModel(crownMesh(c)))
-  const crownFadeModels = CROWNS.map((c) => r.addModel(crownMesh(c)))
-  const stumpMesh = new Mesh()
-  stumpMesh.prism(0, 0, 0.27, 0.25, 0, HINGE, 8, BARK, MAT.lit)
-  const stumpModel = r.addModel(stumpMesh)
-  const jaggedModels = [11, 23, 37].map((s) => r.addModel(jaggedStumpMesh(s)))
-  const buttModels = [5, 17, 29].map((s) => r.addModel(buttMesh(s)))
-  const slitMesh = new Mesh()
-  slitMesh.box(-0.5, -0.014, -0.265, 0, 0.014, 0.265, [0.05, 0.03, 0.02], MAT.lit)
-  slitMesh.box(-0.5, -0.03, -0.27, -0.46, 0.03, 0.27, WOOD, MAT.lit)
-  const slitModel = r.addModel(slitMesh)
-  const wedgeModel = r.addModel(wedgeMesh())
   const chipMesh = new Mesh()
   chipMesh.box(-0.5, -0.15, -0.35, 0.5, 0.15, 0.35, WOOD, MAT.lit)
   const chipModel = r.addModel(chipMesh)
   const splinterMesh = new Mesh()
-  splinterMesh.box(-0.06, -0.5, -0.03, 0.06, 0.5, 0.03, [WOOD[0] * 0.95, WOOD[1] * 0.9, WOOD[2] * 0.85], MAT.lit)
+  splinterMesh.box(-0.06, -0.5, -0.03, 0.06, 0.5, 0.03, [WOOD[0] * 1.05, WOOD[1], WOOD[2] * 0.9], MAT.lit)
   const splinterModel = r.addModel(splinterMesh)
   const twigMesh = new Mesh()
-  twigMesh.box(-0.03, -0.5, -0.03, 0.03, 0.5, 0.03, [0.32, 0.22, 0.14], MAT.lit)
+  twigMesh.box(-0.03, -0.5, -0.03, 0.03, 0.5, 0.03, [0.22, 0.15, 0.1], MAT.lit)
   twigMesh.box(-0.12, 0.1, -0.12, 0.12, 0.5, 0.12, NEEDLES, MAT.lit)
   const twigModel = r.addModel(twigMesh)
   const truckModel = r.addModel(truckMesh())
   const itemModels = { fuel: r.addModel(itemMesh("fuel")), plug: r.addModel(itemMesh("plug")), keys: r.addModel(itemMesh("keys")), gas: r.addModel(itemMesh("gas")) }
+  const poolModels = [3, 19, 41, 77].map((s) => r.addModel(poolMesh(s)))
 
   const sound = new SoundBank("timber", TIMBER_SFX)
   const syncRuntime = audioRuntimeSync(shell.settings, sound.runtime)
@@ -347,19 +268,16 @@ async function main() {
     syncRuntime()
   }
   const particles = new Particles()
-  const splatter = new Splatter(groundSurfaces())
-  const blood = { ...splatterPresets.blood }
   const fx = mulberry32(7)
   const fp = new FrameParts()
   const input = new Input(canvas, [])
-  const labSettings = Object.assign(FEEL, cameraShakeDefaults(), woodDefaults())
+  const labSettings = Object.assign(FEEL, LOOK, cameraShakeDefaults(), woodDefaults())
   const wood = new WoodFx(labSettings, 2400, 3)
   const cam = new Camera(labSettings)
   const hitStop = new HitStop()
-  const lights = new SceneLights()
-  const sceneFrame = newSceneFrame()
 
-  const panel = new LabPanel(labSettings, [...FEEL_CONTROLS, ...woodControls(), ...cameraShakeControls], params, () => input.release(), { open: false, openGroups: ["Round"] })
+  const panel = new LabPanel(labSettings, [...FEEL_CONTROLS, ...LOOK_CONTROLS, ...woodControls(), ...cameraShakeControls], params, () => input.release(), { open: false, openGroups: ["Round"] })
+  panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
   live.panel = panel
   attachLabPanelControl(panel)
   shell.settings.subscribe(() => {
@@ -372,8 +290,10 @@ async function main() {
   prompts()
   onKeyLayoutChange(prompts)
 
-  const seed = Number(params.get("seed")) || 1 + Math.floor(Math.random() * 1e6)
-  const w: World = createWorld(seed, FEEL)
+  // Hurt: the edges of the view go dark red.
+  const hurt = document.createElement("div")
+  hurt.style.cssText = "position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(70,0,0,.9) 100%)"
+  canvas.after(hurt)
   let avatars = new Map<number, Avatar>()
   /** Ragdolls: the dead, and the downed (which crawl, so they follow the sim body). */
   let corpses = new Map<number, Ragdoll>()
@@ -386,6 +306,15 @@ async function main() {
   let later: Later[] = []
   let feedLines: { text: string; t: number }[] = []
   let camYaw = 0
+  /** The chase camera's distance after pulling in at trunks (m). */
+  let chaseD = LOOK.chaseDist
+  /** The felling cam: a shot side-on to a tree you dropped, on game time so slow-mo stretches it. */
+  let fellShot: { tree: number; at: number; x: number; y: number } | null = null
+  type Pool = { x: number; y: number; at: number; size: number; yaw: number; model: number }
+  let pools: Pool[] = []
+  let dripAt = new Map<number, number>()
+  /** Each lumberjack's helmet lamp: where it points (eased, as a head turns) and the tree he is watching fall. */
+  let lamps = new Map<number, { dir: [number, number, number]; tree: number; until: number }>()
   let slowMo = 0
   const auto: Automation = { input: null, camera: null }
 
@@ -404,8 +333,16 @@ async function main() {
     later = []
     avatars = new Map(w.jacks.map((j) => [j.id, newAvatar(`jack-${j.id}`, j.x, j.y, j.aim, "rifle")]))
     const me = w.jacks[0]
-    if (me) cam.snap(me.x, me.y)
-    splatter.reset()
+    if (me) {
+      cam.snap(me.x, me.y)
+      camYaw = yawBehind(me.aim)
+    }
+    cam.resetShake()
+    view.forest.resetExposure()
+    pools = []
+    dripAt = new Map()
+    lamps = new Map()
+    fellShot = null
     particles.reset()
     wood.reset()
     feedLines = []
@@ -415,6 +352,7 @@ async function main() {
   newAvatars()
   const newRound = () => {
     resetRound(w, FEEL)
+    view.sync(w)
     newAvatars()
   }
   live.newRound = newRound
@@ -450,9 +388,10 @@ async function main() {
     else if (code === "KeyF") pressed.torch = true
     else if (code === "KeyG") pressed.flare = true
   }
-  // Over the shoulder: mouse look on the pointer lock (click to take it).
+  // The chase and shoulder views: mouse look on the pointer lock (click to take it).
+  const mouseLook = () => FEEL.viewStyle === "chase" || FEEL.viewStyle === "shoulder"
   canvas.addEventListener("click", () => {
-    if (FEEL.viewStyle === "shoulder" && shell.playing && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
+    if (mouseLook() && shell.playing && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
   })
   // Escape releases the lock before the shell sees the key, so a lost lock mid-play is the pause.
   document.addEventListener("pointerlockchange", () => {
@@ -462,7 +401,7 @@ async function main() {
     if (!shell.playing && document.pointerLockElement === canvas) document.exitPointerLock()
   })
   window.addEventListener("mousemove", (e) => {
-    if (document.pointerLockElement === canvas && FEEL.viewStyle === "shoulder") camYaw -= e.movementX * 0.0028
+    if (document.pointerLockElement === canvas && mouseLook()) camYaw -= e.movementX * 0.0028
   })
 
   const say = (text: string) => {
@@ -484,7 +423,7 @@ async function main() {
   const after = (s: number, run: () => void) => later.push({ at: w.t + s, run })
 
   const resize = () => {
-    if (quality.fit(canvas, innerWidth, innerHeight)) r.resize(canvas.width, canvas.height)
+    if (quality.fit(canvas, innerWidth, innerHeight)) view.forest.resize(canvas.width, canvas.height)
   }
   resize()
   addEventListener("resize", resize)
@@ -497,12 +436,14 @@ async function main() {
     if (!input.enabled) return { ...NO_INPUT, aim: me.aim }
     const { mx, my } = input.move()
     const keys = { ...presses, use: input.held("KeyE"), saw: input.firing, dash: input.takeJump(), sprint: input.sprinting }
-    if (FEEL.viewStyle === "shoulder") {
+    if (mouseLook()) {
       const fwdX = -Math.sin(camYaw)
       const fwdY = -Math.cos(camYaw)
       const rx = Math.cos(camYaw)
       const ry = -Math.sin(camYaw)
-      return { ...keys, mx: rx * mx - fwdX * my, my: ry * mx - fwdY * my, aim: Math.atan2(fwdY, fwdX) }
+      // Locked, you aim where the camera looks; before the click, the cursor turns the aim off the view's centre.
+      const u = document.pointerLockElement === canvas ? 0 : ((input.mouse.x / innerWidth) * 2 - 1) * Math.tan(cam.fov / 2) * (innerWidth / Math.max(1, innerHeight))
+      return { ...keys, mx: rx * mx - fwdX * my, my: ry * mx - fwdY * my, aim: Math.atan2(fwdY + ry * u, fwdX + rx * u) }
     }
     const cursor = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight, 1)
     return { ...keys, mx, my, aim: Math.atan2(cursor.y - me.y, cursor.x - me.x) }
@@ -521,11 +462,21 @@ async function main() {
   }
   const involvesMe = (...ids: number[]) => ids.includes(focusJack().id)
 
-  let splatId = 0
+  /** A pool of blood that spreads where it lands; a fresh one this close just feeds the last. */
+  const pool = (x: number, y: number, size: number) => {
+    if (labSettings.bloodPool <= 0) return
+    size *= labSettings.bloodPool
+    const near = pools.find((p) => Math.hypot(p.x - x, p.y - y) < p.size * 0.8)
+    if (near) {
+      near.size = Math.min(1.6, Math.hypot(near.size, size * 0.7))
+      return
+    }
+    pools.push({ x, y, at: w.t, size, yaw: fx() * Math.PI * 2, model: poolModels[Math.floor(fx() * poolModels.length)]! })
+    if (pools.length > 60) pools.shift()
+  }
   const bleed = (x: number, y: number, dir: number, amount: number) => {
-    splatId++
-    splatter.emit({ id: splatId, seed: seed ^ splatId, x, y: 1.05, z: y, dx: Math.cos(dir), dy: 0.15, dz: Math.sin(dir), amount }, blood)
-    wood.bloodMist(particles, x, 1.05, y, dir, amount)
+    wood.bloodMist(particles, x, 1.05, y, dir, amount * labSettings.bloodDrops)
+    pool(x + Math.cos(dir) * 0.45, y + Math.sin(dir) * 0.45, 0.22 * Math.sqrt(amount))
   }
 
   const ragdollFor = (j: Jack, dir: number, style: "crush" | "saw" | "down") => {
@@ -537,7 +488,6 @@ async function main() {
     crawlAt.set(j.id, { x: j.x, y: j.y })
   }
 
-  const treeMass = (t: Tree) => (t.h / TREE_H) ** 2 * (t.crownR / 2.2)
   const slow = () => {
     if (FEEL.slowMoTime > 0) slowMo = FEEL.slowMoTime
   }
@@ -554,8 +504,11 @@ async function main() {
         sound.play("barricade.break", t.x, t.y, { rate: 0.7, gain: 1.3 })
         after(0.11, () => sound.play("impact.bullet.wood", t.x, t.y, { rate: 0.6, gain: 1.2 }))
         after(0.28, () => sound.play("ship.hull.creak", t.x, t.y, { rate: 0.85, gain: 1.1 }))
-        wood.splinters(t.x, HINGE, t.y, t.fx, t.fy, t.r)
+        wood.splinters(t.x, HINGE, t.y, t.fx, t.fy, view.cutRadius(t, e.tree))
         if (involvesMe(e.by)) cam.add(0.12)
+        fellCam(t)
+        const lamp = lamps.get(e.by)
+        if (lamp) Object.assign(lamp, { tree: t.id, until: w.t + labSettings.fellCamTime })
         say(`${nameOf(e.by)} felled a tree`)
       } else if (e.kind === "domino") {
         const t = w.trees[e.tree]!
@@ -564,7 +517,7 @@ async function main() {
         sound.play("barricade.break", t.x, t.y, { rate: 0.6 })
         after(0.1, () => sound.play("impact.bullet.wood", t.x, t.y, { rate: 0.55, gain: 1.1 }))
         wood.branches(particles, t.x, h, t.y, 1.4)
-        wood.splinters(t.x, HINGE, t.y, t.fx, t.fy, t.r)
+        wood.splinters(t.x, HINGE, t.y, t.fx, t.fy, view.cutRadius(t, e.tree))
         if (e.chain >= 2) slow()
         say(e.chain >= 2 ? `Domino ×${e.chain + 1}!` : "Domino!")
       } else if (e.kind === "brush") {
@@ -590,7 +543,8 @@ async function main() {
           after(d, () => sound.play("melee.hit.wood", t.x + t.fx * s, t.y + t.fy * s, { rate: 0.55 + fx() * 0.3, gain: 0.9 }))
         }
         hitStop.trigger((FEEL.landHitStopMs / 1000) * near * Math.min(1, k))
-        cam.add(FEEL.landShake * near * Math.min(1, k), Math.atan2(t.fy, t.fx))
+        cam.add(FEEL.landShake * labSettings.landingShake * near * Math.min(1, k), Math.atan2(t.fy, t.fx))
+        view.land(t.id, e.speed / (t.h + HINGE), labSettings)
         wood.landing(particles, t.x, t.y, t.fx, t.fy, t.h, t.crownR, 1 - t.crown0, mass * Math.min(1.3, e.speed / 30))
       } else if (e.kind === "crush") {
         const j = w.jacks[e.jack]!
@@ -689,7 +643,8 @@ async function main() {
         const t = w.trees[e.tree]!
         sound.play("melee.hit.wood", t.x, t.y, { rate: 0.9 + fx() * 0.2, gain: 1 })
         sound.play("melee.swing.light", j.x, j.y, { rate: 1.2, gain: 0.5 })
-        wood.chop(t.x - Math.cos(j.aim) * t.r, HINGE + 0.3, t.y - Math.sin(j.aim) * t.r, Math.cos(j.aim), Math.sin(j.aim))
+        const R = view.cutRadius(t, e.tree)
+        wood.chop(t.x - Math.cos(j.aim) * R, HINGE + 0.3, t.y - Math.sin(j.aim) * R, Math.cos(j.aim), Math.sin(j.aim))
       } else if (e.kind === "push") {
         const t = w.trees[e.tree]!
         sound.play("melee.shove", t.x, t.y, { gain: 1.2 })
@@ -788,103 +743,38 @@ async function main() {
   let acc = 0
   let frames = 0
   let paused = false
+  let meInput: JackInput = NO_INPUT
+  let smokeTarget: GPUTexture | null = null
 
-  /** Canopy cutaway: a capsule on the ground from the focus towards the camera, `r` wide (0 = off). */
-  type Cutaway = { x: number; y: number; vx: number; vy: number; len: number; r: number }
-  const along = (c: Cutaway, px: number, py: number) => {
-    const s = (px - c.x) * c.vx + (py - c.y) * c.vy
-    const k = Math.max(0, Math.min(c.len, s))
-    return { s, d: Math.hypot(px - c.x - c.vx * k, py - c.y - c.vy * k) }
-  }
-  const smooth = (e0: number, e1: number, v: number) => {
-    const k = Math.min(1, Math.max(0, (v - e0) / (e1 - e0)))
-    return k * k * (3 - 2 * k)
-  }
-  /** Crown opacity: crowns overhead in the cutaway fade out; falling ones stay half visible and firm up near the ground. */
-  const crownAlpha = (t: Tree, dir: { x: number; y: number }, theta: number, c: Cutaway) => {
-    if (c.r <= 0) return 1
-    const hc = (CROWN_BASE + 1) * 0.5 * t.h
-    const lift = HINGE + Math.cos(theta) * hc
-    if (lift < 2.5) return 1
-    const { d } = along(c, t.x + dir.x * Math.sin(theta) * hc, t.y + dir.y * Math.sin(theta) * hc)
-    const floor = t.state === "standing" ? FEEL.canopyAlpha : Math.max(FEEL.canopyAlpha, 0.55)
-    const a = floor + (1 - floor) * smooth(c.r * 0.6, c.r + t.crownR, d)
-    return a + (1 - a) * (1 - smooth(2.5, 6, lift))
-  }
-  /** Trunk opacity: only standing trunks on the camera side of the focus fade, so the tree you cut stays solid. */
-  const trunkAlpha = (t: Tree, c: Cutaway) => {
-    if (c.r <= 0 || t.state !== "standing") return 1
-    const { s, d } = along(c, t.x, t.y)
-    if (s < 1.5) return 1
-    const floor = Math.max(FEEL.canopyAlpha, 0.3)
-    return floor + (1 - floor) * Math.max(smooth(c.r * 0.4, c.r * 0.7, d), 1 - smooth(1.5, 3, s))
-  }
-
-  const drawTree = (t: Tree, cut: Cutaway) => {
-    const s = t.h / TREE_H
-    const k = t.crownR / s
-    let mi = 0
-    for (let i = 1; i < CROWNS.length; i++) if (Math.abs(CROWNS[i]! - k) < Math.abs(CROWNS[mi]! - k)) mi = i
-    const shade = 0.85 + ((t.id * 37) % 23) / 70
-    const tint: Rgb = t.notched ? [shade * 1.08, shade * 1.02, shade * 0.86] : [shade, shade, shade]
-    let theta = t.theta
-    let dir = { x: t.fx, y: t.fy }
-    const yawOf = (d: { x: number; y: number }) => Math.atan2(d.y, d.x)
-    // Sawdust heaped round the foot of anything cut.
-    // Sprites are unlit, so the heap dims with the night.
-    const fresh = t.notched ? t.cut - FEEL.notchedCut : t.cut
-    if (fresh > 0.02) {
-      const dim = mix(0.8, 0.22, Math.max(0, Math.min(1, FEEL.night)))
-      fp.sprite(false, t.x, 0.022, t.y, 0.28 + Math.min(1, t.cut) * 0.4, WOOD[0] * dim, WOOD[1] * dim, WOOD[2] * dim, 0.45, SPRITE.disc)
-    }
-    if (t.state === "standing") {
-      fp.push(stumpModel, t.x, 0, t.y, 0, [1, 1, 1], 0, 0, 0)
-      dir = predictedFall(t, t.x - t.cdx, t.y - t.cdy, 0)
-      if (Math.hypot(t.cdx, t.cdy) < 1e-6) {
-        const a = t.id * 2.399
-        dir = { x: Math.cos(a), y: Math.sin(a) }
+  /**
+   * The felling cam: when a tree you dropped (or one near you) goes over, the view drops to a low eye a few metres off
+   * your shoulder, turned so the fall line crosses the frame, and looks up the trunk as it comes down, then eases back
+   * after `fellCamTime`. Low and near you, it stays under the crowns and in the room you cut in.
+   */
+  const fellCam = (t: Tree) => {
+    const focus = focusJack()
+    if (labSettings.fellCam <= 0 || FEEL.viewStyle !== "chase" || auto.camera || Math.hypot(t.x - focus.x, t.y - focus.y) > 22) return
+    const D = labSettings.fellCamDist
+    let best = { x: 0, y: 0, score: -Infinity }
+    for (const turn of [45, -45, 70, -70, 100, -100]) {
+      const a = (turn * Math.PI) / 180
+      const ex = -t.fx * Math.cos(a) + t.fy * Math.sin(a)
+      const ey = -t.fy * Math.cos(a) - t.fx * Math.sin(a)
+      let clear = D
+      for (const o of w.trees) {
+        if (o.state !== "standing" || o === t) continue
+        const rx = o.x - focus.x
+        const ry = o.y - focus.y
+        const s = rx * ex + ry * ey
+        const R = o.r * 1.2
+        if (s < 0.2 || s - R > clear) continue
+        if (Math.abs(rx * ey - ry * ex) < R + 0.35) clear = Math.max(1.5, s - R - 0.45)
       }
-      theta = standingLean(t, FEEL)
-      // Creaking: a shiver once it is past the warning point.
-      if (t.cut >= FEEL.warnAt) theta += Math.sin(w.t * 31 + t.id) * 0.004
-      if (t.cut > 0.02) {
-        // The back cut grows in from the cutter's side; the face notch sits on the fall side.
-        const depth = t.cut * 0.5
-        const sc = Math.max(0.2, t.cut)
-        fp.part(slitModel, t.x - dir.x * (t.r - depth), HINGE, t.y - dir.y * (t.r - depth), yawOf(dir), [1, 1, 1], 0, 0, 0, 1, sc)
-        if (t.cut > 0.12) fp.part(wedgeModel, t.x, HINGE - 0.02, t.y, yawOf(dir), [1, 1, 1], 0, 0, 0, 1, Math.min(1, 0.4 + t.cut))
-      }
-      // Crown shade on the ground.
-      fp.sprite(false, t.x, 0.02, t.y, t.crownR * 1.05, 0, 0, 0, 0.22, SPRITE.disc)
-    } else {
-      fp.push(jaggedModels[t.id % 3]!, t.x, 0, t.y, t.id * 1.7, [1, 1, 1], 0, 0, 0)
-      fp.part(buttModels[t.id % 3]!, t.x, HINGE, t.y, yawOf(dir), [1, 1, 1], -theta, 0, 0, 1, 1)
-      const reach = t.h * Math.sin(Math.min(theta, Math.PI / 2))
-      const cx = t.x + t.fx * reach * 0.5
-      const cy = t.y + t.fy * reach * 0.5
-      fp.sprite(false, cx, 0.02, cy, Math.max(0.5, reach * 0.5), 0, 0, 0, 0.2, SPRITE.line, yawOf(dir), 1.6 / Math.max(0.5, reach * 0.5))
+      // A short swing from where the view already is reads as one shot; room to stand back reads the fall.
+      const score = clear - Math.abs(wrapAngle(Math.atan2(ex, ey) - camYaw)) * 0.9 + Math.abs(Math.sin(a)) * 0.8
+      if (score > best.score) best = { x: focus.x + ex * clear, y: focus.y + ey * clear, score }
     }
-    const flash = t.state === "standing" && t.cut >= FEEL.warnAt ? 0.12 + 0.1 * Math.sin(w.t * 12) : 0
-    const yaw = yawOf(dir)
-    const trunk = trunkAlpha(t, cut)
-    if (trunk >= 0.999) fp.part(trunkModel, t.x, HINGE, t.y, yaw, tint, -theta, 0, flash, 1, s)
-    else fp.part(trunkFadeModel, t.x, HINGE, t.y, yaw, tint, -theta, 0, flash, trunk, s)
-    const alpha = crownAlpha(t, dir, theta, cut)
-    if (alpha >= 0.999) fp.part(crownModels[mi]!, t.x, HINGE, t.y, yaw, tint, -theta, 0, flash, 1, s)
-    else if (alpha > 0.02) fp.part(crownFadeModels[mi]!, t.x, HINGE, t.y, yaw, tint, -theta, 0, flash, alpha, s)
-  }
-
-  /** Ground strip where a tree will land: trunk line and crown footprint. */
-  const fallStrip = (t: Tree, dx: number, dy: number, rr: number, g: number, b: number, a: number) => {
-    // Unlit sprites glare in the dark: keep the ground markings quiet at night.
-    a *= mix(1, 0.5, Math.max(0, Math.min(1, FEEL.night)))
-    const rot = Math.atan2(dy, dx)
-    const L = t.h + HINGE
-    const half = L * 0.5
-    fp.sprite(false, t.x + dx * half, 0.04, t.y + dy * half, half, rr, g, b, a, SPRITE.line, rot, 0.45 / half)
-    const c0 = t.crown0 * t.h
-    const ch = (t.h - c0) * 0.5
-    fp.sprite(false, t.x + dx * (c0 + ch), 0.035, t.y + dy * (c0 + ch), ch, rr, g, b, a * 0.45, SPRITE.line, rot, (t.crownR * 1.3) / ch)
+    fellShot = { tree: t.id, at: w.t, x: best.x, y: best.y }
   }
 
   /** Per-tick fx that follow state, not events: kerf spray, exhaust, flares in flight. */
@@ -900,7 +790,8 @@ async function main() {
       }
       if (j.trigger && j.target?.kind === "tree" && j.role === "lumberjack") {
         const t = w.trees[j.target.id]!
-        wood.kerf(particles, DT, `k${j.id}`, t.x - ax * t.r, HINGE, t.y - ay * t.r, ax, ay, 1)
+        const R = view.cutRadius(t, j.target.id)
+        wood.kerf(particles, DT, `k${j.id}`, t.x - ax * R, HINGE, t.y - ay * R, ax, ay, 1)
       }
     }
     for (const f of w.flares) {
@@ -943,8 +834,14 @@ async function main() {
       el.style.display = "none"
       return
     }
+    // A short step towards the target, not the target itself: one behind the camera doesn't project.
+    const d = Math.hypot(x - from.x, y - from.y) || 1
     const a = cam.project(from.x, 1, from.y, innerWidth, innerHeight)
-    const b = cam.project(x, 1, y, innerWidth, innerHeight)
+    const b = cam.project(from.x + ((x - from.x) / d) * 0.5, 1, from.y + ((y - from.y) / d) * 0.5, innerWidth, innerHeight)
+    if (!a.ok || !b.ok) {
+      el.style.display = "none"
+      return
+    }
     const ang = Math.atan2(b.y - a.y, b.x - a.x)
     const rad = 96
     el.style.display = "block"
@@ -968,12 +865,12 @@ async function main() {
       scaledDt *= Math.max(0.02, FEEL.slowMoScale)
     }
     acc += scaledDt
-    const me = w.jacks[0]!
 
     while (acc >= DT) {
       acc -= DT
       const prevAlive = w.jacks.map((j) => j.alive)
-      stepWorld(w, [humanInput()], DT, FEEL)
+      meInput = humanInput()
+      stepWorld(w, [meInput], DT, FEEL)
       handleEvents()
       for (const j of w.jacks) if (prevAlive[j.id] && !j.alive && !corpses.has(j.id)) ragdollFor(j, 0, j.cause === "crush" ? "crush" : "saw")
       tickFx()
@@ -984,9 +881,10 @@ async function main() {
       }
       if (w.phase === "over" && w.t - w.overAt > FEEL.restartDelay && !auto.input) newRound()
     }
+    // After the ticks: a new round (auto-advance) replaces the jacks.
+    const me = w.jacks[0]!
 
     particles.update(scaledDt, [], () => 0)
-    splatter.update(scaledDt)
     wood.step(scaledDt)
     for (const [id, rd] of corpses) {
       stepRagdoll(rd, scaledDt)
@@ -1016,18 +914,91 @@ async function main() {
 
     // Camera.
     const aspect = innerWidth / Math.max(1, innerHeight)
+    const locked = document.pointerLockElement === canvas
+    const L = labSettings
+    cam.near = 1
+    cam.fov = 0.52
     if (auto.camera) {
-      cam.yaw = 0
-      cam.lookHeight = 0
-      cam.pitch = auto.camera.pitch
-      cam.zoomOffset = auto.camera.dist - 24
-      cam.follow(auto.camera.x, auto.camera.y, 0, 0, elapsed, false)
-    } else if (FEEL.viewStyle === "shoulder") {
-      cam.yaw = camYaw
-      cam.pitch = 0.36
-      cam.lookHeight = 1.5
-      cam.zoomOffset = -17.5
-      cam.follow(focus.x, focus.y, -Math.sin(camYaw) * 2.2, -Math.cos(camYaw) * 2.2, elapsed, false)
+      const a = auto.camera
+      cam.yaw = a.yaw ?? 0
+      cam.lookHeight = a.height ?? 0
+      cam.pitch = a.pitch
+      if (a.fov) {
+        cam.fov = (a.fov * Math.PI) / 180
+        cam.near = 0.1
+      }
+      cam.zoomOffset = a.dist - 24
+      cam.follow(a.x, a.y, 0, 0, elapsed, false)
+    } else if (mouseLook()) {
+      // Before the click (and for bots, automation and spectating) the view turns to follow the aim.
+      if (!locked && (auto.input || focus.id !== 0 || !input.enabled)) camYaw = mixAngle(camYaw, yawBehind(focus.aim), 1 - Math.exp(-elapsed * L.chaseTurn))
+      const fwdX = -Math.sin(camYaw)
+      const fwdY = -Math.cos(camYaw)
+      cam.near = 0.1
+      if (FEEL.viewStyle === "shoulder") {
+        cam.yaw = camYaw
+        cam.pitch = 0.36
+        cam.lookHeight = 1.5
+        cam.zoomOffset = -17.5
+        cam.fov = (L.chaseFov * Math.PI) / 180
+        cam.follow(focus.x, focus.y, fwdX * 2.2, fwdY * 2.2, elapsed, false)
+      } else {
+        // The low chase: behind and just above, pulled in where a trunk would come between.
+        let want = L.chaseDist
+        if (L.chaseCollide > 0) {
+          const tx = focus.x + fwdX * L.chaseLead + Math.cos(camYaw) * L.chaseSide
+          const ty = focus.y + fwdY * L.chaseLead - Math.sin(camYaw) * L.chaseSide
+          const ex = Math.sin(camYaw)
+          const ey = Math.cos(camYaw)
+          const reach = want * Math.cos(L.chasePitch)
+          for (const t of w.trees) {
+            if (t.state !== "standing") continue
+            const rx = t.x - tx
+            const ry = t.y - ty
+            const s = rx * ex + ry * ey
+            if (s < 0.3 || s > reach + t.r + 0.4) continue
+            if (Math.abs(rx * ey - ry * ex) < t.r * 1.25 + 0.22) want = Math.min(want, Math.max(1.2, (s - t.r * 1.25 - 0.3) / Math.cos(L.chasePitch)))
+          }
+        }
+        chaseD += (want - chaseD) * (1 - Math.exp(-elapsed * (want < chaseD ? 18 : 3)))
+        let yaw = camYaw
+        let px = focus.x
+        let py = focus.y
+        let dist = chaseD
+        let pitch = L.chasePitch
+        let height = L.chaseHeight
+        let lead = L.chaseLead
+        let side = L.chaseSide
+        // The felling cam blends in over half a second, holds, and blends back out.
+        const shot = fellShot
+        const ft = shot ? w.trees[shot.tree] : undefined
+        if (shot && ft) {
+          const age = w.t - shot.at
+          const k = smooth(0, 0.6, age) * (1 - smooth(L.fellCamTime - 0.7, L.fellCamTime, age))
+          if (age > L.fellCamTime) fellShot = null
+          // Look at a point a third of the way up the trunk, wherever the fall has it now.
+          const along = (ft.h + HINGE) * FELL_AIM
+          const tx = ft.x + ft.fx * Math.sin(ft.theta) * along
+          const ty = ft.y + ft.fy * Math.sin(ft.theta) * along
+          const th = HINGE + Math.cos(ft.theta) * along
+          const flat = Math.max(0.5, Math.hypot(shot.x - tx, shot.y - ty))
+          yaw = mixAngle(camYaw, Math.atan2(shot.x - tx, shot.y - ty), k)
+          px += (tx - px) * k
+          py += (ty - py) * k
+          dist += (Math.hypot(flat, L.fellCamHeight - th) - dist) * k
+          pitch += (Math.atan2(L.fellCamHeight - th, flat) - pitch) * k
+          height += (th - height) * k
+          lead *= 1 - k
+          side *= 1 - k
+        } else fellShot = null
+        cam.yaw = yaw
+        cam.pitch = pitch
+        cam.lookHeight = height
+        cam.fov = (L.chaseFov * Math.PI) / 180
+        // Over the right shoulder, so the bar and the kerf show past you.
+        cam.follow(px, py, -Math.sin(yaw) * lead + Math.cos(yaw) * side, -Math.cos(yaw) * lead - Math.sin(yaw) * side, elapsed, false)
+        cam.dist = dist
+      }
     } else {
       const top = FEEL.viewStyle === "top"
       cam.yaw = 0
@@ -1037,72 +1008,51 @@ async function main() {
       cam.follow(focus.x, focus.y, Math.cos(focus.aim) * 2.5, Math.sin(focus.aim) * 2.5, elapsed, false)
     }
     const vp = cam.update(aspect)
-    const viewRect = cam.groundRect(30)
-    const inView = (x: number, y: number, pad = 2) => x > viewRect[0] - pad && x < viewRect[2] + pad && y > viewRect[1] - pad && y < viewRect[3] + pad
+    const eye = cam.eye
+    const near = (x: number, y: number, r = 40) => Math.hypot(x - eye[0], y - eye[2]) < r
 
+    view.sync(w)
+    view.pose(w, FEEL, labSettings, scaledDt)
     fp.begin()
-    const focusAt = auto.camera ?? focus
-    const toEye = Math.hypot(cam.eye[0] - focusAt.x, cam.eye[2] - focusAt.y)
-    const cut: Cutaway = {
-      x: focusAt.x,
-      y: focusAt.y,
-      vx: toEye > 1e-3 ? (cam.eye[0] - focusAt.x) / toEye : 0,
-      vy: toEye > 1e-3 ? (cam.eye[2] - focusAt.y) / toEye : 1,
-      len: toEye,
-      r: FEEL.viewStyle === "shoulder" && !auto.camera ? 0 : FEEL.canopyCut,
-    }
-    for (const t of w.trees) drawTree(t, cut)
+    view.draw(fp, w, FEEL)
 
-    // Fall lines: the tree you'd cut or shove now (faint), anything creaking (amber) and anything coming down (red).
+    // The fall hint: only while you cut a tree or shove one, faint and growing with the cut.
     let ringTree: Tree | null = null
     if (active(me) && !me.downed) {
       const target = sawTarget(w, me, FEEL)
       const shove = me.role === "survivor" && w.mode === "hunt" ? pushTarget(w, me, FEEL) : null
-      if (target?.kind === "tree") {
-        const t = w.trees[target.id]!
-        const f = predictedFall(t, me.x, me.y)
-        fallStrip(t, f.x, f.y, 1, 1, 1, 0.12 + 0.3 * t.cut)
+      const t = target?.kind === "tree" ? w.trees[target.id]! : shove
+      if (t) {
         ringTree = t
-      } else if (shove) {
-        const f = predictedFall(shove, me.x, me.y)
-        fallStrip(shove, f.x, f.y, 1, 1, 1, 0.3)
-        ringTree = shove
-      }
-    }
-    for (const t of w.trees) {
-      if (t.state === "falling") fallStrip(t, t.fx, t.fy, 1, 0.15, 0.1, 0.16)
-      else if (t.state === "standing" && t.cut >= FEEL.warnAt && t !== ringTree) {
-        const f = predictedFall(t, t.x - t.cdx, t.y - t.cdy, 0)
-        fallStrip(t, f.x, f.y, 1, 0.6, 0.1, 0.22)
+        const working = t === shove ? meInput.use : meInput.saw && me.trigger
+        if (working) {
+          const f = predictedFall(t, me.x, me.y)
+          view.hint(fp, t, f.x, f.y, L.fallHint * (0.35 + 0.65 * Math.min(1, t.cut)))
+        }
       }
     }
 
-    // Chips, splinters and twigs, flying and lying.
-    const chipLife = labSettings.woodChipLife
+    // Chips, splinters and twigs, flying and lying, lit by whatever beam they cross.
+    const chipLife = L.woodChipLife
     for (const c of wood.chips) {
-      if (!c.live || !inView(c.x, c.z)) continue
+      if (!c.live || !near(c.x, c.z)) continue
       const fade = c.rest < 0 ? 1 : Math.min(1, (chipLife - c.rest) / 3)
       const model = c.kind === 0 ? chipModel : c.kind === 1 ? splinterModel : twigModel
-      fp.part(model, c.x, c.y + c.size * 0.12, c.z, c.yaw, [c.shade, c.shade, c.shade], c.pitch, 0, c.rest < 0 ? 0.08 : 0, 1, c.size * fade)
+      fp.part(model, c.x, c.y + c.size * 0.12, c.z, c.yaw, [c.shade, c.shade, c.shade], c.pitch, 0, 0, 1, c.size * fade)
     }
+    // Blood pools spread over a few seconds, then stay.
+    pools.forEach((p, i) => {
+      const k = smooth(-0.4, 3.5, w.t - p.at)
+      fp.part(p.model, p.x, 0.012 + i * 0.0003, p.y, p.yaw, [1, 1, 1], 0, 0, 0, 1, p.size * (0.25 + 0.75 * k))
+    })
 
-    // Items: parts glint so they read in the dark.
-    for (const it of w.items) {
-      if (it.taken) continue
-      const glow = PART_GLOW[it.kind]
-      fp.push(itemModels[it.kind], it.x, 0, it.y, it.id * 1.3, [1, 1, 1], 0, 0, 0.15)
-      const pulse = 0.55 + 0.45 * Math.sin(w.t * 3 + it.id)
-      fp.sprite(true, it.x, 0.35, it.y, 0.55 + 0.2 * pulse, glow[0], glow[1], glow[2], 0.35 * pulse, SPRITE.glow)
-      fp.sprite(false, it.x, 0.03, it.y, 0.7, glow[0], glow[1], glow[2], 0.25, SPRITE.ring)
-    }
+    for (const it of w.items) if (!it.taken) fp.push(itemModels[it.kind], it.x, 0, it.y, it.id * 1.3, [1, 1, 1], 0, 0, 0)
     const tr = w.truck
     if (tr) {
       fp.push(truckModel, tr.x, 0, tr.y, tr.yaw, [1, 1, 1], 0, 0, 0)
-      fp.sprite(false, tr.x, 0.03, tr.y, 3.6, 1, 0.85, 0.35, 0.18 + (tr.started ? 0.15 * Math.sin(w.t * 6) : 0), SPRITE.ring)
       if (tr.started) {
         const fx2 = Math.cos(tr.yaw)
         const fy2 = Math.sin(tr.yaw)
-        for (const side of [-0.8, 0.8]) fp.sprite(true, tr.x + fx2 * 3.05 - fy2 * side, 1.05, tr.y + fy2 * 3.05 + fx2 * side, 0.6, 1, 0.95, 0.75, 0.8, SPRITE.glow)
         wood.exhaust(particles, scaledDt, "truck", tr.x - fx2 * 3.1 + fy2 * 1.0, 0.4, tr.y - fy2 * 3.1 - fx2 * 1.0, -fx2, -fy2, 0.4)
       }
     }
@@ -1117,7 +1067,11 @@ async function main() {
       if (rd) {
         const dim = j.alive ? 0.85 : 0.6
         emitRagdoll(fp.push, rd, "rifle", [color[0] * dim, color[1] * dim, color[2] * dim], partsFor, j.alive && j.revive > 0 ? 0.05 : 0, 1, 0)
-        if (j.alive && j.downed) fp.sprite(true, j.x, 0.3, j.y, 0.9, 1, 0.1, 0.05, 0.25 + 0.15 * Math.sin(w.t * 5), SPRITE.glow)
+        // The downed leave a trail as they crawl.
+        if (j.alive && j.downed && playing && w.t - (dripAt.get(j.id) ?? -1) > 0.9) {
+          dripAt.set(j.id, w.t)
+          pool(j.x + (fx() - 0.5) * 0.3, j.y + (fx() - 0.5) * 0.3, 0.1 + fx() * 0.06)
+        }
         continue
       }
       if (!j.alive) continue
@@ -1125,71 +1079,72 @@ async function main() {
       a.flash = j.held > 0 ? 0.03 + 0.03 * Math.sin(w.t * 40) : j.stun > 0 ? 0.04 + 0.03 * Math.sin(w.t * 10) : j.dashing > 0 ? 0.05 : Math.max(0, a.flash - scaledDt * 4)
       const lift = j.climb * 0.45 - (j.stun > 0 ? 0.6 : 0)
       pose(lift !== 0 ? fp.scaled(1, j.x, j.y, lift) : fp.push, a, color, partsFor)
-      fp.sprite(false, j.x, 0.03, j.y, 0.5, color[0], color[1], color[2], j.id === 0 ? 0.55 : 0.35, j.id === 0 ? SPRITE.ring : SPRITE.disc)
-      if (j.carrying) fp.part(itemModels[j.carrying], j.x - Math.cos(j.aim) * 0.25, 1.15, j.y - Math.sin(j.aim) * 0.25, j.aim, [1, 1, 1], 0, 0, 0.2, 1, 0.75)
-      if (j.role === "survivor" && j.torch && w.mode === "hunt") fp.sprite(true, j.x + Math.cos(j.aim) * 0.45, 1.15, j.y + Math.sin(j.aim) * 0.45, 0.35, 1, 0.95, 0.8, 0.9, SPRITE.glow)
-      if (j.role === "lumberjack" && w.mode === "hunt") fp.sprite(true, j.x + Math.cos(j.aim) * 0.12, 1.72, j.y + Math.sin(j.aim) * 0.12, 0.22, 1, 0.85, 0.6, 0.8, SPRITE.glow)
-      if (j.blind > 0) fp.sprite(true, j.x, 1.8, j.y, 0.8, 1, 0.3, 0.3, 0.3, SPRITE.glow)
+      if (j.carrying) fp.part(itemModels[j.carrying], j.x - Math.cos(j.aim) * 0.25, 1.15, j.y - Math.sin(j.aim) * 0.25, j.aim, [1, 1, 1], 0, 0, 0, 1, 0.75)
     }
 
-    // Night: a dim blue moon, torches, headlamps, flares and the truck's lamps do the lighting.
-    const night = Math.max(0, Math.min(1, FEEL.night))
-    const activeLights: SceneLight[] = [{ x: focus.x + 14, y: focus.y - 10, h: 40, r: 120, color: mix3([1, 0.94, 0.82], [0.5, 0.62, 1], night), power: mix(2.4, 0.8, night) }]
-    if (w.mode === "hunt") {
-      for (const j of w.jacks) {
-        if (!upright(j)) continue
-        const ax = Math.cos(j.aim)
-        const ay = Math.sin(j.aim)
-        if (j.role === "survivor" && j.torch) {
-          activeLights.push({ x: j.x + ax * 0.45, y: j.y + ay * 0.45, h: 1.2, r: FEEL.torchRange, color: [1, 0.93, 0.8], power: FEEL.torchPower * night, cone: [ax, ay, Math.cos(0.42)], size: 0.06, ...(j.id === focus.id ? {} : { unshadowed: true }) })
-        } else if (j.role === "lumberjack") {
-          activeLights.push({ x: j.x + ax * 0.2, y: j.y + ay * 0.2, h: 1.75, r: FEEL.torchRange * 0.7, color: [1, 0.78, 0.55], power: FEEL.torchPower * 0.18 * night, cone: [ax, ay, Math.cos(0.6)], size: 0.06, ...(j.id === focus.id ? {} : { unshadowed: true }) })
+    // The night is the forest's moon; the rest is torches, his helmet lamp, flares and the truck's lamps.
+    const torches: ForestTorch[] = []
+    const kindOf = (id: number) => (id === focus.id ? "local" : "remote") as "local" | "remote"
+    for (const j of w.jacks) {
+      if (!upright(j)) continue
+      const ax = Math.cos(j.aim)
+      const ay = Math.sin(j.aim)
+      if (j.role === "survivor" && w.mode === "hunt") {
+        torches.push({ id: j.id, pos: [j.x + ax * 0.45, 1.2, j.y + ay * 0.45], dir: [ax * 0.99, -0.12, ay * 0.99], on: j.torch && L.torchLevel > 0, kind: kindOf(j.id), level: L.torchLevel })
+      } else if (j.role === "lumberjack") {
+        // His helmet lamp, wired to the saw: it dies with the engine when he sneaks. It looks where he looks: down the
+        // bar, into the kerf while he cuts, then up the trunk as the tree he dropped goes over. On the helmet, not the
+        // saw, so the bark he cuts is a metre and more away and doesn't flood the frame.
+        const pos: [number, number, number] = [j.x + ax * 0.15, 1.72, j.y + ay * 0.15]
+        let lamp = lamps.get(j.id)
+        if (!lamp) lamps.set(j.id, (lamp = { dir: [ax, -0.3, ay], tree: -1, until: -1 }))
+        let look: [number, number, number] = [pos[0] + ax * 3, 0.6, pos[2] + ay * 3]
+        const watched = lamp.until > w.t ? w.trees[lamp.tree] : undefined
+        if (watched && watched.state !== "standing") {
+          const s = (watched.h + HINGE) * 0.5
+          const up = Math.cos(watched.theta)
+          const out = Math.sin(watched.theta)
+          look = [watched.x + watched.fx * out * s, HINGE + up * s, watched.y + watched.fy * out * s]
+        } else if (j.trigger && j.target?.kind === "tree") {
+          const t = w.trees[j.target.id]!
+          const R = view.cutRadius(t, j.target.id)
+          look = [t.x - ax * R, HINGE + 0.15, t.y - ay * R]
         }
+        const lx = look[0] - pos[0]
+        const ly = look[1] - pos[1]
+        const lz = look[2] - pos[2]
+        const ll = Math.hypot(lx, ly, lz) || 1
+        const ease = 1 - Math.exp(-elapsed * 9)
+        for (const [i, v] of [lx / ll, ly / ll, lz / ll].entries()) lamp.dir[i] = lamp.dir[i]! + (v - lamp.dir[i]!) * ease
+        const dl = Math.hypot(...lamp.dir) || 1
+        torches.push({ id: j.id, pos, dir: [lamp.dir[0] / dl, lamp.dir[1] / dl, lamp.dir[2] / dl], on: j.engine === "on" && L.sawLight > 0, kind: kindOf(j.id), level: L.sawLight })
       }
     }
-    for (const fl of flareFx.values()) {
-      const l = fl.light()
-      if (l.level > 0) activeLights.push(flareSceneLight(l, 3 + 4 * night, 14, true))
+    if (tr) {
+      const fx2 = Math.cos(tr.yaw)
+      const fy2 = Math.sin(tr.yaw)
+      for (const [n, side] of [[0, -0.8], [1, 0.8]] as const)
+        torches.push({ id: 900 + n, pos: [tr.x + fx2 * 3.1 - fy2 * side, 1.05, tr.y + fy2 * 3.1 + fx2 * side], dir: [fx2 * 0.997, -0.08, fy2 * 0.997], on: tr.started && L.truckLamps > 0, kind: "remote", level: L.truckLamps })
     }
+    // Only one torch gets the shadow map and drives exposure.
+    if (!torches.some((t) => t.kind === "local" && t.on)) for (const t of torches) t.kind = "remote"
+    view.lights(torches, [...flareFx.values()].map((f) => f.light()), eye, L)
     if (tr?.started) {
       const fx2 = Math.cos(tr.yaw)
       const fy2 = Math.sin(tr.yaw)
-      activeLights.push({ x: tr.x + fx2 * 3.1, y: tr.y + fy2 * 3.1, h: 1.05, r: 26, color: [1, 0.95, 0.78], power: FEEL.torchPower * 1.5 * night + 0.5, cone: [fx2, fy2, Math.cos(0.5)], size: 0.2 })
+      for (const side of [-0.8, 0.8]) view.glow(tr.x + fx2 * 3.06 - fy2 * side, 1.05, tr.y + fy2 * 3.06 + fx2 * side, L.truckLamps)
     }
-    lights.update(activeLights.slice(0, 60), w.jacks.filter((j) => active(j)))
-    packSceneFrame(sceneFrame, {
-      viewProj: vp,
-      eye: cam.eye,
-      time: w.t,
-      width: r.width,
-      height: r.height,
-      lightCount: lights.lightCount,
-      ambient: [...mix3([0.36, 0.4, 0.36], [0.05, 0.06, 0.1], night), 0],
-      mapSize: [ARENA_HALF * 2, ARENA_HALF * 2],
-      ao: 0.35,
-    })
-    r.render({
-      frame: sceneFrame as Float32Array<ArrayBuffer>,
-      fxParticles: particles,
-      splatter,
-      lights: lights.lights as Float32Array<ArrayBuffer>,
-      lightCount: lights.lightCount,
-      shadowLightCount: lights.shadowLightCount,
-      occluders: lights.occ as Float32Array<ArrayBuffer>,
-      occluderCount: lights.occCount,
-      lampPower: lights.power as Float32Array<ArrayBuffer>,
-      lampCount: 0,
-      view: viewRect,
-      batches: fp.batches(),
-      alphaSprites: fp.alpha as Float32Array<ArrayBuffer>,
-      alphaCount: fp.nAlpha,
-      addSprites: fp.add as Float32Array<ArrayBuffer>,
-      addCount: fp.nAdd,
-      grade: [w.t, 0, cam.damageFlash, 1],
-    })
+    hurt.style.opacity = String(cam.damageFlash)
+    if (smoke && (!smokeTarget || smokeTarget.width !== canvas.width || smokeTarget.height !== canvas.height)) {
+      smokeTarget?.destroy()
+      smokeTarget = gpu.device.createTexture({ size: [canvas.width, canvas.height], format: gpu.format, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+    }
+    view.frame({ eye: [eye[0], eye[1], eye[2]], viewProj: vp, width: canvas.width, height: canvas.height, time: w.t, dt: elapsed, fovY: cam.fov, fp, pool: particles, ...(smokeTarget ? { target: smokeTarget.createView() } : {}) })
 
     drawHud(me, ringTree)
     frames++
+    // The software-GPU smoke draws two frames, then holds.
+    if (smoke && frames >= 2) paused = true
     requestAnimationFrame(frame)
   }
 
@@ -1231,6 +1186,7 @@ async function main() {
       else if (me.stun > 0) h = "Pinned under a tree"
     } else if (hunt && me.escaped) h = "You got away. Watching the others."
     else if (hunt && !me.alive && w.phase === "play") h = "You're dead. Watching the others."
+    if (!h && mouseLook() && shell.playing && !auto.input && active(me) && document.pointerLockElement !== canvas) h = "Click to look around"
     hint.innerHTML = h
     hint.style.display = h ? "block" : "none"
     // The saw: survivors hear where it is.
@@ -1282,10 +1238,11 @@ async function main() {
   }
 
   /** Automation: stage a scene and drive the player. Never used in play. */
-  const stage = (name: "fell" | "domino" | "saw" | "hunt") => {
-    Object.assign(FEEL, { mode: "hunt", playAs: name === "hunt" ? "survivor" : "lumberjack", botWarmup: name === "hunt" ? 0 : 1e9, restartDelay: 1e9, gasCans: 0 })
+  const stage = (name: "fell" | "domino" | "saw" | "hunt" | "chase") => {
+    Object.assign(FEEL, { mode: "hunt", playAs: name === "hunt" ? "survivor" : "lumberjack", botWarmup: name === "hunt" || name === "chase" ? 0 : 1e9, restartDelay: 1e9, gasCans: 0 })
     resetRound(w, FEEL)
     if (name === "hunt") {
+      view.sync(w)
       newAvatars()
       return
     }
@@ -1302,8 +1259,8 @@ async function main() {
       return t
     }
     const dummies: Jack[] = []
-    const dummy = (x: number, y: number, aim: number) => {
-      const j = Object.assign(newJack(dummies.length + 1, false, x, y, "survivor", FEEL), { aim })
+    const dummy = (x: number, y: number, aim: number, bot = false) => {
+      const j = Object.assign(newJack(dummies.length + 1, bot, x, y, "survivor", FEEL), { aim })
       dummies.push(j)
       return j
     }
@@ -1328,6 +1285,16 @@ async function main() {
       me = Object.assign(newJack(0, false, -15.78, 4, "lumberjack", FEEL), { aim: 0 })
       dummy(-0.5, 4.6, Math.PI)
       dummy(10.5, 3.4, Math.PI)
+    } else if (name === "chase") {
+      // A lane through the trees: a survivor (a bot) runs from you; a half-cut tree in the lane goes over after them.
+      keep((t) => t.y > 1 && t.y < 7 && t.x > -20 && t.x < 22)
+      add(-2, 4.1, 19, 0.3, 2.5)
+      add(-9, 6.5, 21, 0)
+      add(4, 1.5, 19, 0)
+      add(11, 6.6, 22, 0)
+      me = Object.assign(newJack(0, false, -15, 4, "lumberjack", FEEL), { aim: 0 })
+      // No flares: the clip is the chase, not the blinding.
+      dummy(-8, 3.6, 0, true).flares = 0
     } else {
       keep((t) => Math.hypot(t.x, t.y - 12) < 4)
       me = Object.assign(newJack(0, false, -0.6, 12, "lumberjack", FEEL), { aim: 0 })
@@ -1335,6 +1302,7 @@ async function main() {
       dummy(3, 15, Math.PI)
     }
     w.jacks = [me, ...dummies]
+    view.sync(w)
     newAvatars()
   }
 
@@ -1346,6 +1314,9 @@ async function main() {
       stage,
       shell,
       wood,
+      view,
+      look: labSettings,
+      measure: (n?: number, step?: number) => view.forest.measure(n, step),
       get frames() {
         return frames
       },
