@@ -1,0 +1,154 @@
+import { Color, Matrix3, Matrix4, Vector3, Mesh, InstancedMesh, type BufferGeometry, type Material, type Object3D } from "three/webgpu"
+import { MAT, type Mat } from "@arcade/kit/gpu/mesh"
+import { packTexturedVerts, texturedPipelines, type TexturedPrimitive } from "@arcade/kit/gpu/textured-mesh"
+import type { PassContext, ScenePass } from "@arcade/kit/gpu/pass-graph"
+import type { SceneHooks } from "@arcade/kit/gpu/shaders"
+import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
+
+export type BridgeSurface = Omit<TexturedPrimitive, "vertices" | "instances" | "instanceCount"> & { mat?: Mat; aux?: number }
+/** The caller owns textures. TSL recipes must be mapped explicitly, not flattened to a material's fallback colour. */
+export type SurfaceResolver = (material: Material) => Promise<BridgeSurface>
+type Span = { start: number; count: number }
+
+export function packWorldGeometry(geometry: BufferGeometry, matrix: Matrix4, span?: Span, mat: Mat = MAT.lit, aux = 0): ArrayBuffer {
+  const p = geometry.getAttribute("position"), n = geometry.getAttribute("normal")
+  if (!p || !n) throw new Error("World bridge requires positions and normals")
+  const uv = geometry.getAttribute("uv"), color = geometry.getAttribute("color"), index = geometry.index
+  const total = index?.count ?? p.count
+  const start = Math.max(span?.start ?? 0, geometry.drawRange.start)
+  const end = Math.min(total, (span?.start ?? 0) + (span?.count ?? total), geometry.drawRange.start + geometry.drawRange.count)
+  if (start % 3 || (end - start) % 3) throw new Error("World bridge requires triangle-aligned draw ranges")
+  const vertices: number[] = [], uvs: number[] = []
+  const normalMatrix = new Matrix3().getNormalMatrix(matrix), pos = new Vector3(), normal = new Vector3(), tint = new Color()
+  for (let i = start; i < end; i++) {
+    const at = index ? index.getX(i) : i
+    pos.fromBufferAttribute(p, at).applyMatrix4(matrix)
+    normal.fromBufferAttribute(n, at).applyMatrix3(normalMatrix).normalize()
+    if (color) tint.setRGB(color.getX(at), color.getY(at), color.getZ(at)).convertLinearToSRGB()
+    else tint.setRGB(1, 1, 1)
+    vertices.push(pos.x, pos.y, pos.z, normal.x, normal.y, normal.z, tint.r, tint.g, tint.b, mat, aux)
+    uvs.push(uv?.getX(at) ?? 0, uv?.getY(at) ?? 0)
+  }
+  return packTexturedVerts(vertices, uvs)
+}
+
+export function visibleInHierarchy(object: Object3D): boolean {
+  for (let p: Object3D | null = object; p; p = p.parent) if (!p.visible) return false
+  return true
+}
+
+type Draw = {
+  object: Mesh
+  instance?: number
+  span?: Span
+  surface: BridgeSurface
+  material: Material
+  matrix: Matrix4
+  vertices: GPUBuffer
+  uniform: GPUBuffer
+  group: GPUBindGroup
+  count: number
+  visible: boolean
+}
+
+/** Snapshots a built world after Builder.flush/bakeModels, then follows visibility and rigid transforms.
+ * Geometry edits/late model loads require rebuilding the bridge; no world coordinates or colliders are reauthored. */
+export class WorldBridge {
+  readonly opaque: ScenePass
+  readonly alpha: ScenePass
+  private readonly draws: Draw[] = []
+  private readonly pipelines: ReturnType<typeof texturedPipelines>
+  private readonly matrix = new Matrix4()
+  private readonly instanceMatrix = new Matrix4()
+
+  private constructor(private readonly ctx: PassContext, private readonly root: Object3D, hooks: SceneHooks) {
+    this.pipelines = texturedPipelines(ctx, hooks)
+    this.opaque = { prepare: () => this.sync(), draw: pass => this.draw(pass, false) }
+    this.alpha = { draw: pass => this.draw(pass, true) }
+  }
+
+  static async create(ctx: PassContext, root: Object3D, resolve: SurfaceResolver, hooks: SceneHooks, include: (mesh: Mesh) => boolean = () => true): Promise<WorldBridge> {
+    const bridge = new WorldBridge(ctx, root, hooks)
+    const meshes: Mesh[] = []
+    root.updateWorldMatrix(true, true)
+    root.traverse(node => { if (node instanceof Mesh && include(node)) meshes.push(node) })
+    const materials = new Map<Material, BridgeSurface>()
+    try {
+      for (const object of meshes) {
+        if ("isSkinnedMesh" in object || object.morphTargetInfluences?.length) throw new Error(`World bridge needs a rigid mesh: ${object.name}`)
+        const list = Array.isArray(object.material) ? object.material : [object.material]
+        const groups = Array.isArray(object.material) ? object.geometry.groups : [{ start: 0, count: Infinity, materialIndex: 0 }]
+        for (const group of groups) {
+          const material = list[group.materialIndex ?? 0]
+          if (!material) throw new Error(`Missing material on ${object.name}`)
+          let surface = materials.get(material)
+          if (!surface) { surface = await resolve(material); materials.set(material, surface) }
+          const count = object instanceof InstancedMesh ? object.count : 1
+          for (let i = 0; i < count; i++) bridge.add(object, material, surface, group, object instanceof InstancedMesh ? i : undefined)
+        }
+      }
+      bridge.sync()
+      return bridge
+    } catch (error) { bridge.dispose(); throw error }
+  }
+
+  private worldMatrix(object: Mesh, instance?: number): Matrix4 {
+    this.matrix.copy(object.matrixWorld)
+    if (object instanceof InstancedMesh && instance !== undefined) {
+      object.getMatrixAt(instance, this.instanceMatrix)
+      this.matrix.multiply(this.instanceMatrix)
+    }
+    return this.matrix
+  }
+
+  private add(object: Mesh, material: Material, surface: BridgeSurface, span: Span, instance?: number) {
+    const d = this.ctx.device, matrix = this.worldMatrix(object, instance).clone()
+    const packed = packWorldGeometry(object.geometry, matrix, span, surface.mat, surface.aux)
+    if (!packed.byteLength) return
+    const vertices = d.createBuffer({ size: packed.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+    d.queue.writeBuffer(vertices, 0, packed)
+    const uniform = d.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+    d.queue.writeBuffer(uniform, 0, new Float32Array([...surface.color, surface.roughness, surface.metalness, surface.normalScale, surface.alphaCutoff ?? 0, surface.aoStrength ?? 0, Number(surface.blend), 0, 0]))
+    const sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" })
+    const group = d.createBindGroup({ layout: this.pipelines.layout, entries: [
+      { binding: 0, resource: surface.base.createView() }, { binding: 1, resource: surface.normal.createView() },
+      { binding: 2, resource: surface.orm.createView() }, { binding: 3, resource: sampler },
+      { binding: 4, resource: { buffer: uniform } }, { binding: 5, resource: (surface.ao ?? surface.orm).createView() },
+    ] })
+    this.draws.push({ object, instance, span, surface, material, matrix, vertices, uniform, group, count: packed.byteLength / 32, visible: true })
+  }
+
+  sync(): void {
+    this.root.updateWorldMatrix(true, true)
+    for (const draw of this.draws) {
+      draw.visible = draw.material.visible && visibleInHierarchy(draw.object) && (!(draw.object instanceof InstancedMesh) || draw.instance! < draw.object.count)
+      const matrix = this.worldMatrix(draw.object, draw.instance)
+      if (matrix.equals(draw.matrix)) continue
+      draw.matrix.copy(matrix)
+      const packed = packWorldGeometry(draw.object.geometry, matrix, draw.span, draw.surface.mat, draw.surface.aux)
+      this.ctx.device.queue.writeBuffer(draw.vertices, 0, packed)
+    }
+  }
+
+  private draw(pass: GPURenderPassEncoder, blend: boolean) {
+    for (const draw of this.draws) {
+      if (!draw.visible || draw.surface.blend !== blend) continue
+      pass.setPipeline(this.pipelines.pipeline(blend, (draw.surface.alphaCutoff ?? 0) > 0))
+      pass.setBindGroup(1, draw.group)
+      pass.setVertexBuffer(0, draw.vertices)
+      pass.draw(draw.count)
+    }
+  }
+
+  shadowCasters(): SpotShadowCaster[] {
+    return this.draws.filter(d => d.visible && d.object.castShadow && !d.surface.blend && !d.surface.alphaCutoff)
+      .map(d => ({ buffer: d.vertices, count: d.count, stride: 32 }))
+  }
+
+  get meshCount() { return this.draws.length }
+
+  dispose(): void {
+    for (const draw of this.draws) { draw.vertices.destroy(); draw.uniform.destroy() }
+    this.draws.length = 0
+  }
+}
