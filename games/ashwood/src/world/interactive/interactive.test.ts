@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Box3, BoxGeometry, Matrix4, Scene, Vector3 } from "three/webgpu"
-import { packWorldGeometry } from "../../gpu/world-bridge"
+import { Box3, BoxGeometry, Float32BufferAttribute, Matrix4, Scene, Vector3 } from "three/webgpu"
+import { packWorldGeometry, surfaceSections } from "../../gpu/world-bridge"
 import { breaker, desk, filingCabinet, keyCabinet, locker, mobileShelving, wallSafe } from "./assemblies"
 import { Terminal, type TerminalDoor } from "./terminal"
 import { InteractiveWorld } from "./world"
@@ -133,5 +133,22 @@ test("native bridge retains storey height, transformed normals and geometry grou
   expect(data[1]).toBeCloseTo(16.36)
   expect(normal[14]).toBe(-127)
   expect(packWorldGeometry(geometry, matrix).byteLength).toBe(36 * 32)
+  geometry.dispose()
+})
+
+test("merged interior paint keeps distinct metal and matte finishes and rejects released CPU buffers", () => {
+  const geometry = new BoxGeometry(1, 1, 1).toNonIndexed()
+  const count = geometry.getAttribute("position").count
+  geometry.setAttribute("rm", new Float32BufferAttribute(Array.from({ length: count }, (_, i) => i < 6 ? [0.25, 0.8] : [0.9, 0]).flat(), 2))
+  const sections = surfaceSections(geometry, { start: 0, count })
+  expect(sections).toHaveLength(2)
+  expect(sections[0].roughness).toBeCloseTo(0.25)
+  expect(sections[0].metalness).toBeCloseTo(0.8)
+  expect(sections[1].metalness).toBe(0)
+  expect(sections.reduce((n, s) => n + s.span.count, 0)).toBe(count)
+  expect(packWorldGeometry(sections[0].geometry, new Matrix4()).byteLength).toBe(6 * 32)
+  const position = geometry.getAttribute("position") as Float32BufferAttribute
+  position.array = new Float32Array(0)
+  expect(() => packWorldGeometry(geometry, new Matrix4())).toThrow("before Ashwood releases")
   geometry.dispose()
 })
