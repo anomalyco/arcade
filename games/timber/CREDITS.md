@@ -24,4 +24,17 @@ not required for CC0; we give it anyway.
 ## People
 
 The lumberjack and the survivors are Microsoft Rocketbox avatars (MIT), built for the kit by
-`scripts/people/build-rocketbox.ts`; see `docs/people.md`.
+`scripts/people/build-rocketbox.ts`; see `docs/people.md`. The lumberjack, `public/people/lumberjack.glb`, is m05
+(`Male_Adult_05`) with its outfit texture repainted by `scripts/lumberjack.ts` (a buffalo-check flannel shirt, a black
+canvas vest, dark trousers and boots); SHA-256 `79b1f6d62a4d3545493ee15a6aaf10ac7763daabf9107c4da3750460aa0ed011`.
+
+## Chainsaw
+
+`public/saw/saw.glb` (the first-person saw and the lumberjack's) is built from
+["Chainsaw"](https://sketchfab.com/3d-models/052d0c1d5e6f48358dc89d6cefe45a38) by
+[Lassi Kaukonen](https://sketchfab.com/thesidekick), a photogrammetry scan licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), fetched from the Objaverse mirror (SHA-256
+`97ef54ae82919d698d9b8be9b55a733d8bb2bf3356676d09da22cc264f0de294`, in `public/saw/sources.json`).
+Changes (`scripts/saw/build-saw.py`): the powerhead decimated to two levels of detail with its maps re-baked from the
+full scan, labels and stickers painted out, a new 18" bar, chain, starter grip and cord, and modelled leather work
+gloves (their leather baked into the bar's maps) and sleeves.

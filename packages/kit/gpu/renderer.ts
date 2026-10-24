@@ -1923,7 +1923,6 @@ export class Renderer {
     if (this.volumes.length && !taa) this.drawVolumes(enc, f, f.frame, [f.frame[16]!, f.frame[17]!, f.frame[18]!], this.targets.hdrView, this.targets.width, this.targets.height)
     if (!taa) this.drawFogBlur(enc, f, f.frame, this.targets.hdrView, this.targets.width, this.targets.height)
     if (!taa && lateFx) this.drawLateParticles(enc, this.targets.hdrView, this.targets.width, this.targets.height)
-    if (!taa && this.overlayPass?.active) this.overlayPass.encode(enc, this.targets.hdrView, this.targets.width, this.targets.height, this.sceneGroup)
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
@@ -1986,9 +1985,14 @@ export class Renderer {
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
       if (lateFx) this.drawLateParticles(enc, taa.outputView, this.width, this.height)
-      if (this.overlayPass?.active) this.overlayPass.encode(enc, taa.outputView, this.width, this.height, this.sceneGroup)
       // Blur last, on the resolved image with the beams, mist and particles in it, and never into the TAA history.
       if (runSharedBlur) sharedBlur(taa.outputView, this.width, this.height, this.unjittered.subarray(0, 16))
+    }
+    // The overlay (a viewmodel) goes on after the blur, onto the image bloom and the composite read: it is locked to the
+    // camera, so the world's velocity must not smear it, nor the blur pull the scene into its edges.
+    if (this.overlayPass?.active) {
+      const view = activeDown0 ? this.sharedBlur!.output : taa ? taa.outputView : this.targets.hdrView
+      this.overlayPass.encode(enc, view, taa ? this.width : this.targets.width, taa ? this.height : this.targets.height, this.sceneGroup)
     }
     if (this.meterPass && this.bloomSourceView) this.meterPass.encode(enc, this.bloomSourceView)
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)

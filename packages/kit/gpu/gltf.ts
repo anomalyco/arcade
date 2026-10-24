@@ -34,6 +34,78 @@ export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: b
   return texture
 }
 
+/** One glTF triangle primitive on the CPU: world-space attributes, unindexed, for a game's own vertex layout. */
+export type GltfRawPrimitive = {
+  node: string
+  material: string
+  lod: number
+  /** Per vertex; `indices` lists the triangles (0, 1, 2, ... when the primitive has none). */
+  position: Float32Array
+  normal: Float32Array
+  indices: Uint32Array
+  /** TEXCOORD_0 and TEXCOORD_1 (zeros when absent), COLOR_0 as rgba (null when absent). */
+  uv0: Float32Array
+  uv1: Float32Array
+  color: Float32Array | null
+  base: { bytes: Uint8Array; mime: string } | null
+  normalMap: { bytes: Uint8Array; mime: string } | null
+  orm: { bytes: Uint8Array; mime: string } | null
+  occlusion: { bytes: Uint8Array; mime: string } | null
+  baseColor: number[]
+  roughness: number
+  metalness: number
+}
+
+/** Every triangle primitive of a static glTF as indexed CPU arrays, with the asset's `extras` (meshopt and quantization decoded). */
+export async function readGltfRaw(source: string | Uint8Array, transform = mat4.identity()): Promise<{ primitives: GltfRawPrimitive[]; extras: Record<string, unknown> }> {
+  await MeshoptDecoder.ready
+  const io = new WebIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.decoder": MeshoptDecoder })
+  let bytes: Uint8Array
+  if (typeof source === "string") {
+    const response = await fetch(source)
+    if (!response.ok) throw new Error(`${source}: ${response.status}`)
+    bytes = new Uint8Array(await response.arrayBuffer())
+  } else bytes = source
+  const doc = await io.readBinary(bytes)
+  const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]
+  if (!scene) throw new Error("glTF has no scene")
+  const image = (t: Texture | null) => (t?.getImage() ? { bytes: t.getImage()!, mime: t.getMimeType() } : null)
+  const primitives: GltfRawPrimitive[] = []
+  scene.traverse(node => {
+    const world = mat4.multiply(transform, node.getWorldMatrix())
+    const normalMatrix = mat4.transpose(mat4.inverse(world))
+    for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+      if (primitive.getMode() !== 4) throw new Error("Only glTF triangle primitives are supported")
+      const position = primitive.getAttribute("POSITION")!, normals = primitive.getAttribute("NORMAL")
+      if (!normals) throw new Error("glTF normals required")
+      const t0 = primitive.getAttribute("TEXCOORD_0"), t1 = primitive.getAttribute("TEXCOORD_1"), c0 = primitive.getAttribute("COLOR_0")
+      const index = primitive.getIndices()
+      const count = position.getCount()
+      const out = { position: new Float32Array(count * 3), normal: new Float32Array(count * 3), uv0: new Float32Array(count * 2), uv1: new Float32Array(count * 2), color: c0 ? new Float32Array(count * 4) : null }
+      const indices = new Uint32Array(index?.getCount() ?? count)
+      for (let i = 0; i < indices.length; i++) indices[i] = index ? index.getScalar(i) : i
+      // A mirroring transform flips the winding.
+      if (mat4.determinant(world) < 0) for (let i = 0; i + 2 < indices.length; i += 3) [indices[i + 1], indices[i + 2]] = [indices[i + 2]!, indices[i + 1]!]
+      const e: number[] = []
+      for (let i = 0; i < count; i++) {
+        out.position.set(vec3.transformMat4(position.getElement(i, e), world), i * 3)
+        out.normal.set(vec3.normalize(vec3.transformMat4Upper3x3(normals.getElement(i, e), normalMatrix)), i * 3)
+        if (t0) { t0.getElement(i, e); out.uv0[i * 2] = e[0]!; out.uv0[i * 2 + 1] = e[1]! }
+        if (t1) { t1.getElement(i, e); out.uv1[i * 2] = e[0]!; out.uv1[i * 2 + 1] = e[1]! }
+        if (c0 && out.color) { const c = c0.getElement(i, e); out.color.set([c[0]!, c[1]!, c[2]!, c[3] ?? 1], i * 4) }
+      }
+      const m = primitive.getMaterial()
+      primitives.push({
+        node: node.getName(), material: m?.getName() ?? "", lod: nodeLod(node), ...out, indices,
+        base: image(m?.getBaseColorTexture() ?? null), normalMap: image(m?.getNormalTexture() ?? null),
+        orm: image(m?.getMetallicRoughnessTexture() ?? null), occlusion: image(m?.getOcclusionTexture() ?? null),
+        baseColor: m?.getBaseColorFactor() ?? [1, 1, 1, 1], roughness: m?.getRoughnessFactor() ?? 1, metalness: m?.getMetallicFactor() ?? 0,
+      })
+    }
+  })
+  return { primitives, extras: (doc.getRoot().getAsset().extras ?? {}) as Record<string, unknown> }
+}
+
 /** A node's level of detail from the common authored convention: the highest `LOD<n>` prefix on it or an ancestor, else 0. */
 function nodeLod(node: Node): number {
   let lod = 0
