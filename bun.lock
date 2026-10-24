@@ -203,6 +203,7 @@
       "name": "@arcade/timber",
       "dependencies": {
         "@arcade/kit": "workspace:*",
+        "wgpu-matrix": "^3.4.2",
       },
       "devDependencies": {
         "@types/bun": "^1.4.2",

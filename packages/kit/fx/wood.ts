@@ -175,6 +175,26 @@ export class WoodFx {
     }
   }
 
+  /**
+   * Chips thrown from (x, y, z) towards (tx, ty, tz) at `rate` per second: a first-person cutter's face, so a few come
+   * at the lens. Spread widens with distance; they fly on under gravity and settle like any chip.
+   */
+  toward(dt: number, key: string, x: number, y: number, z: number, tx: number, ty: number, tz: number, rate: number): void {
+    const s = this.settings
+    const dx = tx - x
+    const dy = ty - y
+    const dz = tz - z
+    const d = Math.hypot(dx, dy, dz) || 1
+    for (let i = this.count(`${key}.toward`, rate, dt); i > 0; i--) {
+      const sp = s.woodChipSpeed * (0.9 + this.rand() * 0.6)
+      const j = 0.35
+      const vx = (dx / d + (this.rand() - 0.5) * j) * sp
+      const vy = (dy / d + (this.rand() - 0.5) * j) * sp + (d / sp) * 4.9
+      const vz = (dz / d + (this.rand() - 0.5) * j) * sp
+      this.chip(0, x, y, z, vx, vy, vz, (0.016 + this.rand() * 0.016) * s.woodChipSize)
+    }
+  }
+
   /** An axe stroke: a handful of bigger chips knocked out of the notch. */
   chop(x: number, y: number, z: number, ax: number, az: number): void {
     const l = Math.hypot(ax, az) || 1

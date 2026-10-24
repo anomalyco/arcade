@@ -633,6 +633,13 @@ first build.
   while black stays clean (`packages/kit/gpu/look-shaders.ts`).
 - **Lens.** Night Shift's edge softness, bright-source fringe, midtone grain and a restrained vignette on the existing
   bloom (`games/nightshift/src/polish/lens.ts`).
+- **Fear on the lens (TIMBER).** Distance to the threat drives one eased `fear` value: the forest's own lens vignette
+  closes, colour drains through a CSS saturate filter, torches stutter on smooth value noise (each by its own
+  distance), and blood on the lens is a 2D canvas of uneven spatters that run and dry. The shared `MotionBlur` scales
+  with a sprint and takes `MotionBlurBurst` impulses on saw contact, lunges and tree impacts.
+  - Where: `games/timber/src/dread.ts`, `src/main.ts` (`contact`, `blurHit`); knobs under Juice, Fear and Motion.
+  - Cost: within the mini's run-to-run noise (±5 ms shared); the lens canvas redraws only while blood is on it.
+  - Kit: pending (timber-scary review, Oct 23).
 - **Camera filters.** iPhone, VHS camcorder, CRT TV and body cam, each with its own knobs, as a final pass after the
   composite; the body cam also changes the rig (fisheye from a wide render, chest mount, torso lag).
   - Where: `packages/kit/gpu/post/camcorder.ts`, `packages/kit/client/bodycam-rig.ts`. Night Shift, Lot, Outbreak
@@ -754,4 +761,9 @@ first build.
 - **Light and sound from one signal.** Night Shift's ballast hum and starter crackle follow the same `tubeSignal` as
   the tube's light.
 - **Outbreak's mix.** Six buses, 11 surface materials and voice priority: [audio-design.md](audio-design.md) §4.
+- **Recorded chainsaw in 3D (TIMBER).** Three crossfaded CC0 loops (idle, revved, in wood) per engine, the throttle
+  opening fast and falling back slow, placed by distance and bearing with a low-pass and gain drop per trunk between
+  you and him and more reverb the farther he is (`games/timber/src/sounds.ts`). When his engine dies near you, the
+  cut-out recording plays, then the world holds still for 2.6 s with only your heart.
+  - Kit: pending (timber-scary review, Oct 23).
 - Never play sound aloud for tests: render offline (`packages/kit/audio/offline.ts`).

@@ -19,7 +19,8 @@ export const WALLS: readonly Rect[] = [
   [ARENA_HALF, -ARENA_HALF, ARENA_HALF + 1, ARENA_HALF],
 ]
 
-export type ViewStyle = "chase" | "iso" | "shoulder" | "top"
+/** `auto`: Dead by Daylight's split, the lumberjack in first person and survivors over the shoulder. */
+export type ViewStyle = "auto" | "first" | "chase" | "iso" | "shoulder" | "top"
 /** `hunt`: one chainsaw lumberjack against survivors with axes. `ffa`: everyone has a saw, last one standing. */
 export type Mode = "hunt" | "ffa"
 export type Role = "lumberjack" | "survivor"
@@ -29,7 +30,7 @@ export const PART_KINDS: readonly PartKind[] = ["fuel", "plug", "keys"]
 export const FEEL = {
   mode: "hunt" as Mode,
   playAs: "survivor" as Role,
-  viewStyle: "chase" as ViewStyle,
+  viewStyle: "auto" as ViewStyle,
   slowMoScale: 0.3,
   slowMoTime: 0.9,
   // Forest.
@@ -149,6 +150,8 @@ export const FEEL_CONTROLS: LabControl[] = [
     group: "Style",
     type: "select",
     options: [
+      { value: "auto", label: "Lumberjack first person, survivors over the shoulder" },
+      { value: "first", label: "First person (mouse look)" },
       { value: "chase", label: "Low chase (mouse look on click)" },
       { value: "iso", label: "High chase (shows fall lines)" },
       { value: "shoulder", label: "Over the shoulder (mouse look)" },

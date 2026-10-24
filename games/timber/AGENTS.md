@@ -2,8 +2,9 @@
 
 - Style: **realistic**. Visual work follows [quality-checklist.md](../../docs/quality-checklist.md),
   [realistic.md](../../docs/realistic.md) and the `arcade-quality` skill. The look is BARBARA's night forest: dark
-  stays dark between the beams, no milky wash, fog only where a lamp lights it. The people are still the blocky shared
-  rig (Rocketbox is next, below).
+  stays dark between the beams, no milky wash, fog only where a lamp lights it. It is a horror game: near black past
+  your light, a crescent moon (`skyMoon: "crescent"`, `darkAdapt` 0.3, `moonMist` 0.15, `mistDensity` 0.11), and
+  mist only where a beam crosses it (in `TimberView.create`).
 - Unlisted prototype, 1-vs-all in a packed 52×52 m night forest (`mode: "hunt"`, the default). One **lumberjack**
   with a chainsaw hunts three **survivors** (`survivorCount`) with axes, torches and two flares each. Survivors win by
   carrying the fuel can, spark plug and keys to the logging truck and reaching it once it runs, or by killing him with
@@ -53,61 +54,96 @@
   and dimmed through their tint, lit only by the lamps.
 - Blood: dark wet pools (four `poolMesh` variants) that grow over ~3.5 s, merge when close, max 60; the downed drip a
   new one every 0.9 s (`bloodPool`, `bloodDrops`). Getting hurt is a red vignette from `cam.damageFlash`.
-- The shared human rig holds a chainsaw (or an axe) in the rifle's place (`parts.gun.rifle`). The downed and the
-  dead are ragdolls; the downed are dragged along as they crawl.
-- Lighting (BARBARA's look: physical sky, full moon, dark adaptation, highlight shoulder): survivors carry
+- People (`src/people-view.ts`, `TimberPeople`): Microsoft Rocketbox avatars on the kit people rig, as in BARBARA. The
+  lumberjack is m04 in a dark oxblood work jacket, grown by `jackScale` (1.12), both hands on the saw (`SAW_HANDS`
+  through `People.drive`'s `reach`); survivors are the other cast members with the torch in the right hand (the beam
+  starts at the torch in it) and the axe in the left, swung while chopping. The downed and the dead are the game's
+  ragdolls posed onto the person (`lie`), so a crush pins the body under the trunk and the downed are dragged as they
+  crawl. The saw, axe and torch models are drawn at the `Held` frames. The blocky shared rig draws anyone still
+  loading, the `?smoke` run, and everyone with `realPeople` 0.
+- Lighting (BARBARA's look: physical sky, dark adaptation, highlight shoulder): survivors carry
   `ForestTorch` beams (`torchLevel`; only the player's own can be `local`). The lumberjack's helmet lamp (`sawLight`)
-  is wired to the saw and dies with the engine. It sits at 1.72 m, eases towards the kerf while he cuts, and watches
+  is wired to the saw and dies with the engine. It sits at 1.72 m × `jackScale`, dim (`torchPower` 85, a 12° cone,
+  `torchSpill` 0.02), eases towards the kerf while he cuts, and watches
   the falling tree's mid-trunk for `fellCamTime` after a `fell` (the `lamps` map). It is on the helmet, not the saw,
   because a lamp 0.4 m from the bark floods the frame. Flares come through `view.lights`; the truck's lamps are
   torches 900/901 plus a glow (`truckLamps`). Veiling glare is TIMBER's own (`glare` 0.1, written into the forest
   settings): at the forest's default 0.5 the lamp spot on the ground a metre ahead lifts the whole frame grey.
-- Camera: default `viewStyle: "chase"`, a low third-person chase (`chase*` knobs: pitch, distance, look height, FOV,
-  look-ahead, `chaseSide` over the right shoulder, turn rate, pull in at trunks), so trunks fall side-on and the saw
-  fight is close. Click locks the pointer for mouse look (chase and shoulder); bots, automation and spectating ease
-  the yaw towards the aim. The felling cam (`fellCam*`): when a tree you drop (or one within 22 m) goes over, the view
-  drops to a low eye (`fellCamHeight`) up to `fellCamDist` off your shoulder, on the bearing (45–100° off the
-  reverse fall line) with the clearest view between the trunks. It looks a third of the way up the trunk as it falls,
-  blends in over 0.6 s and out over 0.7 s, and holds for `fellCamTime`. `"iso"`, `"shoulder"` and `"top"` are
-  alternatives on the Camera knob.
-- GPU (mini, Metal, 1280×720 headless, High, Oct 23): ~28 ms sawing up close, ~23 ms hunt, 24–38 ms in the chase
-  lane. Ferns are the biggest single cost (about 10 ms of the sawing frame); `fernDensity` 0.5–0.6 saves 3–12 ms.
+- Camera: default `viewStyle: "auto"`, Dead by Daylight's split (`resolvedView()`): you as the lumberjack are in
+  first person, saw in hand; you as a survivor get a tight over-the-shoulder view with a narrow FOV (`shoulder*`
+  knobs); once you're out and spectating, the low chase. `"first"`, `"chase"`, `"shoulder"`, `"iso"` and `"top"` stay
+  on the Camera knob. First person still runs `cam.follow`/`update` for the shake, then overrides `cam.eye` and
+  `cam.viewProj` (`mat4.lookAt`, near 0.05): shake becomes a small yaw/pitch jitter plus the saw's buzz (`sawBuzz`,
+  harder revving and in wood), the eye is `firstEye` × `jackScale` plus head bob, and mouse Y pitches the view (locked;
+  unlocked it eases to `firstPitch`, or down into the cut). Your own body isn't drawn; the viewmodel
+  (`src/viewmodel.ts`, gloved hands on an orange saw, dimmed by `sawLit` against the helmet lamp) is, and while the bar
+  bites wood, chips fly from its nose at the lens (`WoodFx.toward`). Click locks the pointer for mouse look (first,
+  chase, shoulder); bots, automation and spectating ease the yaw towards the aim. The chase (`chase*` knobs) is low,
+  over the right shoulder, pulled in at trunks. The felling cam (`fellCam*`): when a tree you drop (or one within
+  22 m) goes over, the view drops to a low eye (`fellCamHeight`) up to `fellCamDist` off your shoulder, on the bearing
+  with the clearest view between the trunks, looking a third of the way up the trunk; from chase or shoulder it blends
+  in over 0.6 s and out over 0.7 s, from first person it cuts. It holds for `fellCamTime`.
+- Running: a sprint eases `sprintK` in, which widens the FOV (`sprintFov`), scales the kit `MotionBlur` strength
+  (`sprintBlur`, knobs under "Motion") and adds a small radial `MotionBlurBurst` each frame; head bob follows the
+  stride (`headBob`). Bursts also come on a lunge, saw contact and tree impacts. A tree landing within 9 m of its trunk
+  line makes you stumble (`stumble`). All of it is off with reduced motion.
+- Juice (`contact()` within 3 m of the camera): hit-stop, an FOV punch (`fovPunch`), a blur burst and blood on the
+  lens (`Dread.splash`, uneven spatters that run and dry over `lensDry`, at most one every 0.25 s). Slow-mo on an
+  execution (`executeSlowMo`) as well as a crush or a domino of 3+; the pull cord kicks the view (`pullKick`); the big
+  `tree-crack` before a tree goes, then the groan.
+- Fear (`src/dread.ts`, `Dread`): within `fearRange` (15 m) of the lumberjack, survivors' torches flicker
+  (`torchFlicker`, each by their own distance), the heartbeat speeds up, breathing gets heavier, and the vignette
+  (`fearVignette`, written into the forest's lens vignette) and desaturation (`fearDesat`) grow. When his engine
+  dies near a hunted survivor, the cut-out recording plays, then everything goes quiet for `hushTime` (the truck,
+  footsteps and breath duck; the heartbeat is louder), the vignette spikes and the HUD says "His saw cut out."
+- Sound (`src/sounds.ts`, `TimberSound`): CC0 recordings in `public/sfx/` (credited in `CREDITS.md`, with URL,
+  licence and SHA-256 in `public/sfx/sources.json`; `scripts/sounds.ts` fetches, verifies and cuts them). The engine
+  is three crossfaded loops (`saw-idle`, `saw-rev`, `saw-cut`) per lumberjack, placed in 3D (pan, distance, a
+  low-pass behind trunks) with reverb through the trees; plus `saw-start`, `saw-pull`, `saw-flood`, `saw-cutout`,
+  `tree-creak`, `tree-crack`, `tree-groan`, `tree-crash`, footsteps, breath and heart. `shared/sfx.ts` lists the
+  library cues still used (the truck, hits, gore, pickups).
+- GPU (mini, Metal, 1280×720 headless, High, Oct 23, `bun scripts/proof.ts --perf`): ferns halved (`fernDensity`
+  0.5): sawing 30→21–27 ms, hunt 38→19–21 ms, the chase lane ~36–38 ms either way. `--sweep` switches one cost off at a
+  time in the chase lane: the tree templates are nearly all of it (off: 2.4 ms; far LOD everywhere: ~23 ms); ferns,
+  shadows, mist, motion blur and people are each within the run-to-run noise (±5 ms when the mini is shared). Not yet
+  under the 17 ms target; next is a nearer tree LOD (`ForestQuality.near`) or cheaper near trees in the kit.
   Auto quality steps down from High on slow frames.
-- Sound stand-ins (`shared/sfx.ts`): the library has no chainsaw, so `generator.loop` pitched by revs is the engine
-  and `door.pry.loop` the bar biting wood; `vehicle.boat.engine` is the truck. Replace them when real samples land in
-  `packages/kit/audio`.
 
 ## Controls
 
-WASD move, Shift sprint, hold Mouse0 saw/axe, Space lunge (revved), Q engine, F torch, G flare, hold E revive/shove,
-R new round. All by `KeyboardEvent.code`; prompts use `keyPromptHtml`.
+WASD move, mouse look (click to lock; mouse Y pitches the first-person view), Shift sprint, hold Mouse0 saw/axe, Space
+lunge (revved), Q engine, F torch, G flare, hold E revive/shove, R new round. All by `KeyboardEvent.code`; prompts use
+`keyPromptHtml`.
 
 ## Game shell
 
 - Title, Escape menu and Settings (volume, mute on M, quality) are the kit shell, set up in `src/main.ts`. No
-  pointer lock from the shell; the chase and shoulder views ask for it on a canvas click. Escape releases the lock before the
+  pointer lock from the shell; the first-person, chase and shoulder views ask for it on a canvas click. Escape releases the lock before the
   shell sees the key, so losing the lock mid-play pauses; pausing exits the lock. Leave starts a new round. The
-  engine, bite, truck and heartbeat loops only sound in play.
+  engine, breath, truck and heartbeat loops only sound in play.
 
 ## Automation
 
 - `window.timber`: `world`, `feel`, `look` (the Lab settings: `FEEL`, `LOOK`, camera shake and wood knobs), `wood`
   (the `WoodFx`), `view` (the `TimberView`; `view.forest` is the kit `ForestView`, with `stats()` and `debug`),
   `measure(n)` (whole-frame GPU ms), `auto.input` (drive the player with a `JackInput`), `auto.camera`
-  (`{ x, y, dist, pitch, yaw?, height?, fov? }`), `stage("fell" | "domino" | "saw" | "hunt" | "chase")` (fixed proof
-  scenes; all but `hunt` make you the lumberjack. `chase` is a lane with a half-cut tree and a fleeing bot survivor
-  with no flares), `paused`, `newRound()`, `frames`. `?seed=N` fixes the forest; `?quality=high` pins quality (Auto
+  (`{ x, y, dist, pitch, yaw?, height?, fov? }`), `stage("fell" | "domino" | "saw" | "hunt" | "chase" | "flee" |
+  "kill")` (fixed proof scenes; `hunt` and `flee` make you a survivor, the rest the lumberjack. `chase` is a lane with
+  a half-cut tree and a fleeing bot survivor with no flares; `flee` is you running down an L-shaped lane with your
+  torch on and a fast, aggressive bot lumberjack behind; `kill` is first person: a survivor with his back to you and a
+  half-cut tree beyond him), `blur` (motion blur settings), `people` (`TimberPeople`), `peopleReady()` (resolves once
+  the Rocketbox cast has loaded), `dread`, `sound` (`TimberSound`), `style` (the resolved view), `paused`,
+  `newRound()`, `frames`. `?seed=N` fixes the forest; `?quality=high` pins quality (Auto
   steps down mid-run on a slow worker); `?smoke` is the software-GPU smoke (low, Today sky, offscreen).
 - Proof captures: `hivemind run --kind browser --worker mini -- sh -c 'bunx vite build && bun scripts/proof.ts'`
-  writes `fell.webm` (a felling up close), `chase.webm` (running a survivor down and dropping a tree after them) and
-  a still to `captures/proof/`. `--stills` takes only look stills of both scenes and the hunt (fast). Studio has no
-  Playwright ffmpeg, so video runs need the mini.
+  writes `flee.webm` (a survivor fleeing him in the dark), `kill.webm` (a first-person saw kill, then a tree drop) and
+  a still to `captures/proof/`. `--stills` takes only look stills of flee, kill and fell plus the hunt (fast);
+  `--perf` measures GPU ms per scene at both fern densities; `--sweep` turns costs off one at a time in the chase lane.
+  Studio has no Playwright ffmpeg, so video runs need the mini.
 - `bun run check` (typecheck, tests, build). Tests run through HiveMind: `hivemind run --kind cargo -- bun run test`.
 
 ## Next phase
 
-1. Rocketbox people like BARBARA's (`games/barbara/src/people-view.ts` over `@arcade/kit/people`). It needs a
-   two-handed chainsaw and axe grip in the kit's `People.drive` (it knows torch carry and hand grips today) and
-   ragdolls for the downed and dead on the people rig.
-2. A real chainsaw sample (idle, rev, bite, pull-cord, CC0 or CC BY, credited) to replace the stand-ins.
+1. Frame time: the near trees are the cost (see GPU above).
+2. A proper downed crawl on the people rig (the downed are ragdolls dragged along today).
 3. Multiplayer rooms on the kit room code (`net/room-core`, `net/room-socket`); the sim is already deterministic.

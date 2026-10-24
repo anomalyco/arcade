@@ -102,6 +102,8 @@ export type ForestFrameInput = {
   particles?: { pool: Particles; lights: readonly SceneLight[]; ambient?: readonly [number, number, number]; falloff?: number }
   /** A storm this frame (`ForestStorm.frame(...).view`): lightning, rain, wet surfaces, storm wind, the eye after a flash. */
   storm?: ForestStormView | null
+  /** The renderer's shared shutter blur and its impulse bursts (`@arcade/kit/gpu/motion-blur`). Omit for none. */
+  motionBlur?: FrameInput["motionBlur"]
 }
 
 export type ForestViewOptions = {
@@ -631,7 +633,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, Math.min(cam.stops, s.adaptLift))) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje) + 4 * Number(s.highlightShoulder)],
       postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
-      volume: volumes, fogBlur: fog.blurInput(), weather,
+      volume: volumes, fogBlur: fog.blurInput(), weather, motionBlur: f.motionBlur,
     }
     if (f.particles && f.particles.pool.count > 0) {
       fxLights.update(f.particles.lights, [])

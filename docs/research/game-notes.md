@@ -2136,6 +2136,12 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Dead by Daylight's camera split without a second camera (TIMBER).** The killer in first person and survivors over
+  the shoulder come from one `Camera`: first person still runs `follow`/`update` so trauma, kicks and decay keep
+  working, then overrides `eye`/`viewProj` with `lookAt` from the head, turning positional shake into a small yaw and
+  pitch jitter (metres of dolly read as a lurch at the eye). The felling cam cuts out of first person instead of
+  blending. `games/timber/src/main.ts`, proof clip
+  `kill.webm` in `~/code/home/artifacts/timber-scary-2026-10-23/`.
 - **Reward and damage feedback as presentation over existing events (Carrier).** `games/carrier/src/feedback/` turns
   the room's `hp`/`kill`/`boom`/`sunk`/`deckkill` and the local missile copy into a damage edge with a wedge toward the
   attacker, airframe sparks everyone sees, cockpit canopy cracks and oil (2D canvases, cracks redrawn only on a hit),
@@ -2372,6 +2378,10 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Audio
 
+- **Silence as an event (TIMBER).** A chainsaw that is always loud stops being scary; the engine cutting out near a
+  survivor is the scare. `TimberSound.cutOut` plays the recorded die-off, then a `hush` window ducks footsteps, breath
+  and the truck while the heartbeat gets louder, the vignette spikes and the HUD says "His saw cut out." so it reads
+  even muted. `games/timber/src/sounds.ts`, `src/dread.ts`.
 - **A procedural soundscape that ships no files (AR-86).** Outbreak's `src/audio/soundscape/` synthesizes 28 ambient
   sounds in plain TypeScript (`dsp.ts`: two-pole modes scaled by `sin(w)` so high partials are not buried, bubbles,
   formant babble, swept biquads, crossfaded loops), bakes each at 24 kHz on first use in a Worker (≤ 24 ms per sound
