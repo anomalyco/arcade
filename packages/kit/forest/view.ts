@@ -942,6 +942,12 @@ class ForestPass implements ScenePass {
         this.posed.set(pose.tree, p)
         hiddenChanged = true
       }
+      // Rays (the lamps' hits) pass the trunk only once it has gone over, not while it stands on the hinge.
+      const tr = pose.tree * 4
+      if (tr + 3 < this.trunks.length && this.build.trunks[tr] === Math.fround(t.x)) {
+        const over = Math.abs(pose.angle) > 0.25
+        this.trunks[tr + 3] = over ? p.split.base[1] + pose.cut : this.build.trunks[tr + 3]!
+      }
       const key = poseKey(pose)
       if (key === p.key) continue
       p.key = key
@@ -992,9 +998,6 @@ class ForestPass implements ScenePass {
       const buffer = d.createBuffer({ size: src.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
       return { src, scratch: new ArrayBuffer(src.byteLength), mesh: { buffer, count: src.byteLength / 32 } }
     }
-    const tr = pose.tree * 4
-    const top = this.trunks[tr + 3]
-    if (top !== undefined && this.build.trunks[tr] === Math.fround(t.x)) this.trunks[tr + 3] = split.base[1] + pose.cut
     const stumpBox = [t.x - 1, split.base[1], t.z - 1, t.x + 1, split.base[1] + pose.cut + 0.2, t.z + 1]
     return {
       tree: pose.tree, cut: pose.cut, key: "", template, chunk: offset >= 0 ? ci : -1, offset, split, box: stumpBox, stumpBox,

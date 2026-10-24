@@ -352,6 +352,7 @@ async function main() {
   newAvatars()
   const newRound = () => {
     resetRound(w, FEEL)
+    view.sync(w)
     newAvatars()
   }
   live.newRound = newRound
@@ -833,8 +834,14 @@ async function main() {
       el.style.display = "none"
       return
     }
+    // A short step towards the target, not the target itself: one behind the camera doesn't project.
+    const d = Math.hypot(x - from.x, y - from.y) || 1
     const a = cam.project(from.x, 1, from.y, innerWidth, innerHeight)
-    const b = cam.project(x, 1, y, innerWidth, innerHeight)
+    const b = cam.project(from.x + ((x - from.x) / d) * 0.5, 1, from.y + ((y - from.y) / d) * 0.5, innerWidth, innerHeight)
+    if (!a.ok || !b.ok) {
+      el.style.display = "none"
+      return
+    }
     const ang = Math.atan2(b.y - a.y, b.x - a.x)
     const rad = 96
     el.style.display = "block"
@@ -858,7 +865,6 @@ async function main() {
       scaledDt *= Math.max(0.02, FEEL.slowMoScale)
     }
     acc += scaledDt
-    const me = w.jacks[0]!
 
     while (acc >= DT) {
       acc -= DT
@@ -875,6 +881,8 @@ async function main() {
       }
       if (w.phase === "over" && w.t - w.overAt > FEEL.restartDelay && !auto.input) newRound()
     }
+    // After the ticks: a new round (auto-advance) replaces the jacks.
+    const me = w.jacks[0]!
 
     particles.update(scaledDt, [], () => 0)
     wood.step(scaledDt)
@@ -1234,6 +1242,7 @@ async function main() {
     Object.assign(FEEL, { mode: "hunt", playAs: name === "hunt" ? "survivor" : "lumberjack", botWarmup: name === "hunt" || name === "chase" ? 0 : 1e9, restartDelay: 1e9, gasCans: 0 })
     resetRound(w, FEEL)
     if (name === "hunt") {
+      view.sync(w)
       newAvatars()
       return
     }
@@ -1293,6 +1302,7 @@ async function main() {
       dummy(3, 15, Math.PI)
     }
     w.jacks = [me, ...dummies]
+    view.sync(w)
     newAvatars()
   }
 

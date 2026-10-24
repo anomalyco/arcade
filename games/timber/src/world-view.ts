@@ -195,6 +195,9 @@ export class TimberView {
     this.poses.length = 0
     this.posed.clear()
     let standing = 0
+    // Only a tree under a running blade creaks: a still pose keeps its key, so its buffers and shadows are cached.
+    const worked = new Set<number>()
+    for (const j of w.jacks) if (j.alive && j.trigger && j.target?.kind === "tree") worked.add(j.target.id)
     w.trees.forEach((t, i) => {
       if (t.state === "standing") standing++
       if (t.state === "standing" && t.cut < feel.warnAt) {
@@ -207,7 +210,7 @@ export class TimberView {
       let bend = 0
       let shake = 0
       if (t.state === "standing") {
-        angle = standingLean(t, feel) + look.creak * Math.sin(w.t * 31 + t.id) * Math.sin(w.t * 3.7 + t.id * 1.3)
+        angle = standingLean(t, feel) + (worked.has(t.id) ? look.creak * Math.sin(w.t * 31 + t.id) * Math.sin(w.t * 3.7 + t.id * 1.3) : 0)
       } else {
         angle = t.theta
         let c = this.crowns.get(t.id)
