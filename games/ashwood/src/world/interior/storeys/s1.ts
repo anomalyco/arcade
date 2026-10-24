@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { abs, float, floor, fract, hash, mix, positionWorld, vec2, vec3 } from "three/tsl"
 import type { ModelName } from "../../../render/models"
+import { interiorSurface } from "../../../render/materials"
 import {
   type Builder,
   type POpening,
@@ -107,6 +108,7 @@ const broadloom = (() => {
   const wear = abs(fract(p.x.mul(0.091)).sub(0.5)).mul(0.08)
   const base = vec3(0.118, 0.07, 0.048)
   m.colorNode = base.mul(float(0.86).add(fine.mul(0.14)).add(tufts.mul(0.1)).sub(patch).add(wear))
+  m.colorNode = interiorSurface(m.colorNode, float(0.97), float(1), false).color
   m.name = "s1_broadloom"
   return m
 })()

@@ -23,7 +23,7 @@ import {
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
-import { material, materialFor, type MaterialName } from "../../render/materials"
+import { interiorSurface, material, materialFor, type MaterialName } from "../../render/materials"
 import { exitSignMaterial } from "../../render/signs"
 import { releaseAfterUpload } from "../../render/release"
 import {
@@ -320,8 +320,9 @@ const vcMaterial = (() => {
   const mottle = hash(floor(positionWorld.mul(9)).dot(vec3(1, 57, 113)))
     .mul(0.06)
     .add(0.97)
-  m.colorNode = attribute<"vec3">("color", "vec3").mul(mottle)
-  m.roughnessNode = rm.x
+  const aged = interiorSurface(attribute<"vec3">("color", "vec3").mul(mottle), rm.x, rm.y.oneMinus())
+  m.colorNode = aged.color
+  m.roughnessNode = aged.rough
   m.metalnessNode = rm.y
   m.name = "interior_paint"
   return m
@@ -352,6 +353,7 @@ function carpetTiles(base = new THREE.Color(0.105, 0.1, 0.088)) {
   m.colorNode = (uniform(base) as N)
     .mul(float(0.92).add(checker.mul(0.12)).add(fibre).sub(wear))
     .mul(float(1).sub(seam.mul(0.45)))
+  m.colorNode = interiorSurface(m.colorNode, float(0.98), float(1), false).color
   return m
 }
 
@@ -370,6 +372,9 @@ function blockWall() {
   const base = mix(vec3(0.5, 0.49, 0.42), vec3(0.17, 0.22, 0.19), low)
   m.colorNode = mix(base, vec3(0.09, 0.13, 0.12), band).mul(float(1).sub(joint.mul(0.3)))
   m.roughnessNode = float(0.28).add(joint.mul(0.5))
+  const aged = interiorSurface(m.colorNode, m.roughnessNode)
+  m.colorNode = aged.color
+  m.roughnessNode = aged.rough
   return m
 }
 

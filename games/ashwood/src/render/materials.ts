@@ -31,6 +31,8 @@ import {
 import type { KTX2Loader } from "three/addons/loaders/KTX2Loader.js"
 import { sharedKtx2 } from "./models"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
+import { BUILDING } from "../world/layout"
+import { insideNode } from "./volumes"
 
 // MIGRATION NOTE (shader count, docs/boot-architecture.md). Every library material is now a member of a shared
 // surface class: all members of a class compile to ONE shader, because the per-material constants live in
@@ -121,6 +123,8 @@ export const MATERIAL_SETTINGS = {
   "materials.puddles": 0.32,
   "materials.puddleScale": 1,
   "materials.groundVariation": 1,
+  "materials.interiorGrime": 0.85,
+  "materials.interiorDamp": 0.25,
 } satisfies LabSettings
 
 const U = {
@@ -128,12 +132,16 @@ const U = {
   puddles: uniform(MATERIAL_SETTINGS["materials.puddles"]),
   puddleScale: uniform(MATERIAL_SETTINGS["materials.puddleScale"]),
   variation: uniform(MATERIAL_SETTINGS["materials.groundVariation"]),
+  interiorGrime: uniform(MATERIAL_SETTINGS["materials.interiorGrime"]),
+  interiorDamp: uniform(MATERIAL_SETTINGS["materials.interiorDamp"]),
 }
 const KEYS: Record<keyof typeof MATERIAL_SETTINGS, keyof typeof U> = {
   "materials.wetness": "wetness",
   "materials.puddles": "puddles",
   "materials.puddleScale": "puddleScale",
   "materials.groundVariation": "variation",
+  "materials.interiorGrime": "interiorGrime",
+  "materials.interiorDamp": "interiorDamp",
 }
 
 let bound: LabSettings = MATERIAL_SETTINGS
@@ -156,6 +164,8 @@ export const MATERIAL_CONTROLS: LabControl[] = [
   { key: "materials.puddles", label: "Puddle coverage", group: "Materials", min: 0, max: 0.9, step: 0.01, change: set("materials.puddles") },
   { key: "materials.puddleScale", label: "Puddle size", group: "Materials", unit: "×", min: 0.3, max: 3, step: 0.05, change: set("materials.puddleScale") },
   { key: "materials.groundVariation", label: "Ground macro variation", group: "Materials", min: 0, max: 2, step: 0.05, change: set("materials.groundVariation") },
+  { key: "materials.interiorGrime", label: "Interior grime and water stains", group: "Materials", min: 0, max: 1, step: 0.05, change: set("materials.interiorGrime") },
+  { key: "materials.interiorDamp", label: "Interior damp sheen", group: "Materials", min: 0, max: 1, step: 0.05, change: set("materials.interiorDamp") },
 ]
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -383,7 +393,7 @@ type SetName = keyof typeof SETS
 // on the graph's node ids plus the material's on/off flags, so all materials of a class (and their clones, as long
 // as flags like vertexColors / side / transparent / polygonOffset / positionNode match) compile to one shader.
 
-const PARAM_SLOTS = 6
+const PARAM_SLOTS = 7
 
 /** A library material: a shared class graph plus per-material constants. Clones keep both. */
 export class SurfaceMaterial extends THREE.MeshStandardNodeMaterial {
@@ -489,6 +499,32 @@ function antiTile(albedo: (u: N) => N, surface: (u: N) => N, uvn: N, size: N, am
 const luma = (c: N): N => c.dot(vec3(0.2126, 0.7152, 0.0722))
 const saturate = (c: N, s: N): N => mix(vec3(luma(c)), c, s)
 const FLAT = vec3(0.5, 0.5, 1)
+
+/** Ashwood's repeated storey height anchors damp at each skirting, not just the ground floor.
+ * Existing mipmapped noise supplies broad stains and vertical runs; albedo and roughness age together. */
+export function interiorSurface(color: N, rough: N, amount: N = float(1), porous = true): { color: N; rough: N } {
+  const p = positionWorld
+  const storey = floor(p.y.sub(BUILDING.floorY).add(0.03).div(BUILDING.main.storeyHeight))
+  const h = p.y.sub(BUILDING.floorY).sub(storey.mul(BUILDING.main.storeyHeight))
+  const vertical = float(1).sub(abs(normalWorldGeometry.y))
+  const wallUv = vec2(p.x.add(p.z).add(storey.mul(13.7)), h)
+  const patch = wnoise(wallUv, 3.5).r
+  const runs = texture(noise(), wallUv.mul(vec2(0.8, 0.055))).g
+  const drip = smoothstep(0.48, 0.8, runs).mul(smoothstep(0.8, 2.9, h))
+  const tide = float(1).sub(smoothstep(0.05, patch.mul(0.95).add(0.25), h))
+  const wallDirt = tide.mul(patch.mul(0.5).add(0.5)).add(drip.mul(0.8)).add(smoothstep(0.48, 0.8, patch).mul(0.25)).clamp()
+  const floorNoise = wnoise(p.xz.add(storey.mul(17.3)), 5).g
+  const floorDirt = smoothstep(0.35, 0.78, floorNoise)
+  const ceilingRing = smoothstep(0.42, 0.53, floorNoise).sub(smoothstep(0.56, 0.68, floorNoise))
+  const horizontal = mix(floorDirt, floorDirt.mul(0.55).add(ceilingRing.mul(0.45)), normalWorldGeometry.y.lessThan(0).select(1, 0))
+  const inside = insideNode(p, 0.03, true).mul(amount).toVar()
+  const dirt = mix(horizontal, wallDirt, vertical).mul(U.interiorGrime).mul(inside).clamp().toVar()
+  const damp = porous ? floorDirt.mul(normalWorldGeometry.y.max(0)).add(tide.mul(vertical).mul(0.4)).mul(U.interiorDamp).mul(inside).clamp() : float(0)
+  return {
+    color: color.mul(mix(vec3(1), vec3(0.24, 0.22, 0.19), dirt)).mul(float(1).sub(damp.mul(0.2))),
+    rough: mix(rough.add(dirt.mul(0.13)).min(1), rough.min(0.19), damp),
+  }
+}
 
 /** Large-scale tint/brightness drift in world space so kilometre-scale ground never reads as a repeat. */
 function macro(color: N, amount: N, greenShift: N): N {
@@ -788,7 +824,8 @@ defineClass("scan", {
     const bev = vec2(g.bx, g.by).mul(on).mul(0.7)
     const normal = vec3(sn.xy.add(bev), sn.z).normalize().mul(0.5).add(0.5)
     const aaRough = specularAA(clamp(rough, 0.02, 1), normal, p[0].w, uv(), p[0].x.div(1024), float(0.04))
-    return { color, rough: aaRough, metal: mix(p[2].z, s.metal, p[1].w), normal, normalScale: p[0].w, ao: s.ao.mul(float(1).sub(jm.mul(0.45))) }
+    const aged = interiorSurface(color, aaRough, p[6].x)
+    return { ...aged, metal: mix(p[2].z, s.metal, p[1].w), normal, normalScale: p[0].w, ao: s.ao.mul(float(1).sub(jm.mul(0.45))) }
   },
 })
 type ScanOpts = {
@@ -810,6 +847,7 @@ type ScanOpts = {
   grid?: { w: number; h: number; joint: number; bond?: number; dark?: number; bevel?: number; vary?: number }
   /** Albedo contrast about mid-grey (1 = scan as is). */
   contrast?: number
+  interior?: boolean
 }
 function scan(o: ScanOpts) {
   const t = typeof o.tint === "number" ? [o.tint, o.tint, o.tint] : o.tint
@@ -822,6 +860,7 @@ function scan(o: ScanOpts) {
       o.imp?.[1] ?? 1, o.streaks ? 1 : 0, o.stains ? 1 : 0, o.spangle ? 1 : 0,
       o.grid?.w ?? 0, o.grid?.h ?? 0, o.grid?.joint ?? 0, o.grid?.bond ?? 0,
       o.grid?.dark ?? 0, o.grid?.bevel ?? 0, o.grid?.vary ?? 0, o.contrast ?? 1,
+      o.interior ? 1 : 0,
     ],
     [map(o.set, "albedo"), map(o.set, "surface")],
   )
@@ -942,7 +981,8 @@ defineClass("tile", {
     // Rounded glaze edge plus a slight per-tile tilt, so highlights break up tile by tile down a corridor.
     const normal = tileNormal(g, 0.6, 0.05)
     const aaRough = specularAA(clamp(rough, 0.02, 1), normal, float(1), uv(), float(1), float(0))
-    return { color, rough: aaRough, metal: float(0), normal, ao: mix(float(1), float(0.55), g.mask) }
+    const aged = interiorSurface(color.mul(float(1).sub(g.mask.mul(U.interiorGrime).mul(0.3))), aaRough)
+    return { ...aged, metal: float(0), normal, ao: mix(float(1), float(0.55), g.mask) }
   },
 })
 
@@ -963,7 +1003,8 @@ defineClass("linoleum", {
     const scuff = wnoise(uv(), 3.1).g
     const rough = float(0.04).add(t.rnd2.mul(0.05)).add(imp.rough.mul(0.3)).add(smoothstep(0.7, 0.95, scuff).mul(0.18)).add(t.mask.mul(0.5))
     const normal = tileNormal(t, 0.55, 0.012)
-    return { color, rough: specularAA(clamp(rough, 0.02, 1), normal, float(1), uv(), float(1), float(0)), metal: float(0), normal, ao: float(1) }
+    const aged = interiorSurface(color.mul(float(1).sub(t.mask.mul(U.interiorGrime).mul(0.35))), specularAA(clamp(rough, 0.02, 1), normal, float(1), uv(), float(1), float(0)))
+    return { ...aged, metal: float(0), normal, ao: float(1) }
   },
 })
 
@@ -1118,24 +1159,24 @@ const BUILD: Record<MaterialName, () => THREE.Material> = {
     natural({ set: "forest_floor", moss: "forest_moss", tint: [0.42, 0.4, 0.38], sat: 0.8, mossTint: [0.42, 0.46, 0.36], mossSat: 0.75, green: 0.03, damp: 0.6, gloss: 0.8, normalScale: 1.2 }),
   grass: () => natural({ set: "grass", tint: [0.34, 0.33, 0.24], sat: 0.75, green: 0.04, damp: 0.5, gloss: 0.85, normalScale: 1.1 }),
   dirt: () => natural({ set: "dirt", tint: [0.62, 0.62, 0.62], sat: 0.7, green: 0, damp: 0.9, gloss: 0.7, normalScale: 1.2 }),
-  concrete_wall: () => scan({ set: "concrete_wall", sat: 0.3, tint: [0.8, 0.83, 0.82], rough: [0.2, 0.76], normalScale: 1.4, streaks: true }),
+  concrete_wall: () => scan({ set: "concrete_wall", sat: 0.3, tint: [0.8, 0.83, 0.82], rough: [0.2, 0.76], normalScale: 1.4, streaks: true, interior: true }),
   concrete_dark: () => scan({ set: "concrete_dark", antiTile: true, sat: 0.35, tint: 0.62, rough: [1, 0], normalScale: 1.2 }),
-  concrete_floor_dry: () => scan({ set: "concrete_floor", antiTile: true, sat: 0.4, tint: 0.9, rough: [0.35, 0.45] }),
+  concrete_floor_dry: () => scan({ set: "concrete_floor", antiTile: true, sat: 0.4, tint: 0.9, rough: [0.35, 0.45], interior: true }),
   bark: () => scan({ set: "bark", sat: 0.8, tint: [0.5, 0.44, 0.4], rough: [0.3, 0.68], normalScale: 1.6 }),
   // Creosote-treated pole weathered grey-brown.
   wood_pole: () => scan({ set: "wood_pole", sat: 0.6, tint: [0.42, 0.33, 0.26], rough: [0.25, 0.7], normalScale: 1.6 }),
   metal_galvanized: () => scan({ set: "metal_galvanized", sat: 0.15, tint: 1.05, rough: [0.6, 0.12], metal: 1, normalScale: 0.6, spangle: true }),
   metal_dark: () => scan({ set: "metal_dark", tint: 0.7, rough: [0.8, 0.25], metalMap: true }),
-  ceiling_tile: () => scan({ set: "ceiling_tile", tint: [0.7, 0.69, 0.63], rough: [0, 0.92], normalScale: 0.8, stains: true }),
+  ceiling_tile: () => scan({ set: "ceiling_tile", tint: [0.7, 0.69, 0.63], rough: [0, 0.92], normalScale: 0.8, stains: true, interior: true }),
   // Polished terrazzo in 600 mm slabs with dark divider strips; speckle contrast up, waxed gloss (r5-02).
   terrazzo: () =>
-    scan({ set: "terrazzo", size: 0.32, sat: 0.55, tint: [0.7, 0.7, 0.66], contrast: 1.8, rough: [0.06, 0.03], imp: [0.16, 2.1], normalScale: 0.25, grid: { w: 0.6, h: 0.6, joint: 0.004, dark: 0.75, bevel: 0.0015, vary: 0.04 } }),
+    scan({ set: "terrazzo", size: 0.32, sat: 0.55, tint: [0.7, 0.7, 0.66], contrast: 1.8, rough: [0.06, 0.03], imp: [0.16, 2.1], normalScale: 0.25, grid: { w: 0.6, h: 0.6, joint: 0.004, dark: 0.75, bevel: 0.0015, vary: 0.04 }, interior: true }),
   // 8×16" (400×200 mm) CMU in running bond, painted over, 10 mm recessed mortar joints (r5-06 dock wall).
   concrete_block: () =>
-    scan({ set: "concrete_dark", antiTile: true, sat: 0.3, tint: [0.78, 0.72, 0.6], rough: [0.5, 0.45], normalScale: 1.1, streaks: true, grid: { w: 0.4, h: 0.2, joint: 0.01, bond: 0.5, dark: 0.45, bevel: 0.006, vary: 0.06 } }),
+    scan({ set: "concrete_dark", antiTile: true, sat: 0.3, tint: [0.78, 0.72, 0.6], rough: [0.5, 0.45], normalScale: 1.1, streaks: true, grid: { w: 0.4, h: 0.2, joint: 0.01, bond: 0.5, dark: 0.45, bevel: 0.006, vary: 0.06 }, interior: true }),
   painted_wall: () => {
     const c = new THREE.Color(0xb8b8a8).multiplyScalar(0.82)
-    return scan({ set: "plaster", sat: 0.3, tint: [c.r, c.g, c.b], rough: [0.25, 0.62], normalScale: 0.6 })
+    return scan({ set: "plaster", sat: 0.3, tint: [c.r, c.g, c.b], rough: [0.25, 0.62], normalScale: 0.6, interior: true })
   },
   metal_painted: () => member("paint", [...rgb(0x5c615c), 0.35]),
   door_steel: () => member("paint", [...rgb(0x3d5a4b), 0.3]),

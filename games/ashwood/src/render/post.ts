@@ -176,6 +176,8 @@ export function createPost(ctx: WorldContext) {
     { key: "post.aoStrength", label: "Strength", group: "Ambient occlusion", min: 0, max: 1, step: 0.01, value: 0.7 },
     { key: "post.aoRadius", label: "Radius", group: "Ambient occlusion", unit: "m", min: 0.1, max: 3, step: 0.05, value: 0.8 },
     { key: "grade.lift", label: "Teal lift (blacks)", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0.018 },
+    { key: "grade.interiorLift", label: "Indoor black lift", group: "Grade", min: 0, max: 0.1, step: 0.001, value: 0 },
+    { key: "grade.interiorTeal", label: "Indoor teal shadows", group: "Grade", min: 0, max: 1, step: 0.01, value: 0 },
     { key: "grade.warmth", label: "Warm highlights", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.12 },
     { key: "grade.teal", label: "Teal shadows", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "grade.shoulder", label: "Highlight roll-off", group: "Grade", min: 0.3, max: 6, step: 0.05, value: 1.6 },
@@ -189,8 +191,8 @@ export function createPost(ctx: WorldContext) {
     { key: "grade.warmSaturation", label: "Warm-hue saturation (practicals)", group: "Grade", min: 0, max: 2, step: 0.01, value: 1.4 },
     { key: "grade.halation", label: "Halation", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.08 },
     { key: "grade.distortion", label: "Lens distortion (barrel)", group: "Grade", min: -0.1, max: 0.15, step: 0.005, value: 0 },
-    { key: "grade.interiorTemperature", label: "Indoor temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: 0.08 },
-    { key: "grade.interiorTint", label: "Indoor tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.16 },
+    { key: "grade.interiorTemperature", label: "Indoor temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: 0 },
+    { key: "grade.interiorTint", label: "Indoor tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: 0 },
     { key: "grade.interiorExposure", label: "Indoor grade exposure", group: "Grade", unit: "EV", min: -2, max: 2, step: 0.05, value: 0 },
     { key: "rain.on", label: "Drizzle (streaks in lamp light)", group: "Weather", type: "toggle", value: false },
     { key: "rain.brightness", label: "Drizzle catch-light", group: "Weather", unit: "×", min: 0, max: 100, step: 1, value: 30 },
@@ -1037,9 +1039,9 @@ export function createPost(ctx: WorldContext) {
       bl.threshold.value = num(ctx, "post.bloomThreshold")
       bloomCap.value = num(ctx, "post.bloomSurfaceCap")
       bloomHot.value = num(ctx, "post.bloomHot")
-      grade.lift.value = num(ctx, "grade.lift")
+      grade.lift.value = THREE.MathUtils.lerp(num(ctx, "grade.lift"), num(ctx, "grade.interiorLift"), indoor)
       grade.warmth.value = num(ctx, "grade.warmth")
-      grade.teal.value = num(ctx, "grade.teal")
+      grade.teal.value = THREE.MathUtils.lerp(num(ctx, "grade.teal"), num(ctx, "grade.interiorTeal"), indoor)
       grade.contrast.value = num(ctx, "grade.contrast")
       grade.shoulder.value = num(ctx, "grade.shoulder")
       grade.saturation.value = num(ctx, "grade.saturation")

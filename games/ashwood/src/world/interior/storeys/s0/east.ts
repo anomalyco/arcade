@@ -339,7 +339,7 @@ function security(b: Builder, docs: Docs): RoomHandle {
     if (k === 5) for (let j = 0; j < 7; j++) b.boxM(paint(0x0a0c0a, 0.9), mon, 0.008, 0.2, 0.002, -0.12 + j * 0.04, -0.02, 0.154, { cast: false })
   }
   const glowAt = ptIn(con, 0, 1.4, 0.8)
-  b.lamp({ kind: "window", position: glowAt, color: [0.62, 0.8, 0.68], intensity: 2.0, range: 4.5, size: 0.6 })
+  b.lamp({ kind: "window", position: glowAt, direction: [0, 0, 1], angle: 1.4, penumbra: 0.8, color: [0.62, 0.8, 0.68], intensity: 2.0, range: 4.5, size: 0.6 })
   // Desk facing the monitors, chair pushed back; logbook, ashtray with a cigarette burnt to the filter, mug, radio.
   placeModels(b, "office_desk", [{ position: [cx, y, 10.9], yaw: Math.PI }])
   const top = y + MODELS.office_desk.size[1]

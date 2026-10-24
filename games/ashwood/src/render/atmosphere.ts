@@ -75,15 +75,18 @@ const blankV4 = () => Array.from({ length: BOUNCE_LAMPS }, () => new THREE.Vecto
 export const bounceLamps = {
   A: blankV4(), // position.xyz, range
   B: blankV4(), // radiance rgb (already × bounce strength), storey slab bottom (y0)
+  C: blankV4(), // receiving room x0, z0, x1, z1
   count: uniform(0, "int"),
 }
 const bounceA = uniformArray(bounceLamps.A, "vec4") as N
 const bounceB = uniformArray(bounceLamps.B, "vec4") as N
+const bounceC = uniformArray(bounceLamps.C, "vec4") as N
 const lampBounce = (p: N, n: N) => {
   const acc = vec3(0).toVar()
   ;(Loop as N)(bounceLamps.count, ({ i }: N) => {
     const A = bounceA.element(i)
     const B = bounceB.element(i)
+    const C = bounceC.element(i)
     const toL = A.xyz.sub(p)
     const d = length(toL).max(0.05)
     // Same storey only (floors and ceilings stop bounce), fading out over the lamp's range.
@@ -91,7 +94,9 @@ const lampBounce = (p: N, n: N) => {
     const win = d.div(A.w).pow(4).oneMinus().clamp().pow(2)
     // Indirect light arrives from all around but mostly from the lit side: faces turned to the fitting get more.
     const facing = tslMax(dot(n, toL.div(d)), 0).mul(0.6).add(0.4)
-    acc.addAssign(B.rgb.mul(facing).mul(win).mul(sameFloor).div(d.mul(d).add(2.5)))
+    const room = smoothstep(C.x.sub(0.1), C.x.add(0.1), p.x).mul(smoothstep(C.z.add(0.1), C.z.sub(0.1), p.x))
+      .mul(smoothstep(C.y.sub(0.1), C.y.add(0.1), p.z)).mul(smoothstep(C.w.add(0.1), C.w.sub(0.1), p.z))
+    acc.addAssign(B.rgb.mul(facing).mul(win).mul(sameFloor).mul(room).div(d.mul(d).add(2.5)))
   })
   return acc
 }
@@ -244,17 +249,17 @@ export function createAtmosphere(ctx: WorldContext) {
   addControls(ctx, [
     { key: "fog.density", label: "Ground density", group: "Fog", unit: "1/m", min: 0, max: 0.06, step: 0.0005, value: 0.01 },
     { key: "fog.height", label: "Height falloff", group: "Fog", unit: "m", min: 4, max: 120, step: 1, value: 20 },
-    { key: "fog.interior", label: "Interior haze", group: "Fog", unit: "1/m", min: 0, max: 0.03, step: 0.0005, value: 0.012 },
+    { key: "fog.interior", label: "Interior haze", group: "Fog", unit: "1/m", min: 0, max: 0.03, step: 0.0005, value: 0.001 },
     { key: "fog.hue", label: "Colour hue", group: "Fog", unit: "°", min: 120, max: 220, step: 1, value: 181 },
     { key: "fog.saturation", label: "Colour saturation", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.75 },
     { key: "fog.brightness", label: "Brightness", group: "Fog", min: 0, max: 0.5, step: 0.001, value: 0.034 },
     { key: "sky.dark", label: "Sky above fog", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.45 },
     { key: "sky.glow", label: "Horizon glow", group: "Fog", min: 0, max: 2, step: 0.01, value: 0.35 },
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },
-    { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.06 },
-    { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0.014 },
-    { key: "env.windowLight", label: "Night light through windows", group: "Fog", unit: "×", min: 0, max: 20, step: 0.1, value: 6 },
-    { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0.004 },
+    { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0 },
+    { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0 },
+    { key: "env.windowLight", label: "Night light through windows", group: "Fog", unit: "×", min: 0, max: 20, step: 0.1, value: 0.3 },
+    { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0 },
     { key: "env.ground", label: "Ground bounce", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.12 },
   ])
 

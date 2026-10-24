@@ -48,7 +48,8 @@ export class ThreeTerminal {
     this.screen.name = `${terminal.id}:live-screen`
     glass.add(this.screen)
     const p = glass.getWorldPosition(glass.position.clone())
-    this.lamp = { kind: "window", position: [p.x, p.y, p.z], color: [0.22, 1, 0.33], intensity: 0.6, range: 3.5, size: 0.2, zone: `interior:${storey}` }
+    const direction = glass.getWorldDirection(glass.position.clone())
+    this.lamp = { kind: "window", position: [p.x, p.y, p.z], direction: [direction.x, direction.y, direction.z], angle: 1.4, penumbra: 0.8, color: [0.22, 1, 0.33], intensity: 0.6, range: 3.5, size: 0.2, zone: `interior:${storey}` }
     power.exempt(this.lamp)
     ctx.lamps.push(this.lamp)
     this.update(0, true)

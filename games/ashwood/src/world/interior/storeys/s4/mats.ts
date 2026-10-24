@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { abs, float, floor, hash, mix, normalWorldGeometry, positionWorld, sin, smoothstep, step, uv, vec2, vec3 } from "three/tsl"
 import { type Band, M, STOREY_H, aaFade, aaLines, glow, paint } from "../../api"
+import { interiorSurface } from "../../../../render/materials"
 
 // Storey 4's own surfaces: three node materials for the whole storey (walnut panelling, broadloom carpet, survey
 // map), everything else is shared Paint. Every pattern is filtered (aaLines / aaFade), so nothing crawls under TAA.
@@ -18,6 +19,9 @@ export const WALNUT = (() => {
   const groove = aaLines(along.div(0.6), 0.012)
   m.colorNode = vec3(0.15, 0.078, 0.036).mul(tone).mul(grain.mul(0.32).add(0.78)).mul(float(1).sub(groove.mul(0.7)))
   m.roughnessNode = float(0.38).add(groove.mul(0.4)).add(grain.mul(0.08))
+  const aged = interiorSurface(m.colorNode, m.roughnessNode)
+  m.colorNode = aged.color
+  m.roughnessNode = aged.rough
   m.name = "interior_s4_walnut"
   return m
 })()
@@ -30,6 +34,7 @@ export const BROADLOOM = (() => {
   const fine = mix(float(0.5), fibre, aaFade(positionWorld.x.mul(240)))
   const blot = hash(floor(p.mul(3)).dot(vec2(17, 61))).mul(0.06)
   m.colorNode = vec3(0.13, 0.034, 0.03).mul(fine.mul(0.22).add(0.89).sub(blot))
+  m.colorNode = interiorSurface(m.colorNode, float(0.97), float(1), false).color
   m.name = "interior_s4_broadloom"
   return m
 })()

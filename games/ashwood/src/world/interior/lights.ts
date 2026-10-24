@@ -118,16 +118,18 @@ export function deskLamp(b: Builder, x: number, y: number, z: number, yaw: numbe
   const fx = -Math.sin(yaw)
   const fz = -Math.cos(yaw)
   const reach = MODELS.desk_lamp.size[2] * 0.42
+  const head = MODELS.desk_lamp.size[1] * 0.85
+  b.cyl(M.bulbWarm, T(x + fx * reach, y + head, z + fz * reach), 0.012, 0.015, 0.025, 12, { cast: false })
   b.lamp({
     kind: "incandescent",
-    position: [x + fx * reach, y + 0.4, z + fz * reach],
+    position: [x + fx * reach, y + head, z + fz * reach],
     direction: [fx * 0.53, -0.85, fz * 0.53],
     color: WARM,
     intensity: opts.intensity ?? 60,
     range: 5,
     angle: 1.0,
     penumbra: 0.8,
-    shadow: opts.shadow ?? false,
+    shadow: opts.shadow ?? true,
     size: 0.08,
   })
 }

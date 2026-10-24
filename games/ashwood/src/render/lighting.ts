@@ -40,6 +40,9 @@ import { BOUNCE_LAMPS, bounceLamps, fogSigma, opticalDepth } from "./atmosphere"
 import type { LightMask } from "./clustered"
 import { inside, lampZone, storeyAt, storeySlab, type LampZone } from "./volumes"
 import { FLASH_REACH_AT, addControls, flag, num, renderState, type LampRuntime } from "./shared"
+import { beamWgsl, HOT_CORE_BEAM } from "@arcade/kit/gpu/lights/beam"
+import { interiorRooms } from "../world/interior/registry"
+import type { Rect } from "../world/interior/plan"
 
 // The light rig. Every registered lamp becomes an unshadowed clustered point light (Forward+, culled per cluster); a
 // small pool of shadowed spot lights is handed to the nearest important `shadow: true` fixtures and cross-faded as the
@@ -259,41 +262,22 @@ function flickerLevel(r: Rig, time: number, scale: number) {
   }
 }
 
-/**
- * The flashlight's colour node, a shaped beam: a hot centre, a faint soft reflector ring and a wide dim spill (an
- * incandescent torch with a stippled reflector: the ring is a few percent, not a hard caustic halo), with two
- * corrections the punctual light can't express on its own.
- *
- * Reach (eye adaptation): physically a 1/d² beam lights the floor at your feet ~200× brighter than a wall 28 m away,
- * and with one fixed exposure the far wall reads black (0.3 lux at 220 cd) while the floor pool is bright. The hot
- * centre never falls below an adapted floor of `reach` lux at FLASH_REACH_AT, falling as 1/d^throw: for the 220 cd
- * torch that takes over ~2 m out, so the pool at your feet is unchanged and the beam's centre still reads, dimly, at
- * 25–35 m. A floor in lux rather than a gain leaves bright beams alone (the intro's 4200 cd headlamps borrow this
- * light and are only lifted far down the road). The ring and spill stay inverse-square: near walls and the corridor
- * around the beam don't brighten.
- *
- * Lens size: a punctual light mirrored in a glossy floor is a tiny, very bright point (the "floating dot" under the
- * torch). The specular lobe is widened as for a sphere light of radius `lens` (Karis' representative-point
- * normalisation, α' = α + r / 2d with energy (α/α')²), and the light scaled by (diffuse + soft specular) / (diffuse
- * + point specular), so diffuse is untouched and only the highlight softens and dims.
- */
-function flashColorNode(lightPos: N, candela: N, reachLux: N, throwExp: N, lens: N) {
+const torchProfile = (TSL.wgslFn as N)(`fn ashwoodTorchProfile(t: f32) -> f32 {
+  return kitBeamProfile(t, vec4f(${HOT_CORE_BEAM.inner}, ${HOT_CORE_BEAM.core}, ${HOT_CORE_BEAM.coreWidth}, ${HOT_CORE_BEAM.spill}),
+    vec4f(${HOT_CORE_BEAM.spillWidth}, ${HOT_CORE_BEAM.rings}, 0.0, 0.0)) / ${1 + HOT_CORE_BEAM.core + HOT_CORE_BEAM.spill};
+}`, [(TSL.wgsl as N)(beamWgsl)])
+
+/** Shared angular profile, physical inverse-square distance falloff, and finite-lens specular softening.
+ * The optional legacy reach floor stays available in the Lab, but is zero by default. */
+function flashColorNode(lightPos: N, candela: N, reachLux: N, throwExp: N, lens: N, angle: N) {
   return Fn(([coord]: [N], builder: { material?: THREE.Material }) => {
-    // r = 1 at the cone edge (flash.angle, ~48°). A hot centre ~8° wide (r ≈ 0.13), a faint reflector ring just
-    // outside it, and a wide dim spill (~9 % of the peak) that falls smoothly to nothing at the cone edge (no rim).
     const r = length(coord.xy.sub(0.5)).mul(2)
-    const hot = exp(r.div(0.13).pow(2).negate())
-    const ring = exp(r.sub(0.27).div(0.05).pow(2).negate()).mul(0.06)
-    const s = smoothstep(1, 0.05, r)
-    const spill = s.mul(s.add(1)).mul(0.09)
-    // Slight lens/reflector imperfection so the spot isn't perfectly round.
-    const ang = atan(coord.y.sub(0.5), coord.x.sub(0.5))
-    const wobble = ang.mul(5).sin().mul(0.03).add(ang.mul(3).add(1.3).sin().mul(0.02)).add(1)
+    const angular = atan(r.mul(angle.tan())).div(angle).mul(HOT_CORE_BEAM.spillWidth * 1.7)
+    const profile = torchProfile(angular)
     const d = length((lightPos as N).sub(positionWorld)).max(1e-3)
     const floor = (reachLux as N).mul(d.div(FLASH_REACH_AT).pow((throwExp as N).negate()))
     const reach = floor.mul(d.mul(d)).div((candela as N).max(1e-3)).max(1)
-    // The hot centre slightly warmer than the spill.
-    const beam = vec3(1, 0.95, 0.85).mul(hot.mul(wobble).mul(reach)).add(vec3(1, 0.97, 0.92).mul(ring.add(spill)))
+    const beam = vec3(profile.mul(reach))
     if (!(builder.material as { isMeshStandardNodeMaterial?: boolean } | undefined)?.isMeshStandardNodeMaterial) return beam
     const L = (cameraViewMatrix as N).mul(vec4(lightPos, 1)).xyz.sub(positionView).normalize()
     const H = L.add(positionViewDirection).normalize()
@@ -369,6 +353,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
     { key: "light.lampsExterior", label: "Exterior lamp intensity", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 0.3 },
     { key: "light.lampsInterior", label: "Interior lamp intensity", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 0.8 },
     { key: "light.ambient", label: "Extra fill (hemisphere)", group: "Lighting", min: 0, max: 1, step: 0.005, value: 0.02 },
+    { key: "light.ambientInterior", label: "Indoor hemisphere fill", group: "Lighting", min: 0, max: 0.1, step: 0.001, value: 0 },
     { key: "light.shadows", label: "Shadowed lamps", group: "Lighting", min: 0, max: MAX_POOL, step: 1, value: 2 },
     {
       key: "light.shadowSize",
@@ -382,17 +367,17 @@ export function createLighting(ctx: WorldContext, player: Player) {
       ],
       value: 512,
     },
-    { key: "light.spillInterior", label: "Spot spill/bounce indoors", group: "Lighting", min: 0, max: 0.6, step: 0.01, value: 0.22 },
+    { key: "light.spillInterior", label: "Spot spill/bounce indoors", group: "Lighting", min: 0, max: 0.6, step: 0.01, value: 0 },
     { key: "light.spillExterior", label: "Spot spill outdoors", group: "Lighting", min: 0, max: 0.3, step: 0.005, value: 0.02 },
-    { key: "light.bounce", label: "Interior bounce from lamps", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.005, value: 0.12 },
+    { key: "light.bounce", label: "Room-local lamp bounce", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.005, value: 0.015 },
     { key: "light.sodiumShift", label: "Sodium deepening (towards orange)", group: "Lighting", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "glow.size", label: "Glow size", group: "Lighting", unit: "×", min: 0.2, max: 4, step: 0.05, value: 1 },
-    { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 220 },
-    { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 48 },
+    { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 450 },
+    { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 30 },
     { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 60 },
-    { key: "flash.reach", label: `Adapted beam centre at ${FLASH_REACH_AT} m`, group: "Flashlight", unit: "lux", min: 0, max: 40, step: 0.5, value: 8 },
+    { key: "flash.reach", label: `Adapted centre at ${FLASH_REACH_AT} m (0 = physical)`, group: "Flashlight", unit: "lux", min: 0, max: 40, step: 0.5, value: 0 },
     { key: "flash.throw", label: "Adapted centre falloff exponent", group: "Flashlight", min: 0.3, max: 2, step: 0.05, value: 0.7 },
     { key: "flash.lens", label: "Lens size (soft highlight)", group: "Flashlight", unit: "m", min: 0, max: 0.4, step: 0.01, value: 0.1 },
     { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0 },
@@ -537,10 +522,11 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const appliedDir = new THREE.Vector3(0, 0, -1)
   const appliedPos = new THREE.Vector3()
   const flashCandela = uniform(0)
-  const flashReach = uniform(8)
+  const flashReach = uniform(0)
+  const flashAngle = uniform(Math.PI / 6)
   const flashThrow = uniform(0.7)
   const flashLens = uniform(0.1)
-  ;(flash as unknown as { colorNode: unknown }).colorNode = flashColorNode(flashBiasPos, flashCandela, flashReach, flashThrow, flashLens)
+  ;(flash as unknown as { colorNode: unknown }).colorNode = flashColorNode(flashBiasPos, flashCandela, flashReach, flashThrow, flashLens, flashAngle)
   scene.add(flash, flash.target)
   const flashDir = new THREE.Vector3(0, 0, -1)
   const flashPos = new THREE.Vector3()
@@ -548,7 +534,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const lensDir = new THREE.Vector3()
   const fwd2 = new THREE.Vector3()
   // Incandescent torch, ~3200 K at low saturation (the cookie is neutral; colour lives here).
-  const flashColor = new THREE.Color(1, 0.86, 0.7)
+  const flashColor = new THREE.Color(1, 0.94, 0.83)
   let flashLevel = 0
 
   // ---------------------------------------------------------------- emitter glows
@@ -705,6 +691,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const lastCamPos = new THREE.Vector3()
   let stillFor = 0
   const bounceOrder: Rig[] = []
+  const bounceRooms = new Map<Rig, Rect>()
   let lastSpill = [NaN, NaN]
   const fwd = new THREE.Vector3()
   const order: Rig[] = []
@@ -718,6 +705,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const lastCam = new THREE.Vector3()
   let jumpedLast = false
   let wasStreaming = false
+  let previousPropMotion = false
   let shadowColliders = -1
   const doorAmounts: number[] = []
 
@@ -764,11 +752,11 @@ export function createLighting(ctx: WorldContext, player: Player) {
       const intScale = num(ctx, "light.lampsInterior")
       const flickerScale = num(ctx, "light.flicker")
       const sodiumShift = num(ctx, "light.sodiumShift")
-      hemi.intensity = num(ctx, "light.ambient")
       const cull = flag(ctx, "light.cull")
       projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       frustum.setFromProjectionMatrix(projView)
       camInside = inside(tmpCam)
+      hemi.intensity = num(ctx, camInside ? "light.ambientInterior" : "light.ambient")
       camStorey = camInside ? storeyAt(tmpCam.y) : -1
       const fade = jump ? 1 : dt / FADE_S
 
@@ -829,8 +817,15 @@ export function createLighting(ctx: WorldContext, player: Player) {
 
       // Lamp bounce: the nearest lit interior lamps on the camera's storey feed the indirect term (atmosphere.ts).
       bounceOrder.length = 0
+      bounceRooms.clear()
       if (camInside) {
-        for (const r of rigs) if (r.zone.interior && r.zone.storey === camStorey && r.lamp.intensity > 0 && r.pos.y > -500 && r.level > 0.02 && r.distance < 30) bounceOrder.push(r)
+        for (const r of rigs) {
+          if (!r.zone.interior || r.zone.storey !== camStorey || r.lamp.intensity <= 0 || r.pos.y < -500 || r.level <= 0.02 || r.distance >= 30) continue
+          const room = interiorRooms.find(room => room.storey === camStorey && r.pos.x >= room.rect.x0 && r.pos.x <= room.rect.x1 && r.pos.z >= room.rect.z0 && r.pos.z <= room.rect.z1)
+          if (!room) continue
+          bounceRooms.set(r, room.rect)
+          bounceOrder.push(r)
+        }
         bounceOrder.sort((a, b) => a.distance - b.distance)
       }
       const bk = num(ctx, "light.bounce")
@@ -840,8 +835,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
         const r = bounceOrder[i]!
         // Not × vis: a lamp culled from direct shading (behind the camera) still lights the room by bounce.
         const k = r.lamp.intensity * r.scale * r.level * bk
-        bounceLamps.A[i]!.set(r.pos.x, r.pos.y, r.pos.z, Math.max(9, r.lamp.range * 2.2))
+        bounceLamps.A[i]!.set(r.pos.x, r.pos.y, r.pos.z, r.lamp.range)
         bounceLamps.B[i]!.set(r.color.r * k, r.color.g * k, r.color.b * k, r.mask.y0 + 0.12)
+        const room = bounceRooms.get(r)!
+        bounceLamps.C[i]!.set(room.x0, room.z0, room.x1, room.z1)
       }
       bounceLamps.count.value = nb
 
@@ -899,7 +896,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
         l.shadow.needsUpdate = true
       }
       const streamingNow = renderState.streaming
-      let worldChanged = (wasStreaming && !streamingNow) || ctx.colliders.length !== shadowColliders
+      const propMotion = ctx.interactions?.moving ?? false
+      let worldChanged = (wasStreaming && !streamingNow) || ctx.colliders.length !== shadowColliders || propMotion || previousPropMotion
+      previousPropMotion = propMotion
       wasStreaming = streamingNow
       shadowColliders = ctx.colliders.length
       const doors = ctx.doors.all()
@@ -972,6 +971,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
       flashBiasPos.value.copy(appliedPos)
       const angle = (num(ctx, "flash.angle") * Math.PI) / 180
       flash.angle = angle
+      flashAngle.value = angle
       flash.distance = num(ctx, "flash.range")
       flashThrow.value = num(ctx, "flash.throw")
       flashReach.value = num(ctx, "flash.reach")
@@ -1025,9 +1025,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
         // Halo quad sized from the emitter but capped: a 1.2 m panel must not get a 5 m sprite.
         const size = Math.min(Math.max(r.lamp.size ?? 0.2, 0.05), 0.45)
         const o = i * 4
-        dc = put(c, o, r.pos.x) || dc
-        dc = put(c, o + 1, r.pos.y - (r.dir ? 0.1 : 0)) || dc
-        dc = put(c, o + 2, r.pos.z) || dc
+        dc = put(c, o, r.zone.interior ? r.lamp.position[0] : r.pos.x) || dc
+        dc = put(c, o + 1, r.zone.interior ? r.lamp.position[1] : r.pos.y - (r.dir ? 0.1 : 0)) || dc
+        dc = put(c, o + 2, r.zone.interior ? r.lamp.position[2] : r.pos.z) || dc
         dc = put(c, o + 3, size * gz) || dc
         // Emitter luminance ~ intensity / visible area, kept in a range bloom turns into a soft halo.
         const lum =
