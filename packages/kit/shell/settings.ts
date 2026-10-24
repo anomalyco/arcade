@@ -51,11 +51,12 @@ export const REDUCE_MOTION_STORAGE_KEY = "arcade.reduceMotion"
 const CHANNEL_KEY: Record<VolumeChannel, keyof VolumeSettings> = {
   master: "volumeMaster",
   effects: "volumeEffects",
+  engine: "volumeEngine",
   ambience: "volumeAmbience",
   voice: "volumeVoice",
   music: "volumeMusic",
 }
-export const CHANNEL_LABEL: Record<VolumeChannel, string> = { master: "Master", effects: "Effects", ambience: "Ambience", voice: "Voices", music: "Music" }
+export const CHANNEL_LABEL: Record<VolumeChannel, string> = { master: "Master", effects: "Effects", engine: "Engines", ambience: "Ambience", voice: "Voices", music: "Music" }
 
 /**
  * The player-facing settings every game shares: volume per channel and mute (saved per game), graphics quality (the

@@ -11,7 +11,8 @@
     "deploy": "rm -rf dist && vite build && wrangler deploy"
   },
   "dependencies": {
-    "@arcade/kit": "workspace:*"
+    "@arcade/kit": "workspace:*",
+    "wgpu-matrix": "^3.4.2"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

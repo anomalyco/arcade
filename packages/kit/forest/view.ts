@@ -58,6 +58,10 @@ export type ForestTorch = {
   level?: number
   /** Its spot shadow's near plane (m) when held close to a caster (the map in hand); default the kit's. */
   shadowNear?: number
+  /** Share of its beam the air shows (0..1, default 1): a torch lying in the ground mist would light all of it. */
+  air?: number
+  /** False keeps it out of the spot shadow maps (a lamp on the ground grazes every caster); default true. */
+  shadows?: boolean
 }
 
 /** A small bright source seen as a point: its core sprite and the glow the air puts round it (a mast beacon). */
@@ -102,6 +106,8 @@ export type ForestFrameInput = {
   particles?: { pool: Particles; lights: readonly SceneLight[]; ambient?: readonly [number, number, number]; falloff?: number }
   /** A storm this frame (`ForestStorm.frame(...).view`): lightning, rain, wet surfaces, storm wind, the eye after a flash. */
   storm?: ForestStormView | null
+  /** The renderer's shared shutter blur and its impulse bursts (`@arcade/kit/gpu/motion-blur`). Omit for none. */
+  motionBlur?: FrameInput["motionBlur"]
 }
 
 export type ForestViewOptions = {
@@ -475,7 +481,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const flashShadow = !smoke && !!st?.bolt && st.flashDir[1] > 0.02
     if (flashShadow) spots.settings.count++
     // With torch shadows off, a torch must not take the moon's or the flash's slot.
-    const candidates: SpotCandidate[] = f.torches.filter(t => t.on && torchSlots > 0).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1), ...(t.shadowNear ? { near: t.shadowNear } : {}) }))
+    const candidates: SpotCandidate[] = f.torches.filter(t => t.on && t.shadows !== false && torchSlots > 0).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1), ...(t.shadowNear ? { near: t.shadowNear } : {}) }))
     // A distant narrow spotlight approximates parallel lunar shadow rays over the
     // 100 m near field, reusing the host's cut-out foliage/terrain shadow casters.
     const moonShadowId = MOON_SHADOW_ID
@@ -515,9 +521,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     })
     const fogLamps: FogLamp[] = []
     for (const t of f.torches) {
-      if (!t.on || (t !== local && debug.friendAir === false)) continue
+      if (!t.on || (t.air ?? 1) <= 0 || (t !== local && debug.friendAir === false)) continue
       const id = lights.indexOf(1000 + t.id)
-      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: colorOf(t), intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, motion: t === local || debug.beamMotion === false ? 0 : beamSweep(t, s.torchReach), uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
+      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: colorOf(t), intensity: torchPower * 5 * (t.level ?? 1) * (t.air ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, motion: t === local || debug.beamMotion === false ? 0 : beamSweep(t, s.torchReach), uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
     }
     for (const [i, l] of build.campLights.entries()) {
       const k = l.kind === "bulb" ? s.stringLights : s.windows
@@ -631,7 +637,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, Math.min(cam.stops, s.adaptLift))) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje) + 4 * Number(s.highlightShoulder)],
       postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
-      volume: volumes, fogBlur: fog.blurInput(), weather,
+      volume: volumes, fogBlur: fog.blurInput(), weather, motionBlur: f.motionBlur,
     }
     if (f.particles && f.particles.pool.count > 0) {
       fxLights.update(f.particles.lights, [])

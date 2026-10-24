@@ -3,6 +3,7 @@ import { DEFAULT_CUES } from "./cues"
 import { selectSfx, sfxCues, sfxManifest } from "./library"
 import { DEFAULT_SAMPLE_MANIFEST } from "./manifest"
 import { AudioRuntime, MIX_CATEGORIES } from "./runtime"
+import type { CueRecipe, SampleAssetMeta } from "./types"
 import {
   bindVolumeControls,
   busVolume,
@@ -45,14 +46,17 @@ export class SoundBank {
   constructor(
     readonly game: string,
     sfx: readonly string[] = TOY_SFX,
-    /** `false` waits for an explicit `unlock()` (a game's Begin) instead of unlocking on any gesture. */
-    opts: { unlockOnGesture?: boolean } = {},
+    /**
+     * `false` waits for an explicit `unlock()` (a game's Begin) instead of unlocking on any gesture. `manifest` and
+     * `cues` add a game's own recorded samples and their cues beside the library's.
+     */
+    opts: { unlockOnGesture?: boolean; manifest?: readonly SampleAssetMeta[]; cues?: readonly CueRecipe[] } = {},
   ) {
     this.muteKey = `arcade.muted.${game}.v1`
     const entries = selectSfx(sfx)
     this.runtime = new AudioRuntime({
-      manifest: [...DEFAULT_SAMPLE_MANIFEST, ...sfxManifest(entries)],
-      cues: [...DEFAULT_CUES, ...sfxCues(entries)],
+      manifest: [...DEFAULT_SAMPLE_MANIFEST, ...sfxManifest(entries), ...(opts.manifest ?? [])],
+      cues: [...DEFAULT_CUES, ...sfxCues(entries), ...(opts.cues ?? [])],
       maxVoices: 36,
       reverbWet: 0.14,
       autoBindDom: false,

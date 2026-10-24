@@ -2,15 +2,17 @@ import type { LabControl, LabPanel } from "../lab-panel"
 import type { MixCategory } from "./types"
 
 /**
- * Player volume: Master, Effects, Ambience, Voices and Music, as percentages, saved per game. They multiply on top of a
+ * Player volume: Master, Effects, Engines, Ambience, Voices and Music, as percentages, saved per game. They multiply on top of a
  * game's own mix (its designer bus levels), so a player turning Ambience down never changes how the game is mixed.
- * A game lists the channels it has; a channel with no buses (Music in a game without music) is not shown.
+ * A game lists the channels it has; a channel with no buses (Music in a game without music) is not shown. Engines is a
+ * slider within Effects: the engine bus takes both, so a game that doesn't list it is unchanged.
  */
-export type VolumeChannel = "master" | "effects" | "ambience" | "voice" | "music"
+export type VolumeChannel = "master" | "effects" | "engine" | "ambience" | "voice" | "music"
 
 export type VolumeSettings = {
   volumeMaster: number
   volumeEffects: number
+  volumeEngine: number
   volumeAmbience: number
   volumeVoice: number
   volumeMusic: number
@@ -19,6 +21,7 @@ export type VolumeSettings = {
 export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
   volumeMaster: 80,
   volumeEffects: 100,
+  volumeEngine: 100,
   volumeAmbience: 100,
   volumeVoice: 100,
   volumeMusic: 100,
@@ -27,6 +30,7 @@ export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
 const KEY: Record<VolumeChannel, keyof VolumeSettings> = {
   master: "volumeMaster",
   effects: "volumeEffects",
+  engine: "volumeEngine",
   ambience: "volumeAmbience",
   voice: "volumeVoice",
   music: "volumeMusic",
@@ -35,6 +39,7 @@ const KEY: Record<VolumeChannel, keyof VolumeSettings> = {
 const LABEL: Record<VolumeChannel, string> = {
   master: "Master",
   effects: "Effects",
+  engine: "Engines",
   ambience: "Ambience",
   voice: "Voices",
   music: "Music",
@@ -43,6 +48,7 @@ const LABEL: Record<VolumeChannel, string> = {
 /** Which runtime buses each channel scales. Music has no bus in the shared runtime yet. */
 export const VOLUME_BUSES: Readonly<Record<Exclude<VolumeChannel, "master">, readonly MixCategory[]>> = {
   effects: ["weapon", "foley", "impact", "ui", "engine", "tyre", "spell"],
+  engine: ["engine"],
   ambience: ["ambience"],
   voice: ["voice"],
   music: [],
@@ -97,10 +103,11 @@ export function bindVolumeControls(
 
 /** The player's volume for one bus, 0..1, master excluded (the runtime applies master on its own). */
 export function busVolume(settings: VolumeSettings, bus: MixCategory): number {
-  for (const channel of ["effects", "ambience", "voice", "music"] as const) {
-    if (VOLUME_BUSES[channel].includes(bus)) return clampLevel(settings[KEY[channel]]) / 100
+  let level = 1
+  for (const channel of ["effects", "engine", "ambience", "voice", "music"] as const) {
+    if (VOLUME_BUSES[channel].includes(bus)) level *= clampLevel(settings[KEY[channel]]) / 100
   }
-  return 1
+  return level
 }
 
 /** Reads a saved choice into `into` (unknown or out-of-range values keep the defaults). */

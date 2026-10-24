@@ -1,6 +1,7 @@
 import { motionGatherWGSL } from "@arcade/kit/gpu/motion-blur"
 export {
   MotionBlur,
+  blurViewProj,
   MotionBlurBurst,
   MotionHistory,
   MotionKeys,

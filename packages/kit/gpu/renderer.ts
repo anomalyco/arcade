@@ -12,6 +12,7 @@ import { CAPSULE_SHADOW_BINDING, CapsuleShadows } from "./shadows/capsule-shadow
 import { installFramePacer } from "../gpu-perf"
 import {
   MotionBlur,
+  blurViewProj,
   MotionHistory,
   motionSettings,
   type MotionBlurBurst,
@@ -385,7 +386,7 @@ export class Renderer {
   private motionPostLayout: GPUBindGroupLayout
   private motionComposite!: GPUBindGroup
   private sharedBlur: MotionBlur | null = null
-  private sharedBlurGroups: { down0: GPUBindGroup; composite: GPUBindGroup; w: number; h: number } | null = null
+  private sharedBlurGroups: { down0: GPUBindGroup; composite: GPUBindGroup; w: number; h: number; color: GPUTextureView } | null = null
   private readonly blurPrevVP = new Float32Array(16)
   private readonly blurLastVP = new Float32Array(16)
   private readonly blurInverseVP = new Float32Array(16)
@@ -1194,6 +1195,8 @@ export class Renderer {
   resetTemporalHistory(): void {
     this.temporal?.reset()
     this.resetVolumeHistory()
+    // The motion blur's previous view too: a cut must not smear across the jump.
+    this.blurReady = false
   }
 
   /** Opt-in still proofs: restart TAA and volume sampling at the same phase as well as clearing history. */
@@ -1685,8 +1688,10 @@ export class Renderer {
         )
       : 0
     const blurValid = this.blurReady && eyeMove < 8
-    this.blurPrevVP.set(blurValid ? this.blurLastVP : f.frame.subarray(0, 16))
-    this.blurLastVP.set(f.frame.subarray(0, 16))
+    // Camera velocity from the unjittered matrix: TAA's per-frame jitter is not motion.
+    const blurVP = blurViewProj(f.frame, taa ? this.unjittered : null)
+    this.blurPrevVP.set(blurValid ? this.blurLastVP : blurVP)
+    this.blurLastVP.set(blurVP)
     this.blurLastEye[0] = f.frame[16]!
     this.blurLastEye[1] = f.frame[17]!
     this.blurLastEye[2] = f.frame[18]!
@@ -1922,11 +1927,12 @@ export class Renderer {
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
-    if (runSharedBlur && mb) {
+    /** The shared blur over `color` (`tw`×`th`), reading the scene's depth; its output feeds bloom and the composite. */
+    const sharedBlur = (color: GPUTextureView, tw: number, th: number, curVP: Float32Array) => {
+      if (!mb) return
       this.sharedBlur ??= new MotionBlur(d, HDR, true)
-      const tw = this.targets.width, th = this.targets.height
-      if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== tw || this.sharedBlurGroups.h !== th) {
-        this.sharedBlur.resize(tw, th, this.targets.hdrView, this.targets.depthView)
+      if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== tw || this.sharedBlurGroups.h !== th || this.sharedBlurGroups.color !== color) {
+        this.sharedBlur.resize(tw, th, color, this.targets.depthView)
         const down0Param = this.bloomPyramid.downParams[0]!
         this.sharedBlurGroups = {
           down0: this.bloomPyramid.makeBindGroup(
@@ -1947,9 +1953,9 @@ export class Renderer {
           ),
           w: tw,
           h: th,
+          color,
         }
       }
-      const curVP = f.frame.subarray(0, 16)
       mat4.inverse(curVP, this.blurInverseVP)
       if (mb.burst) {
         this.sharedBlur.burst.dx = mb.burst.dx
@@ -1971,18 +1977,18 @@ export class Renderer {
         mb.settings.burst,
       )
       this.sharedBlur.encode(enc)
-      if (!taa) {
-        activeDown0 = this.sharedBlurGroups.down0
-        activeComposite = this.sharedBlurGroups.composite
-      }
+      activeDown0 = this.sharedBlurGroups.down0
+      activeComposite = this.sharedBlurGroups.composite
     }
+    if (runSharedBlur && !taa) sharedBlur(this.targets.hdrView, this.targets.width, this.targets.height, f.frame.subarray(0, 16))
     if (taa) {
-      // Blur (when on) runs on the internal image first; the beam is added after the resolve, never into the history.
-      taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
+      taa.encode(enc, this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
       if (lateFx) this.drawLateParticles(enc, taa.outputView, this.width, this.height)
       if (this.overlayPass?.active) this.overlayPass.encode(enc, taa.outputView, this.width, this.height, this.sceneGroup)
+      // Blur last, on the resolved image with the beams, mist and particles in it, and never into the TAA history.
+      if (runSharedBlur) sharedBlur(taa.outputView, this.width, this.height, this.unjittered.subarray(0, 16))
     }
     if (this.meterPass && this.bloomSourceView) this.meterPass.encode(enc, this.bloomSourceView)
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)

@@ -1,0 +1,286 @@
+{
+  "sources": {
+    "husqIdleRev": {
+      "url": "https://freesound.org/people/ElSchorscho/sounds/871135/",
+      "author": "ElSchorscho",
+      "title": "Chainsaw idle and revving, Husqvarna 445",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/871/871135_16937828-hq.ogg",
+      "sha256": "d28d5d6cc91ec92bef960dc20d87ef8e8b08be38821ee56f9ff50504ca5b2449"
+    },
+    "husqStartStop": {
+      "url": "https://freesound.org/people/ElSchorscho/sounds/871136/",
+      "author": "ElSchorscho",
+      "title": "Chainsaw starting, idling, stopping Husqvarna 445",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/871/871136_16937828-hq.ogg",
+      "sha256": "b2d84f68c627ca29ff667b8c9d217e7336fd7621fcb0ce59ca338c0ffb469379"
+    },
+    "sawCut": {
+      "url": "https://freesound.org/people/Stefan021/sounds/431741/",
+      "author": "Stefan021",
+      "title": "Chainsaw - Start Cut and Idle.wav",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/431/431741_3821443-hq.ogg",
+      "sha256": "b73ed568f0abefb439de67ff341827869e5302d5ac72fa4c6bd6f7e7be1c4e2e"
+    },
+    "falseStarts": {
+      "url": "https://freesound.org/people/kyles/sounds/450951/",
+      "author": "kyles",
+      "title": "snowmobile won't start false starts lawnmower pull cord",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/450/450951_612689-hq.ogg",
+      "sha256": "0e53879beae09dc606d8d11541f63501f1f01d60ad7f255c6fb69dce52f55e98"
+    },
+    "treeFall": {
+      "url": "https://freesound.org/people/Kinoton/sounds/494071/",
+      "author": "Kinoton",
+      "title": "Big Tree Fall in Forest",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/494/494071_2247456-hq.ogg",
+      "sha256": "29223f960142cc246f2b70ebcb8eb595ba69c8624b5a58d002e99823845fabf9"
+    },
+    "treeFall2": {
+      "url": "https://freesound.org/people/matt_beer/sounds/515312/",
+      "author": "matt_beer",
+      "title": "timber tree falling 2",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/515/515312_3205651-hq.ogg",
+      "sha256": "8ab41af3a2abe57ba123cae6d301d9c6141eefa0bb6b204d7dd0b790c725cde8"
+    },
+    "woodCrack": {
+      "url": "https://freesound.org/people/utsuru/sounds/183450/",
+      "author": "utsuru",
+      "title": "Wood Crack 5",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/183/183450_418644-hq.ogg",
+      "sha256": "33d4f2ac8613be9589b522c72cd33dcd6ac2e38e432c49bacb3ebee07f9d52ed"
+    },
+    "treeCreak": {
+      "url": "https://freesound.org/people/HMTSCCSound/sounds/554651/",
+      "author": "HMTSCCSound",
+      "title": "tree wind creaking.wav",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/554/554651_7990256-hq.ogg",
+      "sha256": "2474f300475c570eebacd2ac3f417fec26a60af002a7ba36f9b8cadbce08cb50"
+    },
+    "forestRun": {
+      "url": "https://freesound.org/people/TRP/sounds/577313/",
+      "author": "TRP",
+      "title": "Running, on path through forest, dirt ground, leaves, footsteps, NOTL, 2011.flac",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/577/577313_97550-hq.ogg",
+      "sha256": "05fec80b6e7ded695de9a5fd7f40bf81d0984670558f8f10feb0d8a15bc30698"
+    },
+    "breathScared": {
+      "url": "https://freesound.org/people/casiba842/sounds/554307/",
+      "author": "casiba842",
+      "title": "Scared Male Heavy Breathing",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/554/554307_10081166-hq.ogg",
+      "sha256": "9a952363c63de075addd808bc43dae298be0bd1b907c40d64342abd46daa6b97"
+    },
+    "heartbeat": {
+      "url": "https://freesound.org/people/Lunardrive/sounds/22440/",
+      "author": "Lunardrive",
+      "title": "Single Heartbeat Clean HQ_BeatSmith.wav",
+      "licence": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "download": "https://cdn.freesound.org/previews/22/22440_120830-hq.ogg",
+      "sha256": "918d435b41ed478677fe9599e21d66f93cf354a175c0f4a71c611e6f36bceead"
+    }
+  },
+  "clips": {
+    "saw-idle": {
+      "from": "husqIdleRev",
+      "start": 24.5,
+      "dur": 8,
+      "rms": -20,
+      "loop": true,
+      "sha256": "167514d7e8a9389ee21bc2cb609d3404d60085e1c3631526665ad38d7782954a"
+    },
+    "saw-rev": {
+      "from": "husqIdleRev",
+      "start": 15.5,
+      "dur": 4.5,
+      "rms": -16,
+      "loop": true,
+      "sha256": "0708490373b1682a96184da47cd8678a11324e10d68b5c00da59172774be3eb2"
+    },
+    "saw-cut": {
+      "from": "sawCut",
+      "start": 7,
+      "dur": 8,
+      "rms": -15,
+      "loop": true,
+      "sha256": "07aa59b333294fa1a8a82a381b115aefcc64bf2810824d0faaddf0147f2e3897"
+    },
+    "saw-start": {
+      "from": "husqStartStop",
+      "start": 1.85,
+      "dur": 5.6,
+      "rms": -20,
+      "fade": 0.4,
+      "sha256": "31decbeac7204d136d1c481ec6100be1d3dff71c31182a2fbd9f8fadf5e3e0d9"
+    },
+    "saw-pull.1": {
+      "from": "husqStartStop",
+      "start": 0.82,
+      "dur": 0.95,
+      "rms": -21,
+      "fade": 0.15,
+      "sha256": "b34d23af075acbff5d6e3725258a55b991ca79a07bae30687bd774b7ab57eab9"
+    },
+    "saw-pull.2": {
+      "from": "husqStartStop",
+      "start": 1.86,
+      "dur": 0.88,
+      "rms": -21,
+      "fade": 0.15,
+      "sha256": "bfcdd688efd642b729532083acf8a13d9f454e01c49992f7f4f606bc24f9886b"
+    },
+    "saw-flood": {
+      "from": "falseStarts",
+      "start": 2.75,
+      "dur": 1.4,
+      "rms": -20,
+      "fade": 0.2,
+      "sha256": "4b11e46aafe031fcfc81574acd0fde76cfc175a4f0abaa1df02286dbea8389ba"
+    },
+    "saw-cutout": {
+      "from": "husqIdleRev",
+      "start": 53.2,
+      "dur": 1.9,
+      "rms": -21,
+      "fade": 0.05,
+      "sha256": "1031a7e6643656ceecd1b6dc478df204173804e9addee9eace28870b91807027"
+    },
+    "tree-groan": {
+      "from": "treeFall",
+      "start": 0.2,
+      "dur": 4.25,
+      "rms": -17,
+      "fade": 0.25,
+      "sha256": "5f3d45b3e3ab2ef8b7be254201d1dec3369b4c3d7020c1bb738b56127246a484"
+    },
+    "tree-crash.1": {
+      "from": "treeFall",
+      "start": 4.42,
+      "dur": 3.2,
+      "rms": -15,
+      "fade": 0.8,
+      "sha256": "8b0be62db178294909964b43317b5ef69f6e0dc0b5773cce035a1dd76e2e64cb"
+    },
+    "tree-crash.2": {
+      "from": "treeFall2",
+      "start": 2.85,
+      "dur": 2.6,
+      "rms": -17,
+      "fade": 0.8,
+      "sha256": "9683fee54726b60b5ab1c458cc9bfceb1fcd36f6b0e9ad9f9ba016bfb0cf9757"
+    },
+    "tree-crack.1": {
+      "from": "woodCrack",
+      "start": 0.05,
+      "dur": 0.95,
+      "rms": -16,
+      "fade": 0.2,
+      "sha256": "8239b9e24d85365e60fda99386fef8d281a20869770e497b0c2de4203886dca4"
+    },
+    "tree-crack.2": {
+      "from": "woodCrack",
+      "start": 1.22,
+      "dur": 0.95,
+      "rms": -16,
+      "fade": 0.3,
+      "sha256": "bf5667d51df47f712dba334c1df1d6ff0124d7bf2d0dbe60caf1d1516d5f906d"
+    },
+    "tree-creak.1": {
+      "from": "treeCreak",
+      "start": 1.4,
+      "dur": 1.7,
+      "rms": -20,
+      "fade": 0.25,
+      "sha256": "83e1ed3288ef4303763f29b6d0bb6150c4c6b7f7b0503d2f288447e8fb4aef3a"
+    },
+    "tree-creak.2": {
+      "from": "treeCreak",
+      "start": 19.15,
+      "dur": 1.4,
+      "rms": -20,
+      "fade": 0.25,
+      "sha256": "5d8816f8259448a161cdf87c259eecf68e7da44da4d7bc98786b8ef416a52d91"
+    },
+    "tree-creak.3": {
+      "from": "treeCreak",
+      "start": 22.95,
+      "dur": 2.5,
+      "rms": -20,
+      "fade": 0.3,
+      "sha256": "a6a7600317d7f877223e2ec51e52f9b3c568b50955e80510bc38480643f91bb4"
+    },
+    "foot-run.1": {
+      "from": "forestRun",
+      "start": 10.77,
+      "dur": 0.32,
+      "rms": -24,
+      "fade": 0.1,
+      "sha256": "559b721ee77784907b236a442ce5c28d44df7552f057b2ca0ebf89d57fc4a18e"
+    },
+    "foot-run.2": {
+      "from": "forestRun",
+      "start": 11.17,
+      "dur": 0.32,
+      "rms": -24,
+      "fade": 0.1,
+      "sha256": "f122ab41bbfbb33a55ea38e6c474784460d58002c744d3e3cc2b2cbbc09863f2"
+    },
+    "foot-run.3": {
+      "from": "forestRun",
+      "start": 11.87,
+      "dur": 0.32,
+      "rms": -24,
+      "fade": 0.1,
+      "sha256": "cef4cedd643891c1678b47f59352bff7d05982879095dcfc8856a3addb4e3288"
+    },
+    "foot-run.4": {
+      "from": "forestRun",
+      "start": 12.27,
+      "dur": 0.32,
+      "rms": -24,
+      "fade": 0.1,
+      "sha256": "6b22a79d120982dc0919f51caa69d07ab8def89dab978d04ccb47dfa2127cfb4"
+    },
+    "foot-run.5": {
+      "from": "forestRun",
+      "start": 13.32,
+      "dur": 0.32,
+      "rms": -24,
+      "fade": 0.1,
+      "sha256": "b0f757edf31682c28706ba8357ae58e518522952e8ae66e90d7ab61596bca328"
+    },
+    "foot-run.6": {
+      "from": "forestRun",
+      "start": 14.07,
+      "dur": 0.32,
+      "rms": -24,
+      "fade": 0.1,
+      "sha256": "45584411956a65cb9099f90ee359b5778c7dc288011093a1fce57076c5f84915"
+    },
+    "breath": {
+      "from": "breathScared",
+      "start": 8,
+      "dur": 8,
+      "rms": -24,
+      "loop": true,
+      "sha256": "54e092d5c4ace9a00014885ba066ea07a187414fe7cb347ceb148e3a3a5fde05"
+    },
+    "heart": {
+      "from": "heartbeat",
+      "start": 0,
+      "dur": 0.66,
+      "rms": -18,
+      "fade": 0.08,
+      "sha256": "b5dfcba9d39d7480c34102c7c26a5bf6bd54cbfeea79d525d420e1495d1dc542"
+    }
+  }
+}

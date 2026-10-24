@@ -3,7 +3,7 @@
 import { flareFogLamp, flareSceneLight, type FlareLight } from "@arcade/kit/fx/flare"
 import type { Particles } from "@arcade/kit/fx/particles"
 import type { ForestTreePose } from "@arcade/kit/forest/posed"
-import { createForestView, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
+import { createForestView, type ForestFrameInput, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
 import type { FogLamp } from "@arcade/kit/gpu/fog-scatter"
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
@@ -139,9 +139,13 @@ export class TimberView {
   }
 
   static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, w: World, quality: QualityTier, smoke = false): Promise<TimberView> {
-    // BARBARA's night: the catalogue sky with a full moon through the canopy and eyes that dark-adapt. The software-GPU
-    // smoke keeps the kit's Today.
-    const settings = { highlightShoulder: true, skyMode: smoke ? "today" as const : "physical" as const, skyMoon: "full" as const, darkAdapt: 1 }
+    // A horror night: the catalogue sky with a thin crescent, eyes that barely dark-adapt, so past your beam is near
+    // black; tight torches with little spill; mist that only shows where a beam crosses it (the moon barely lights it).
+    // Half the ferns (they were the biggest single GPU cost). The software-GPU smoke keeps the kit's Today.
+    const settings = {
+      highlightShoulder: true, skyMode: smoke ? "today" as const : "physical" as const, skyMoon: "crescent" as const, darkAdapt: 0.3,
+      moonMist: 0.15, mistDensity: 0.11, torchAngle: 12, torchSpill: 0.02, torchPower: 85, fernDensity: 0.5,
+    }
     const forest = await createForestView(gpu, toForestWorld(w), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", quality, markPrefix: "timber", settings, smoke })
     const view = new TimberView(forest)
     view.trees = w.trees
@@ -361,6 +365,8 @@ export class TimberView {
     fovY: number
     fp: FrameParts
     pool: Particles
+    /** The shared shutter blur and its bursts. */
+    motionBlur?: ForestFrameInput["motionBlur"]
     /** Draw offscreen instead (the software-GPU smoke: a presented frame makes SwiftShader wait on it). */
     target?: GPUTextureView
   }): void {
@@ -380,6 +386,7 @@ export class TimberView {
       fogLamps: L.fog,
       glows: L.glows,
       particles: { pool: input.pool, lights: L.particles },
+      motionBlur: input.motionBlur,
     }
     if (!input.target) return this.forest.frame(frame)
     this.forest.update(frame)

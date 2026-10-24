@@ -1,4 +1,5 @@
 import type { LabControl } from "../lab-panel"
+import { mat4 } from "wgpu-matrix"
 
 /** Shared screen-space shutter blur. Velocities are current-minus-previous UV, before exposure scaling. */
 export const motionBlurDefaults = () => ({
@@ -144,6 +145,21 @@ export class MotionHistory {
   }
 }
 
+/** The view-projection camera velocity is measured with: the unjittered one under TAA, whose jitter is not motion. */
+export const blurViewProj = (frame: Float32Array, unjittered: Float32Array | null): Float32Array => (unjittered ?? frame).subarray(0, 16)
+
+/** The velocity pass's camera motion for one pixel on the CPU (uv now minus uv then), for tests. */
+export function cameraVelocity(current: Float32Array, previous: Float32Array, uv: readonly [number, number], z: number): [number, number] {
+  const inv = mat4.inverse(current)
+  const ndc = [uv[0] * 2 - 1, 1 - uv[1] * 2, z, 1]
+  const world = [0, 0, 0, 0].map((_, r) => inv[r]! * ndc[0]! + inv[4 + r]! * ndc[1]! + inv[8 + r]! * ndc[2]! + inv[12 + r]! * ndc[3]!)
+  const w = world[3]!
+  const p = world.map((v) => v / w)
+  const clip = [0, 1, 3].map((r) => previous[r]! * p[0]! + previous[4 + r]! * p[1]! + previous[8 + r]! * p[2]! + previous[12 + r]! * p[3]!)
+  const ow = Math.max(clip[2]!, 1e-4)
+  return [uv[0] - (clip[0]! / ow * 0.5 + 0.5), uv[1] - (clip[1]! / ow * -0.5 + 0.5)]
+}
+
 export const motionUniformWGSL = /* wgsl */ `
 struct MotionFrame { inverse:mat4x4f, previous:mat4x4f, current:mat4x4f, size:vec4f, exposure:vec4f }
 @group(0) @binding(0) var<uniform> M:MotionFrame;
@@ -159,7 +175,9 @@ const cameraShader = (multisampled:boolean) => motionUniformWGSL + /* wgsl */ `
 @group(0) @binding(1) var depth:${multisampled?'texture_depth_multisampled_2d':'texture_depth_2d'};
 struct Out {@location(0) motion:vec4f,@builtin(frag_depth) depth:f32}
 @fragment fn camera(o:Full)->Out {
- let p=clamp(vec2i(o.uv*M.size.xy),vec2i(0),vec2i(M.size.xy)-1);
+ // Depth at its own size: under TAA the blur runs on the resolved image, the depth stays at the internal size.
+ let ds=vec2i(textureDimensions(depth));
+ let p=clamp(vec2i(o.uv*vec2f(ds)),vec2i(0),ds-1);
  var z=textureLoad(depth,p,0);
  ${multisampled?'for(var i=1;i<4;i++){z=min(z,textureLoad(depth,p,i));}':''}
  let world=M.inverse*vec4f(o.uv*vec2f(2,-2)+vec2f(-1,1),z,1);
