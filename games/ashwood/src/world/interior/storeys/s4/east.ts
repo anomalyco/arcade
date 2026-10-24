@@ -89,8 +89,9 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   const deskTop = top("office_desk")
 
   // ---------------------------------------------------------------- partitions
-  partition(b, { axis: "z", at: 0.8, from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS] })
-  partition(b, { axis: "z", at: 0.8, from: 1.75, to: 21.65, finish: [EXEC_BANDS, EXEC_BANDS] })
+  // Inner doors on the old pier line: files (4-16) → receiver room (4-11); secretary (4-15) ↔ reception (4-10).
+  partition(b, { axis: "z", at: 0.8, from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "door", at: -12.5, side: "a", door: { id: "4-11w", state: "closed", room: "4-11" } }] })
+  partition(b, { axis: "z", at: 0.8, from: 1.75, to: 21.65, finish: [EXEC_BANDS, EXEC_BANDS], openings: [{ kind: "door", at: 16.0, side: "b", door: { id: "4-15e", state: "closed", room: "4-15", leaf: "veneer" } }] })
   partition(b, { axis: "z", at: 11.6, from: -21.65, to: -1.75, finish: [ROOM_BANDS, EXEC_BANDS] })
   partition(b, {
     axis: "z",
@@ -132,7 +133,19 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
 
   // ---------------------------------------------------------------- 4-16 Director's files
   room(b, { id: "4-16", name: "Director's files", rect: rect(-4.6, 0.8, -21.65, -1.75), floor: "linoleum", lit: "none", windows: { blinds: "closed", radiators: "convector" } })
-  placeModels(b, "filing_cabinet", [0, 1, 2, 3, 4, 5].map((k) => ({ position: [-4.575 + fcD / 2 + 0.02, FLOOR_Y, -3.1 - k * 0.47] as const, yaw: yawToward(1, 0) })))
+  placeModels(b, "filing_cabinet", [0, 1, 3, 4, 5].map((k) => ({ position: [-4.575 + fcD / 2 + 0.02, FLOOR_Y, -3.1 - k * 0.47] as const, yaw: yawToward(1, 0) })))
+  // Someone went through the files in a hurry: one cabinet pulled open, its folders across the floor to the cut door.
+  placeModels(b, "filing_cabinet_open", [{ position: [-4.575 + 0.52, FLOOR_Y, -3.1 - 2 * 0.47], yaw: yawToward(1, 0) }])
+  for (const [id, x, z, r] of [
+    ["memo_carbon_inventory", -3.4, -4.4, 0.6],
+    ["roster_field_team", -3.0, -5.3, -0.4],
+    ["letter_regret", -3.7, -6.2, 2.1],
+    ["printout_greenbar", -2.6, -7.9, 1.2],
+    ["memo_next_of_kin", -3.3, -9.1, -1.0],
+    ["memo_carbon_inventory", -3.9, -11.6, 0.3],
+    ["roster_field_team", -3.6, -13.2, 2.6],
+  ] as const)
+    paper(s, id, [x, FLOOR_Y + 0.002, z], [0, 1, 0], { rotation: r, curl: 0.15 })
   safe(b, 0.32, -2.55, yawToward(-1, 0))
   shredder(b, -0.2, -7.2, yawToward(-1, 0.3), rnd)
   b.rbox(M.laminateTop, T(-1.9, FLOOR_Y + 0.73, -10.0), 1.5, 0.03, 0.75, 0.006)

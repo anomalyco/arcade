@@ -309,7 +309,8 @@ function readyRoom(b: Builder, docs: Docs): RoomHandle {
 function security(b: Builder, docs: Docs): RoomHandle {
   const y = FLOOR_Y
   const r = room(b, { id: "0-38", name: "Security office", rect: rect(9.15, 17.0, 9.0, 21.65), lit: "none", floor: "linoleum", windows: { blinds: "random", radiators: "convector" } })
-  P(b, "z", 17.0, 1.75, 21.65, [ROOM_BANDS, PANEL_BANDS])
+  // Staff door through to the cafeteria: the guards' way to the coffee, and a second way out of the office.
+  P(b, "z", 17.0, 1.75, 21.65, [ROOM_BANDS, PANEL_BANDS], [door(17.4, "a", { id: "0-38C", state: "closed", room: "0-39" })])
   // CCTV console against the north wall: steel rack with two rows of three monitors, sloped control shelf.
   const cx = 13.2
   const cz = 9.0 + 0.33

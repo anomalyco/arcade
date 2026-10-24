@@ -57,6 +57,13 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
       { x: 9.6, side: "south" },
       { x: 18.2, side: "north" },
     ],
+    // Fire-door baffles, door halves alternating: no straight line down the spine.
+    baffles: [
+      { x: -37.5, side: "north", swing: -1 },
+      { x: -20.5, side: "south", swing: 1 },
+      { x: 4.5, side: "north", swing: 1 },
+      { x: 22.5, side: "south", swing: -1 },
+    ],
   })
   // Corridor signage: hazard diamond at the chem store, evacuation maps, notices (doors' own plates are the kit's).
   hazardDiamond(b, -48.85, FLOOR_Y + 1.75, -1.598, 0, 1)
@@ -64,7 +71,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   wallDoc(k, "map_evac_2", -36.6, FLOOR_Y + 1.5, -1.598, 0, 1, { pin: "tape" })
   wallDoc(k, "map_evac_2", 30.4, FLOOR_Y + 1.5, 1.598, 0, -1, { pin: "tape" })
   wallDoc(k, "notice_firedoors", -53.6, FLOOR_Y + 1.5, -1.598, 0, 1, { pin: "tape" })
-  wallDoc(k, "notice_north_array", 22.6, FLOOR_Y + 1.55, -1.598, 0, 1, { pin: "tack" })
+  wallDoc(k, "notice_north_array", 23.2, FLOOR_Y + 1.55, -1.598, 0, 1, { pin: "tack" })
   wallDoc(k, "poster_chemical", -7.0, FLOOR_Y + 1.5, 1.598, 0, -1, { pin: "tape" })
   await pause()
 

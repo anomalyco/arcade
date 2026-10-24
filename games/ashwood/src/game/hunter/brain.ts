@@ -415,7 +415,7 @@ export class Hunter {
     const ex = this.pos.x
     const ey = this.eyeY()
     const ez = this.pos.z
-    const light = lightAt(this.lamps[pS] ?? [], p.x, p.y + 1, p.z)
+    const light = lightAt(this.lamps[pS] ?? [], p.x, p.y + 1, p.z, this.nav)
     const still = ps.speed < 0.3 ? 0.8 : 1
     const crouch = ps.crouch > 0.5 ? 0.6 : 1
     const flash = ps.flashlight ? 2.6 : 1

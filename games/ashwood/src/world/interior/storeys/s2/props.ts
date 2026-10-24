@@ -409,17 +409,85 @@ export function wallCabinet(b: Builder, x: number, y: number, z: number, nx: num
 }
 
 /** Chest freezer (−80 °C), length along local x, controller with a temperature readout on the front. */
-export function chestFreezer(b: Builder, x: number, z: number, yaw: number, len = 1.6) {
+export function chestFreezer(b: Builder, x: number, z: number, yaw: number, len = 1.6, open = false) {
   const m = F(x, z, yaw)
   b.rbox(P.enamel, m, len, 0.86, 0.78, 0.03, 0, 0.45, 0)
   b.boxM(M.rubber, m, len - 0.1, 0.06, 0.7, 0, 0.03, 0)
-  b.rbox(P.enamel, m, len - 0.02, 0.1, 0.76, 0.02, 0, 0.93, 0)
-  b.boxM(M.rubber, m, len - 0.06, 0.012, 0.74, 0, 0.875, 0)
+  if (open) {
+    // Lid thrown back on its rear hinge (−80 °C well rimed white, sample racks frozen in, vapour rolling over the lip).
+    const lid = m.clone().multiply(T(0, 0.88, 0.29, 0, 1.5))
+    b.rbox(P.enamel, lid, len - 0.02, 0.1, 0.76, 0.02, 0, 0.05, -0.36)
+    b.boxM(M.rubber, lid, len - 0.06, 0.012, 0.74, 0, -0.005, -0.36)
+    b.boxM(FROST, m, len - 0.1, 0.004, 0.68, 0, 0.882, 0, { cast: false })
+    for (let i = 0; i < 5; i++) b.boxM(i % 2 ? FROST : P.poly, m, 0.22, 0.05, 0.3, -len / 2 + 0.25 + i * 0.27, 0.885 + (i % 3) * 0.012, (i % 2 ? 0.12 : -0.1), { cast: false })
+    for (let i = 0; i < 9; i++) b.boxM(FROST, m, 0.03 + (i % 3) * 0.02, 0.006, 0.012, -len / 2 + 0.1 + i * 0.17, 0.88, -0.392, { cast: false })
+  } else {
+    b.rbox(P.enamel, m, len - 0.02, 0.1, 0.76, 0.02, 0, 0.93, 0)
+    b.boxM(M.rubber, m, len - 0.06, 0.012, 0.74, 0, 0.875, 0)
+  }
   b.boxM(P.blueGrey, m, 0.5, 0.15, 0.01, -len / 2 + 0.35, 0.7, -0.395)
   b.boxM(GL.red, m, 0.1, 0.03, 0.002, -len / 2 + 0.3, 0.72, -0.401, { cast: false })
   b.boxM(GL.ledGreen, m, 0.012, 0.012, 0.002, -len / 2 + 0.45, 0.72, -0.401, { cast: false })
   b.boxM(M.steel, m, 0.25, 0.025, 0.03, 0.2, 0.9, -0.395)
-  coll(b, m, len, 0.98, 0.78)
+  coll(b, m, len, open ? 0.88 : 0.98, 0.78)
+}
+
+/** Hoar frost on cold steel and rimed sample boxes. */
+export const FROST = paint(0xe4ecee, 0.85, 0)
+/**
+ * Cold vapour: one low-opacity sheet material; soft-edged by stacking shrinking, wobbling layers (`mist`). A breath of
+ * emission stands in for the light a real fog scatters (a lit sheet over a lit floor alone shows no contrast).
+ */
+const VAPOUR = materialFor("flat", { color: 0xdde6ea, roughness: 1, emissive: 0x9eb8c6, intensity: 0.12, transparent: 0.09, side: THREE.DoubleSide, name: "s2_cold_vapour" })
+
+/**
+ * A pool of ground mist: `layers` irregular horizontal sheets, each smaller and a little higher than the last, so the
+ * stack reads dense in the middle and thins to nothing at the rim. (x, z) centre, rx × rz radii, `h` stack height.
+ */
+export function mist(b: Builder, x: number, z: number, rx: number, rz: number, rnd: () => number, o: { y?: number; h?: number; layers?: number; yaw?: number } = {}) {
+  const layers = o.layers ?? 5
+  const y0 = o.y ?? FLOOR_Y + 0.02
+  const h = o.h ?? 0.32
+  const seg = 28
+  for (let l = 0; l < layers; l++) {
+    const t = l / Math.max(1, layers - 1)
+    const k = 1 - 0.62 * t
+    const g = new THREE.CircleGeometry(1, seg)
+    const pos = g.getAttribute("position") as THREE.BufferAttribute
+    const ph = rnd() * 6.3
+    const ph2 = rnd() * 6.3
+    for (let i = 1; i < pos.count; i++) {
+      const a = Math.atan2(pos.getY(i), pos.getX(i))
+      const r = 1 + 0.22 * Math.sin(a * 3 + ph) + 0.12 * Math.sin(a * 7 + ph2)
+      pos.setXY(i, Math.cos(a) * r * rx * k, Math.sin(a) * r * rz * k)
+    }
+    g.rotateX(-Math.PI / 2)
+    g.rotateY(o.yaw ?? 0)
+    g.translate(x + (rnd() - 0.5) * rx * 0.15, y0 + h * Math.pow(t, 0.8), z + (rnd() - 0.5) * rz * 0.15)
+    b.add(VAPOUR, g, { worldUV: false, cast: false })
+  }
+}
+
+/** Vapour falling as a soft curtain from a lip (along x at z, or along z at x), `drop` metres to the floor. */
+export function vapourFall(b: Builder, axis: "x" | "z", at: number, from: number, to: number, top: number, rnd: () => number, out = 0.1) {
+  for (let l = 0; l < 3; l++) {
+    const w = (to - from) * (1 - l * 0.18)
+    const hgt = (top - FLOOR_Y) * (1 - l * 0.12)
+    const g = new THREE.PlaneGeometry(w, hgt, 12, 6)
+    const pos = g.getAttribute("position") as THREE.BufferAttribute
+    const ph = rnd() * 6
+    for (let i = 0; i < pos.count; i++) {
+      const u = pos.getX(i)
+      const v = pos.getY(i) / hgt + 0.5
+      // Billows outward as it falls, ragged along the lip.
+      pos.setZ(i, out * (1 - v) * (1 + l) + Math.sin(u * 9 + ph) * 0.02)
+      pos.setY(i, pos.getY(i) - Math.max(0, Math.sin(u * 5 + ph)) * 0.08 * v)
+    }
+    const mid = (from + to) / 2
+    const cy = top - hgt / 2
+    g.applyMatrix4(axis === "x" ? T(mid, cy, at) : T(at, cy, mid, Math.PI / 2))
+    b.add(VAPOUR, g, { worldUV: false, cast: false })
+  }
 }
 
 /** Tall steel cabinet (w × h × d) with two doors; `glass` adds a vision pane (respirators, drying film). */

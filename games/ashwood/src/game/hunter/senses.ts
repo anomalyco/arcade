@@ -115,19 +115,60 @@ export class PlayerNoises {
   }
 }
 
-/** Light on the player from their storey's lamps (0 dark … 1 well lit). */
-export function lightAt(lamps: readonly Lamp[], x: number, y: number, z: number) {
+/** Share of a lamp that still reaches a point it has no line to (bounce off the ceiling and walls). */
+const BOUNCE = 0.06
+/** Share outside a spot lamp's cone (its spill). */
+const SPILL = 0.15
+/** Lamp visibility cache: the last point (snapped to 0.25 m) and lamp list, and each lamp's occlusion factor. */
+const seen = { key: "", lamps: null as readonly Lamp[] | null, k: new Map<Lamp, number>() }
+
+/**
+ * Light on the player from their storey's lamps (0 dark … 1 well lit). The renderer's clustered lamps shine through
+ * walls; the hunter's eyes don't: with `nav`, a lamp with a wall, furniture or the far side of a fire-door baffle
+ * between it and the player only counts for its bounce, and a spot lamp (troffers, desk lamps, beacons aimed) only
+ * counts fully inside its cone. So a dark alcove, the pocket behind a baffle or the shadow of a desk next to a lit room
+ * conceals you, where the bare distance sum used to light you up through the wall.
+ */
+export function lightAt(lamps: readonly Lamp[], x: number, y: number, z: number, nav?: NavGraph) {
+  const key = `${Math.round(x * 4)},${Math.round(y * 4)},${Math.round(z * 4)}`
+  if (key !== seen.key || lamps !== seen.lamps) {
+    seen.key = key
+    seen.lamps = lamps
+    seen.k.clear()
+  }
   let sum = 0
   for (const l of lamps) {
-    const dy = l.position[1] - y
+    if (l.intensity <= 0) continue
+    const [lx, ly, lz] = l.position
+    const dy = ly - y
     if (dy < -0.5 || dy > 3.5) continue
-    const dx = l.position[0] - x
-    const dz = l.position[2] - z
+    const dx = lx - x
+    const dz = lz - z
     const d2 = dx * dx + dz * dz
     if (d2 > l.range * l.range) continue
-    const f = 1 - Math.sqrt(d2 + dy * dy) / l.range
+    const d = Math.sqrt(d2 + dy * dy)
+    const f = 1 - d / l.range
     if (f <= 0) continue
-    sum += l.intensity * f * f
+    let k = 1
+    if (l.direction && l.angle !== undefined && d > 1e-3) {
+      // Cone: full inside the inner angle (outer × (1 − penumbra)), down to the spill outside the outer one.
+      const c = -(l.direction[0] * dx + l.direction[1] * dy + l.direction[2] * dz) / d
+      const outer = Math.cos(l.angle)
+      const inner = Math.cos(l.angle * (1 - (l.penumbra ?? 0.5)))
+      const t = Math.min(1, Math.max(0, (c - outer) / Math.max(1e-3, inner - outer)))
+      k = SPILL + (1 - SPILL) * t * t * (3 - 2 * t)
+    }
+    if (nav) {
+      let v = seen.k.get(l)
+      if (v === undefined) {
+        // Test from just under the ceiling (a troffer's lamp sits above the tiles, over the tops of the walls).
+        const ty = Math.min(ly, y + 1.75)
+        v = nav.hits(lx, ty, lz, x, y, z, 1) > 0 ? BOUNCE : 1
+        seen.k.set(l, v)
+      }
+      k *= v
+    }
+    sum += l.intensity * f * f * k
   }
   return 1 - Math.exp(-sum / 6)
 }

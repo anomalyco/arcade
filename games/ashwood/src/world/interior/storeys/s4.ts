@@ -34,6 +34,8 @@ import { buildWest } from "./s4/west"
 
 const HOARD_X = -4.6
 const HOARD_T = 0.05
+/** Second hoarding door (into 4-16), z. */
+const H2 = -14.0
 
 /** Directorate corridor finish (also the room faces of its panelled rooms). */
 const EXEC: Style = { floor: BROADLOOM, bands: EXEC_BANDS, stripe: null, missing: 0, louvre: false }
@@ -65,6 +67,10 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   plasticX(b, -12.9, -1.6, -0.28, s.rnd, 0.05, "z")
   plasticX(b, -12.85, 0.32, 1.6, s.rnd, 0.05, "z")
   for (const [x, z, w] of [[-36.6, 0.6, 1.2], [-20.2, -0.5, 0.9], [-8.4, 0.4, 1.4]] as const) b.quad(PUDDLE, T(x, FLOOR_Y + 0.003, z, s.rnd() * 3, -Math.PI / 2), w, w * 0.6, { cast: false })
+  // Contractor's dust screens across the old corridor (plywood on studs, a ply door propped open in alternate halves):
+  // they break the run from the fire escape to the hoarding, the strip-out on either side still open around them.
+  dustScreen(s, -37.5, -0.75, "4-DS1")
+  dustScreen(s, -19.5, 0.75, "4-DS2")
   // "OUT OF ORDER" taped beside both washroom doors.
   paper(s, "sign_out_of_order", [-33.62, FLOOR_Y + 1.5, 1.598], [0, 0, -1], { pin: "tape", rotation: -0.05 })
   paper(s, "sign_out_of_order", [-26.95, FLOOR_Y + 1.5, 1.598], [0, 0, -1], { pin: "tape", rotation: 0.04 })
@@ -93,6 +99,8 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
       { kind: "door", at: 6.2, side: "a", door: { id: "4-10", state: "open", room: "4-10", leaf: "glass", double: true, sign: { number: "4-10", label: "DIRECTORATE" } } },
     ] satisfies POpening[],
     extinguishers: [{ x: -3.6, side: "north" }],
+    // The suite's fire-door screen: the Director's door at the far end is only glimpsed through its north half.
+    baffles: [{ x: 10.2, side: "north", swing: -1, leaf: "veneer" }],
   })
   const eastB = spine(b, {
     x0: 11.6,
@@ -124,6 +132,32 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   }
 }
 
+/** Contractor's dust screen across the old corridor at x: painted-out ply on 2×4s, a ply door propped open at z. */
+function dustScreen(s: S4, x: number, doorZ: number, id: string) {
+  const { b } = s
+  const t = 0.04
+  // Studs on the side the door swings away from (the leaf opens towards +x for a north door, −x for a south one).
+  const side = doorZ < 0 ? -1 : 1
+  partition(b, {
+    axis: "z",
+    at: x,
+    from: -1.6,
+    to: 1.6,
+    thickness: t,
+    finish: [PLY_BANDS, PLY_BANDS],
+    openings: [{ kind: "door", at: doorZ, side: doorZ < 0 ? "a" : "b", door: { id, state: "open", leaf: PLY, glass: "none", width: 1.0, open: 1.3 } }],
+  })
+  const f0 = x + (side * t) / 2
+  const f1 = f0 + side * 0.089
+  const [a0, a1] = [Math.min(f0, f1), Math.max(f0, f1)]
+  for (const z of [-1.5, -0.95, -0.55, 0, 0.55, 0.95, 1.5]) {
+    if (Math.abs(z - doorZ) < 0.62) continue
+    b.box(TIMBER, a0, FLOOR_Y + 0.038, z - 0.019, a1, CEIL_Y - 0.038, z + 0.019)
+  }
+  b.box(TIMBER, a0, CEIL_Y - 0.038, -1.6, a1, CEIL_Y, 1.6)
+  b.box(TIMBER, a0, FLOOR_Y + DOOR_H + 0.12, doorZ - 0.6, a1, FLOOR_Y + DOOR_H + 0.21, doorZ + 0.6)
+}
+
 /**
  * Plywood hoarding on the old pier line: painted ply facing the Directorate, raw ply and 2×4 studs on the construction
  * side, hazard tape and the Director's halt order across the corridor, the contractor door standing open.
@@ -139,20 +173,24 @@ function hoarding(s: S4) {
     to: 21.65,
     thickness: HOARD_T,
     finish: [PLY_BANDS, EXEC_BANDS],
-    openings: [{ kind: "door", at: 0, side: "a", door: { id: "4-H", state: "open", leaf: PLY, glass: "none", sign: { number: "4-H", label: "CONTRACTOR" }, open: 1.35 } }],
+    openings: [
+      { kind: "door", at: 0, side: "a", door: { id: "4-H", state: "open", leaf: PLY, glass: "none", sign: { number: "4-H", label: "CONTRACTOR" }, open: 1.35 } },
+      // The second way through: a ply door the contractors cut into the Director's files (4-16) from the strip-out.
+      { kind: "door", at: H2, side: "a", door: { id: "4-H2", state: "open", leaf: PLY, glass: "none", open: 0.9 } },
+    ],
   })
   // Studs, sole and head plates on the construction side (kept clear of the old stud tracks that butt into it).
   const sx0 = face - 0.089
   for (let z = -21.3; z <= 21.31; z += 0.6) {
-    if (Math.abs(z) < 0.62) continue
+    if (Math.abs(z) < 0.62 || Math.abs(z - H2) < 0.62) continue
     if ([1.675, 11.925].some((c) => Math.abs(Math.abs(z) - c) < 0.12)) continue
     b.box(TIMBER, sx0, FLOOR_Y + 0.038, z - 0.019, face, CEIL_Y - 0.038, z + 0.019)
   }
-  for (const [z0, z1] of [[-21.6, -0.56], [0.56, 21.6]] as const) {
-    b.box(TIMBER, sx0, FLOOR_Y, z0, face, FLOOR_Y + 0.038, z1)
-    b.box(TIMBER, sx0, CEIL_Y - 0.038, z0, face, CEIL_Y, z1)
-  }
-  b.box(TIMBER, sx0, FLOOR_Y + DOOR_H + 0.12, -0.6, face - 0.004, FLOOR_Y + DOOR_H + 0.21, 0.6)
+  for (const [z0, z1] of [[-21.6, H2 - 0.56], [H2 + 0.56, -0.56], [0.56, 21.6]] as const) b.box(TIMBER, sx0, FLOOR_Y, z0, face, FLOOR_Y + 0.038, z1)
+  for (const [z0, z1] of [[-21.6, -0.56], [0.56, 21.6]] as const) b.box(TIMBER, sx0, CEIL_Y - 0.038, z0, face, CEIL_Y, z1)
+  for (const zc of [0, H2]) b.box(TIMBER, sx0, FLOOR_Y + DOOR_H + 0.12, zc - 0.6, face - 0.004, FLOOR_Y + DOOR_H + 0.21, zc + 0.6)
+  b.box(M.steel, face - 0.03, FLOOR_Y, H2 - 0.5, x + HOARD_T / 2 + 0.03, FLOOR_Y + 0.006, H2 + 0.5, { cast: false })
+  b.walk(face - 0.03, H2 - 0.5, x + HOARD_T / 2 + 0.03, H2 + 0.5)
   // Hazard tape across the corridor face (both sides of the door).
   for (const y of [1.0, 1.26])
     for (const [z0, z1] of [[-1.6, -0.62], [0.62, 1.6]] as const) b.box(M.hazard, face - 0.003, FLOOR_Y + y, z0, face, FLOOR_Y + y + 0.075, z1, { cast: false })

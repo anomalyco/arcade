@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { MODELS } from "../../../../render/models"
 import {
+  type Builder,
   CEIL_Y,
   FLOOR_Y,
   G,
@@ -79,7 +80,10 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   let listening: (t: number) => void = () => {}
 
   // ------------------------------------------------------------------ partitions between the north rooms
-  for (const x of [G[1], G[3], G[4], G[9], G[10], G[12]]) partition(b, { axis: "z", at: x, from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS] })
+  for (const x of [G[1], G[3], G[10], G[12]]) partition(b, { axis: "z", at: x, from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS] })
+  // Inner doors that bypass the glazed corridor: UPS → machine room (the engineers' door) and operations → plotters.
+  partition(b, { axis: "z", at: G[4], from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "door", at: -9.6, side: "a", door: { id: "3-04w", state: "closed", room: "3-04", glass: "none" } }] })
+  partition(b, { axis: "z", at: G[9], from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "door", at: -18.4, side: "a", door: { id: "3-07w", state: "closed", room: "3-07" } }] })
 
   // ------------------------------------------------------------------ 3-01 data control / I/O counter
   s.rooms.push(room(b, { id: "3-01", name: "Data control", rect: rect(G[0], G[1], -21.65, -1.75), floor: "linoleum", lit: "none", anchors: [{ kind: "bin", x: -48.6, y: FLOOR_Y, z: -2.4 }] }))
@@ -139,7 +143,7 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   b.lamp({ kind: "warning", position: [-32.0, FLOOR_Y + 2.0, -5.5], color: [1, 0.45, 0.12], intensity: 0.5, range: 2.5, size: 0.03 })
   await pause()
 
-  // ------------------------------------------------------------------ 3-04 machine room (raised floor, fully lit)
+  // ------------------------------------------------------------------ 3-04 machine room (raised floor, dark: halon beacons, CRTs)
   partition(b, {
     axis: "x",
     at: -11.925,
@@ -156,8 +160,17 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   partition(b, { axis: "z", at: G[7], from: -21.65, to: -11.85, finish: [ROOM_BANDS, ROOM_BANDS] })
   const mr = rect(G[4], G[9], -11.925, -1.75)
   const mrh = room(b, { id: "3-04", name: "Machine room", rect: mr, floor: M.raised, lit: "none", troffers: false, anchors: [{ kind: "halon", x: -30.0, y: FLOOR_Y, z: -11.4 }] })
-  const cells = trofferGrid(mr).map((c) => ({ ...c, on: true }))
-  s.rooms.push({ ...mrh, update: troffers(b, cells, { perLamp: 9, intensity: 90 }).update })
+  // Lights out at 3 a.m.: two dying tubes on the night circuit, the rest of the grid dark. What reads is the red of the
+  // armed halon beacons, the green of the CRTs and the amber/green pilot lamps on the frames.
+  const grid = trofferGrid(mr)
+  const near = (x: number, z: number) => grid.reduce((a, c) => (Math.hypot(c.x - x, c.z - z) < Math.hypot(a.x - x, a.z - z) ? c : a))
+  const dying = [{ c: near(-20.4, -7.2), amount: 0.9 }, { c: near(-9.0, -4.0), amount: 0.55 }]
+  const cells = grid.map((c) => {
+    const d = dying.find((q) => q.c === c)
+    return { ...c, on: !!d, flicker: d?.amount }
+  })
+  s.rooms.push({ ...mrh, update: troffers(b, cells, { intensity: 14 }).update })
+  machineRoomDark(b, rnd)
   // Raised access floor: 600 mm tiles, perforated ones in the cold aisle, a hazard edge at the door.
   for (let x = Math.ceil((mr.x0 + 0.1) / 0.6) * 0.6; x < mr.x1 - 0.05; x += 0.6) b.box(M.darkSteel, x - 0.004, FLOOR_Y, mr.z0 + 0.06, x + 0.004, FLOOR_Y + LAYER, mr.z1, { cast: false })
   for (let z = Math.ceil((mr.z0 + 0.1) / 0.6) * 0.6; z < mr.z1 - 0.05; z += 0.6) b.box(M.darkSteel, mr.x0 + 0.06, FLOOR_Y + 0.0005, z - 0.004, mr.x1 - 0.06, FLOOR_Y + LAYER + 0.0005, z + 0.004, { cast: false })
@@ -387,4 +400,50 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   wastebasket(b, 26.0, -14.5)
   void THREE
   return listening
+}
+
+const VOID = paint(0x040404, 0.95)
+const CABLE = [paint(0x1c1c1c, 0.7), paint(0x5a1410, 0.6), paint(0x1c2c50, 0.6), paint(0x6a6a62, 0.6)] as const
+
+/**
+ * The machine room's dark pass (concept: storey 3 mainframe): red halon beacons hung on drop rods over the aisles (on
+ * the battery circuit, so they glow through the power cut), floor tiles lifted out over the cable void with the
+ * tiles leaning on the frames, and a CRT on a trolley in the cold aisle.
+ */
+function machineRoomDark(b: Builder, rnd: () => number) {
+  for (const [x, z] of [[-27.0, -8.0], [-17.4, -8.0], [-9.6, -5.4]] as const) {
+    const y = CEIL_Y - 0.62
+    b.rod(M.darkSteel, [x, y + 0.04, z], [x, CEIL_Y, z], 0.008, 6)
+    b.box(M.darkSteel, x - 0.08, CEIL_Y - 0.02, z - 0.08, x + 0.08, CEIL_Y, z + 0.08)
+    beacon(b, x, y, z, "red", true, { intensity: 3.2, range: 7 })
+  }
+  // Raised-floor tiles lifted out: the void (cables, pedestal heads) and the tiles leant on the frames beside them.
+  const hole = (x0: number, z0: number, nx: number, nz: number) => {
+    const x1 = x0 + nx * 0.6
+    const z1 = z0 + nz * 0.6
+    b.box(VOID, x0 + 0.01, FLOOR_Y + 0.0005, z0 + 0.01, x1 - 0.01, FLOOR_Y + LAYER * 1.6, z1 - 0.01, { cast: false })
+    for (let i = 0; i <= nx; i++) for (let j = 0; j <= nz; j++) b.box(M.steel, x0 + i * 0.6 - 0.03, FLOOR_Y + LAYER * 1.6, z0 + j * 0.6 - 0.03, x0 + i * 0.6 + 0.03, FLOOR_Y + LAYER * 2.4, z0 + j * 0.6 + 0.03, { cast: false })
+    for (let k = 0; k < 4; k++) {
+      const z = z0 + 0.12 + rnd() * (z1 - z0 - 0.24)
+      const r = 0.012 + rnd() * 0.012
+      b.rod(CABLE[k]!, [x0 + 0.02, FLOOR_Y + LAYER * 1.6 + r, z], [x1 - 0.02, FLOOR_Y + LAYER * 1.6 + r, z + (rnd() - 0.5) * 0.3], r, 6)
+    }
+  }
+  hole(-26.4, -4.8, 2, 1)
+  hole(-16.8, -4.8, 1, 1)
+  hole(-19.8, -11.4, 1, 1)
+  hole(-12.0, -10.8, 1, 2)
+  for (const [x, z, yaw, lean] of [[-25.95, -5.9, 0.05, 0.32], [-25.6, -5.95, -0.08, 0.28], [-16.0, -5.92, 0.1, 0.3]] as const) {
+    const m = T(x, FLOOR_Y + 0.3 * Math.cos(lean), z, yaw, -lean)
+    b.boxM(M.raised, m, 0.6, 0.6, 0.032, 0, 0, 0)
+  }
+  b.box(M.raised, -11.2, FLOOR_Y + LAYER * 2, -10.55, -10.6, FLOOR_Y + LAYER * 2 + 0.032, -9.95)
+  b.collide(-26.3, FLOOR_Y, -6.1, -25.25, FLOOR_Y + 0.6, -5.75)
+  // A terminal on a steel trolley in the cold aisle, still logged in.
+  const tm = T(-20.9, FLOOR_Y, -4.3, 0.15)
+  for (const y of [0.2, 0.74]) b.rbox(M.steel, tm, 0.7, 0.03, 0.5, 0.01, 0, y, 0)
+  for (const dx of [-0.32, 0.32]) for (const dz of [-0.22, 0.22]) b.boxM(M.darkSteel, tm, 0.025, 0.76, 0.025, dx, 0.38, dz)
+  b.collideLocal(tm, [-0.36, 0, -0.26], [0.36, 0.78, 0.26])
+  const p = terminal(b, -20.9, FLOOR_Y + 0.755, -4.32, 0.15 + Math.PI, true)
+  b.lamp({ kind: "window", position: p, color: [0.35, 1, 0.5], intensity: 0.8, range: 2.6, size: 0.12 })
 }

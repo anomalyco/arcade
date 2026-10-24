@@ -38,6 +38,7 @@ import {
   wastebasket,
   yawToward,
 } from "../../api"
+import { HAND_SIZE, bloodMesh } from "../../blood"
 import {
   BLOCK_BANDS,
   CLOTH_DARK,
@@ -503,7 +504,21 @@ const WARM: [number, number, number] = [1.0, 0.68, 0.38]
 function lab(b: Builder, docs: Docs): RoomHandle[] {
   const { x0, x1, z0 } = LAB
   const y = FLOOR_Y
-  P(b, "z", -25.575, -9.75, -1.75, [BLOCK_BANDS, corridorBands], [], 0.15)
+  // Bypass door from receiving (0-16b): the night man's short cut into the lab, out of sight of the spine. Someone
+  // came through it hurt: a hand on the wall beside it, a smear across the receiving floor towards the dock.
+  P(b, "z", -25.575, -9.75, -1.75, [BLOCK_BANDS, corridorBands], [door(-2.6, "a", { id: "0-17W", state: "closed", room: "0-17" })], 0.15)
+  const fy = FLOOR_Y + b.oy
+  b.small.add(
+    bloodMesh(
+      [
+        { kind: "hand", at: [-25.652, fy + 1.12, -3.48], normal: [-1, 0, 0], size: HAND_SIZE, rot: 0.35, seed: 71, age: 0.55 },
+        { kind: "drips", at: [-25.652, fy + 1.0, -3.46], normal: [-1, 0, 0], size: [0.12, 0.3], seed: 72, age: 0.6 },
+        { kind: "smear", at: [-27.1, fy, -2.75], size: [2.2, 0.32], rot: Math.PI / 2 + 0.12, seed: 73, age: 0.65, alpha: 0.85 },
+        { kind: "trail", at: [-29.6, fy, -3.3], size: [2.4, 0.3], rot: Math.PI / 2 + 0.35, seed: 74, age: 0.7 },
+      ],
+      "blood:0-17w",
+    ),
+  )
   P(b, "z", -16.925, -9.75, -1.75, [corridorBands, ROOM_BANDS], [door(-6.0, "a", { id: "0-17E", state: "closed", room: "0-17s", sign: { number: "0-17A", label: "CORE STORE" } })], 0.15)
   P(b, "x", -9.675, -25.65, -20.8, [BLOCK_BANDS, corridorBands], [], 0.15)
   P(b, "x", -9.675, -20.8, -16.85, [ROOM_BANDS, corridorBands], [], 0.15)
@@ -515,7 +530,7 @@ function lab(b: Builder, docs: Docs): RoomHandle[] {
       if (lit) b.lamp({ ...fluoroLamp(tx, tz, 60), color: [0.86, 0.95, 0.62], flicker: 0.15 })
     }
   benchRunX(b, x0, -19.8, z0, z0 + 0.68)
-  benchRunZ(b, z0 + 0.68, -4.1, x0, x0 + 0.68)
+  benchRunZ(b, z0 + 0.68, -5.1, x0, x0 + 0.68)
   const sx = -20.6
   b.box(M.steel, sx - 0.3, y + 0.935, z0 + 0.12, sx + 0.3, y + 0.94, z0 + 0.56, { cast: false })
   b.rod(M.steel, [sx, y + 0.93, z0 + 0.08], [sx, y + 1.25, z0 + 0.08], 0.012)
@@ -551,10 +566,11 @@ function lab(b: Builder, docs: Docs): RoomHandle[] {
   b.box(M.wood, -24.8, y + 1.07, wz, -22.4, y + 2.25, wz + 0.04)
   b.box(M.chalkboard, -24.75, y + 1.12, wz + 0.04, -22.45, y + 2.2, wz + 0.045, { cast: false })
   docs.wall("chalkboard_wiped", -23.6, y + 1.66, wz + 0.045, 0, 1, { pin: "none", curl: 0, size: [2.3, 1.08] })
-  b.box(M.cabinet, x0, y, -3.7, x0 + 0.5, y + 2.0, -2.0)
-  b.quad(M.wireGlass, T(x0 + 0.503, y + 1.45, -2.85, Math.PI / 2), 1.5, 1.0, { cast: false })
-  for (const sy of [1.05, 1.45, 1.85]) for (let k = 0; k < 6; k++) b.cyl(k % 2 ? M.jugBrown : M.jugWhite, T(x0 + 0.35, y + sy + 0.07, -3.5 + k * 0.25), 0.04, 0.04, 0.14, 10)
-  b.collide(x0, y, -3.7, x0 + 0.5, y + 2.0, -2.0)
+  // Supply cabinet between the bench run and the receiving door.
+  b.box(M.cabinet, x0, y, -4.95, x0 + 0.5, y + 2.0, -3.25)
+  b.quad(M.wireGlass, T(x0 + 0.503, y + 1.45, -4.1, Math.PI / 2), 1.5, 1.0, { cast: false })
+  for (const sy of [1.05, 1.45, 1.85]) for (let k = 0; k < 6; k++) b.cyl(k % 2 ? M.jugBrown : M.jugWhite, T(x0 + 0.35, y + sy + 0.07, -4.75 + k * 0.25), 0.04, 0.04, 0.14, 10)
+  b.collide(x0, y, -4.95, x0 + 0.5, y + 2.0, -3.25)
   placeModels(b, "chemistry_set", [{ position: [-21.95, top, z0 + 0.34], yaw: Math.PI, collide: false }])
   placeModels(b, "glassware", [{ position: [x0 + 0.36, top, -7.3], yaw: yawToward(1, 0) + 0.2, collide: false, blob: 0 }])
   placeModels(b, "microscope", [{ position: [-23.1, y + 0.92, -5.75], yaw: 0.6, collide: false, blob: 0 }])

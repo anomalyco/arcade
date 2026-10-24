@@ -1,7 +1,7 @@
 import { type Builder, CEIL_Y, FLOOR_Y, LAYER, M, ceiling, doorOpening, paint, wall } from "./kit"
 import { type TrofferCell, emergencyPack, exitSign, sconce, troffers } from "./lights"
 import { NIGHT_EXTRA } from "./lighting-state"
-import { CORE_PLAN, FIRE_DOOR, SHELL, WINDOWS } from "./plan"
+import { CORE_PLAN, type DoorState, FIRE_DOOR, SHELL, WINDOWS } from "./plan"
 import { type Finish, type POpening, partition } from "./partition"
 import { extinguisher, bulletin } from "./fittings"
 import { ROOM_BANDS, STYLES, type Style } from "./styles"
@@ -43,7 +43,16 @@ export type SpineOpts = {
   /** Extra extinguishers / bulletins at x (moved clear of openings). */
   extinguishers?: { x: number; side: "north" | "south" }[]
   bulletins?: { x: number; side: "north" | "south" }[]
+  /**
+   * Cross-corridor fire-door baffles: a full-height wall across the spine at `x` with one fire door, held open against
+   * the wall, in its north or south half. Alternate the halves so no straight line runs the length of the spine (the
+   * hunter's sight and the lamps' reach stop at them); the solid half leaves a dark pocket to step into. `x` is moved
+   * (in 0.3 m steps) clear of wall openings and the troffer line; the open leaf lies along the wall towards `swing`.
+   */
+  baffles?: Baffle[]
 }
+
+export type Baffle = { x: number; side: "north" | "south"; swing?: 1 | -1; state?: DoorState; leaf?: "steel" | "veneer" | "glass" }
 
 export type SpineHandle = { update(time: number): void; cells: TrofferCell[]; clear(x: number, side: "north" | "south", width?: number): number }
 
@@ -109,9 +118,12 @@ export function spine(b: Builder, o: SpineOpts = {}): SpineHandle {
     cells.push({ x, z: 0, on, flicker: fl?.amount })
   }
   const tr = troffers(b, cells, { louvre: st.louvre, intensity: o.intensity ?? 5, perLamp: 1 })
-  // Openings for the clearance check.
-  const blocked = (side: "north" | "south") =>
-    (side === "north" ? north : south).map((p) => (p.kind === "door" ? [p.at - 0.9, p.at + 0.9] : [p.from - 0.5, p.to + 0.5]) as [number, number])
+  const held = buildBaffles(b, o.baffles ?? [], { x0, x1, north, south, st, sconces: sc })
+  // Openings (and the baffles with their held-open leaves) for the clearance check.
+  const blocked = (side: "north" | "south") => [
+    ...(side === "north" ? north : south).map((p) => (p.kind === "door" ? [p.at - 0.9, p.at + 0.9] : [p.from - 0.5, p.to + 0.5]) as [number, number]),
+    ...held[side],
+  ]
   const clear = (x: number, side: "north" | "south", width = 0.7) => {
     const bl = blocked(side)
     for (let k = 0; k < 40; k++) {
@@ -136,6 +148,73 @@ export function spine(b: Builder, o: SpineOpts = {}): SpineHandle {
   for (const f of fits) extinguisher(b, clear(f.x, f.side, 0.7), f.side === "north" ? -Z : Z)
   for (const f of o.bulletins ?? []) bulletin(b, clear(f.x, f.side, 1.8), f.side === "north" ? -Z : Z)
   return { update: tr.update, cells, clear }
+}
+
+const BAFFLE_DOOR = 1.1
+/** Centre of the baffle's door off the corridor axis (its wall-side jamb 0.25 m from the corridor wall). */
+const BAFFLE_DOOR_Z = Z - 0.25 - BAFFLE_DOOR / 2 - 0.05
+
+/** Builds the spine's fire-door baffles; returns the wall spans each side must keep clear (wall end + open leaf). */
+function buildBaffles(
+  b: Builder,
+  list: readonly Baffle[],
+  o: { x0: number; x1: number; north: POpening[]; south: POpening[]; st: Style; sconces?: { from: number; to: number } },
+) {
+  const held: Record<"north" | "south", [number, number][]> = { north: [], south: [] }
+  const halfW = (p: POpening) => (p.kind === "door" ? (p.door.width ?? (p.door.double ? 1.7 : 0.92)) / 2 : 0)
+  // A wall span [a, c] meets a door frame (casings and the number plate) or a glazed / cased span or a doorway-sized
+  // gap (the core hall). Open-plan edges (gaps over 6 m) don't count: a baffle may end free there.
+  const hits = (ops: POpening[], a: number, c: number) =>
+    ops.some((p) =>
+      p.kind === "door" ? p.at + halfW(p) + 0.35 > a && p.at - halfW(p) - 0.35 < c : !(p.kind === "gap" && p.to - p.from > 6) && p.to + 0.3 > a && p.from - 0.3 < c,
+    )
+  const placed: number[] = []
+  list.forEach((f, n) => {
+    const side = f.side
+    const ops = side === "north" ? o.north : o.south
+    const lit = !(o.sconces && f.x >= o.sconces.from && f.x <= o.sconces.to)
+    let at: number | undefined
+    let dir: 1 | -1 = f.swing ?? 1
+    for (let k = 0; k < 41 && at === undefined; k++) {
+      const c = Math.round((f.x + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.3) * 100) / 100
+      if (c < o.x0 + 1.2 || c > o.x1 - 1.2) continue
+      // Keep off the troffer line (fittings every 3 m on the axis; a housing is 0.62 m long).
+      if (lit && Math.abs(c - Math.round(c / 3) * 3) < 0.45) continue
+      if (hits(o.north, c - 0.1, c + 0.1) || hits(o.south, c - 0.1, c + 0.1) || placed.some((q) => Math.abs(q - c) < 4)) continue
+      for (const d of [dir, -dir as 1 | -1])
+        if (!hits(ops, Math.min(c, c + d * 1.35), Math.max(c, c + d * 1.35))) {
+          at = c
+          dir = d
+          break
+        }
+    }
+    if (at === undefined) {
+      console.warn(`spine baffle near x ${f.x} (storey ${b.storey}): no clear spot`)
+      return
+    }
+    placed.push(at)
+    // North half: the front faces −x (hinge on the wall side at −z); south half: +x. Open > 0 swings away from the front.
+    const zc = side === "north" ? -BAFFLE_DOOR_Z : BAFFLE_DOOR_Z
+    const front = side === "north" ? "a" : "b"
+    const state = f.state ?? "open"
+    const open = state === "open" ? 1.45 * (side === "north" ? dir : -dir) : 0
+    partition(b, {
+      axis: "z",
+      at,
+      from: -Z,
+      to: Z,
+      thickness: T_SPINE,
+      finish: [o.st, o.st],
+      openings: [{ kind: "door", at: zc, side: front, door: { id: `FD${n + 1}`, state, open, width: BAFFLE_DOOR, leaf: f.leaf, panic: true } }],
+    })
+    // Exit sign over the door on one face (battery-fed): the red at the end of a dark corridor.
+    const nx = side === "north" ? 1 : -1
+    exitSign(b, at + nx * (T_SPINE / 2), zc, nx, 0)
+    const leaf: [number, number] = [Math.min(at, at + dir * 1.4) - 0.2, Math.max(at, at + dir * 1.4) + 0.2]
+    held[side].push(leaf)
+    held[side === "north" ? "south" : "north"].push([at - 0.4, at + 0.4])
+  })
+  return held
 }
 
 function tray(b: Builder, x0: number, x1: number) {

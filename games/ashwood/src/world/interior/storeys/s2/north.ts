@@ -5,6 +5,7 @@ import {
   G,
   LAYER,
   M,
+  PUDDLE,
   ROOM_BANDS,
   STYLES,
   T,
@@ -14,6 +15,7 @@ import {
   drenchShower,
   eyewashStation,
   fumeHood,
+  glow,
   officeSet,
   partition,
   peninsula,
@@ -41,6 +43,8 @@ import {
   bottleRow,
   bulkhead,
   chestFreezer,
+  mist,
+  vapourFall,
   coatRail,
   coreBox,
   deskClipboard,
@@ -281,11 +285,13 @@ export async function buildNorth(k: K, pause: () => Promise<void>): Promise<Room
   ceiling(b, G[6], -6.1, G[7], -1.75)
   troffers(b, [{ x: -18.0, z: -3.6, on: false }])
   b.floor("linoleum", G[6], -11.85, G[7], -6.1)
-  partition(b, { axis: "z", at: G[7], from: ZW + ZT / 2, to: -1.75, finish: [LAB, LAB] })
+  // Through door into the specimen archive (the freezer that stood there moved to the west wall).
+  partition(b, { axis: "z", at: G[7], from: ZW + ZT / 2, to: -1.75, finish: [LAB, LAB], openings: [{ kind: "door", at: -3.0, side: "a", door: { id: "2-07w", state: "closed", room: "2-07" } }] })
   partition(b, { axis: "x", at: ZW, from: G[6], to: G[7], thickness: ZT, finish: [LAB, COLD] })
   coldRoom(k)
-  chestFreezer(b, G[7] - 0.06 - 0.4, -5.1, yawToward(-1, 0))
-  chestFreezer(b, G[7] - 0.06 - 0.4, -3.3, yawToward(-1, 0))
+  chestFreezer(b, G[7] - 0.06 - 0.4, -5.1, yawToward(-1, 0), 1.6, true)
+  chestFreezer(b, G[6] + 0.06 + 0.4, -4.0, yawToward(1, 0))
+  coldSpill(k)
   wallClipboard(k, "memo_carbon_inventory", G[6] + 0.06, FLOOR_Y + 1.45, -4.6, 1, 0)
   column(b, G[7], -11.9)
   await pause()
@@ -398,7 +404,8 @@ function coldRoom(k: K) {
     to: x1,
     thickness: 0.1,
     finish: [COLD, COLD],
-    openings: [{ kind: "door", at: -18.9, side: "b", door: { id: "2-06w", state: "closed", room: "2-06", insulated: true, sign: { number: "2-06", label: "COLD ROOM 4°C" } } }],
+    // Left standing open: the cold pours out across the anteroom floor (coldSpill).
+    openings: [{ kind: "door", at: -18.9, side: "b", door: { id: "2-06w", state: "open", open: -1.3, room: "2-06", insulated: true, sign: { number: "2-06", label: "COLD ROOM 4°C" } } }],
   })
   // Inner liner on the room's own walls, panel ceiling, aluminium floor.
   b.box(P.coldPanel, x0 + 0.005, FLOOR_Y, z0 + 0.005, x0 + 0.05, top, zDoor - 0.05, { skip: "x" })
@@ -430,6 +437,25 @@ function coldRoom(k: K) {
   b.cyl(P.enamel, m.clone().multiply(T(0, 0, 0.041, 0, Math.PI / 2)), 0.07, 0.07, 0.002, 20, { cast: false })
   b.boxM(M.red, m, 0.004, 0.06, 0.002, 0.015, 0.0, 0.044, { cast: false })
   plate(b, -19.9, FLOOR_Y + 1.7, zDoor + 0.05, 0, 1, 0.4, 0.14, P.green, "sign_cold_room")
+}
+
+/** 2-06 with its door standing open: the cold room's air rolls out across the anteroom floor, over the lip of the
+ *  open −80 chest and under both doors (one transparent sheet material, see `mist`). */
+function coldSpill(k: K) {
+  const b = k.b
+  mist(b, -18.1, -9.0, 2.3, 2.5, k.rnd, { h: 0.42, layers: 6 })
+  mist(b, -18.85, -5.4, 0.85, 1.1, k.rnd, { h: 0.3, layers: 5 })
+  mist(b, -18.2, -3.9, 2.2, 1.9, k.rnd, { h: 0.22, layers: 5 })
+  mist(b, -16.7, -5.1, 0.55, 1.0, k.rnd, { h: 0.16, layers: 4 })
+  mist(b, -15.95, -5.1, 0.32, 0.68, k.rnd, { y: FLOOR_Y + 0.9, h: 0.18, layers: 3 })
+  vapourFall(b, "z", -16.27, -5.8, -4.4, FLOOR_Y + 0.9, k.rnd, -0.12)
+  // The cold room's light falling out of the open door, low across the floor and through the vapour.
+  b.lamp({ kind: "fluorescent", position: [-18.9, FLOOR_Y + 0.9, -6.7], direction: [0, -0.45, 0.89], color: [0.78, 0.9, 1.0], intensity: 3.2, range: 5, angle: 0.9, penumbra: 0.8, size: 0.3 })
+  // Seeping under the corridor door and the archive door.
+  mist(b, -17.0, -1.35, 0.8, 0.32, k.rnd, { y: FLOOR_Y + 0.008, h: 0.05, layers: 3 })
+  mist(b, -14.95, -3.0, 0.4, 0.75, k.rnd, { y: FLOOR_Y + 0.008, h: 0.05, layers: 3 })
+  // Condensation: a wet sheen on the lino where the cold air meets the warm.
+  b.quad(PUDDLE, T(-18.6, FLOOR_Y + 0.003, -4.6, 0.4, -Math.PI / 2), 1.6, 0.9, { cast: false })
 }
 
 /** 2-07: long aisles of steel shelving — jars in fluid and waxed core boxes, labelled by borehole depth (north array). */
@@ -476,7 +502,7 @@ function archive(k: K) {
   coreBox(k.s, -10.1, FLOOR_Y, -14.0, 0.3, true)
   b.collide(-10.5, FLOOR_Y, -14.3, -9.7, FLOOR_Y + 0.12, -13.7)
   k.b.rbox(P.blueGrey, T(-9.6, FLOOR_Y, -15.2, 0.2), 0.4, 0.3, 0.3, 0.02, 0, 0.15, 0)
-  wallClipboard(k, "form_requisition", -15.34, FLOOR_Y + 1.5, -3.0, 1, 0)
+  wallClipboard(k, "form_requisition", -15.34, FLOOR_Y + 1.5, -4.7, 1, 0)
   wallDoc(k, "notice_north_array", -4.66, FLOOR_Y + 1.55, -2.6, -1, 0, { pin: "tack" })
 }
 
@@ -565,7 +591,12 @@ function darkroom(k: K) {
     const lv = shelfUnit(b, G[13] - 0.06 - 0.25, z, yawToward(-1, 0), 1.2, 0.5)
     for (const y of lv.slice(1, 4)) for (let i = 0; i < 4; i++) bottle(k.s, G[13] - 0.3, y, z - 0.4 + i * 0.26, i % 2 ? 3 : 0, 0.28, 0.07)
   }
-  b.box(M.hazardOff, 13.46, FLOOR_Y + 2.2, -2.75, 13.5, FLOOR_Y + 2.3, -2.35)
+  // "IN USE" lamp over the light trap, left on (battery-fed like the beacons), and the safelight's red bleeding out of
+  // the trap into the anteroom and under its corridor door: the anteroom reads red from the spine.
+  b.box(INUSE, 13.46, FLOOR_Y + 2.2, -2.75, 13.5, FLOOR_Y + 2.3, -2.35, { cast: false })
+  b.lamp({ kind: "warning", position: [13.7, FLOOR_Y + 2.15, -2.55], color: [1, 0.05, 0.02], intensity: 0.9, range: 3.2, size: 0.06 })
+  b.lamp({ kind: "warning", position: [12.8, FLOOR_Y + 1.6, -3.0], color: [1, 0.06, 0.02], intensity: 1.6, range: 4.5, size: 0.1 })
+  b.box(INUSE_FLOOR, 14.78, FLOOR_Y + LAYER, -1.598, 15.62, FLOOR_Y + LAYER * 2, -1.55, { cast: false })
   wallDoc(k, "notice_firedoors", G[13] - 0.06, FLOOR_Y + 1.55, -6.0, -1, 0, { pin: "tape" })
   // EM room: microscope console, chilled-water lines on the north wall, water chiller, electronics rack.
   electronMicroscope(b, 10.8, -17.0, Math.PI)
@@ -641,6 +672,9 @@ function containment(k: K) {
 }
 
 const GLASS = () => M.glass
+// Names keep them off the mains (world/power.ts: "hazard_red" is battery-fed).
+const INUSE = glow(0x200404, 0xff1a08, 2.4, "s2_hazard_red_inuse")
+const INUSE_FLOOR = glow(0x080101, 0xff1206, 0.5, "s2_hazard_red_spill")
 // Re-exported helpers the south side shares.
 export { stool, glassware, LAB, WET, DARK }
 export { balanceTable, gasCylinder, bioPlacard, hazardDiamond }

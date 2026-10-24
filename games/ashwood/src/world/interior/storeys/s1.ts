@@ -148,7 +148,20 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
     { kind: "gap", from: OPEN_X0, to: OPEN_X1 },
     { kind: "door", at: 28.6, side: "a", door: { id: "1-26", state: "closed", room: "1-26", leaf: "veneer", sign: { number: "1-26", label: "AV" } } },
   ]
-  const sp = spine(b, { north, south, nightCircuit: 3, northRoomFinish: ROOM_BANDS, southRoomFinish: ROOM_BANDS })
+  const sp = spine(b, {
+    north,
+    south,
+    nightCircuit: 3,
+    northRoomFinish: ROOM_BANDS,
+    southRoomFinish: ROOM_BANDS,
+    // Fire-door baffles, door halves alternating (the one at −17.5 stands free at the open office's edge).
+    baffles: [
+      { x: -48.5, side: "south", swing: 1 },
+      { x: -37.5, side: "north", swing: -1 },
+      { x: -17.5, side: "south", swing: 1 },
+      { x: 25.5, side: "north", swing: 1 },
+    ],
+  })
   // Ceiling over the missing south spine wall, between the corridor's ceiling and the open office's.
   ceiling(b, OPEN_X0, 1.6, OPEN_X1, 1.75)
   // Door plates (readable) beside the service doors on this storey and an evacuation map by the hall.
@@ -171,7 +184,8 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
     finish: [PLANT_BANDS, ROOM_BANDS],
     openings: [{ kind: "door", at: -17.4, side: "b", door: { id: "1-01v", state: "locked", room: "1-01v", leaf: P.vault, glass: "none", sign: { number: "1-01v", label: "VAULT" } } }],
   })
-  partition(b, { axis: "z", at: G[3], from: SHELL.z0, to: -1.75, finish: [ROOM_BANDS, OFFICE] })
+  // Records → Conference A → Contracts: a run of inner doors behind the spine wall (a way round the corridor).
+  partition(b, { axis: "z", at: G[3], from: SHELL.z0, to: -1.75, finish: [ROOM_BANDS, OFFICE], openings: [{ kind: "door", at: -3.3, side: "b", door: { id: "1-02w", state: "closed", room: "1-02", leaf: "veneer" } }] })
   const vault = room(b, { id: "1-01v", name: "Classified vault", rect: rect(SHELL.x0, VX1 - 0.15, SHELL.z0, VZ1 - 0.15), floor: "concrete_floor_dry", lit: "none", troffers: { dx: 2.4, dz: 3.6 }, windows: false, columns: false })
   // The vault's two facade windows were blocked with grouted block when it was built.
   for (const w of vault.windows) {
@@ -262,12 +276,31 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   ] as const)
     paper.flat(id, openAisle + dx, FLOOR_Y + 0.002, dz, t)
   for (const [x, z] of [[-41.0, -5.4], [-39.9, -2.6]] as const) wastebasket(b, x, z)
+  // Files dropped in a run for the door through to Conference A, fanned across the carpet.
+  for (const [id, dx, dz, t] of [
+    ["roster_field_team", -1.2, -3.9, 0.4],
+    ["memo_carbon_inventory", -0.7, -4.4, -0.9],
+    ["envelope_interoffice", -1.6, -3.2, 2.0],
+    ["memo_signin", -0.5, -3.6, 1.3],
+    ["form_requisition", -2.1, -4.1, -0.3],
+  ] as const)
+    paper.flat(id, G[3] + dx, FLOOR_Y + 0.002, dz, t)
   put("wall_clock", { position: [-46.0, FLOOR_Y + 2.25, -1.825 - 0.03], yaw: face(0, -1), collide: false, blob: 0 })
   await pause()
 
   // ---------------------------------------------------------------------------------------------- 1-02 Conference A
   const ZW = -11.925 // zone wall centre line
-  partition(b, { axis: "z", at: G[5], from: SHELL.z0, to: -1.75, finish: [OFFICE, OFFICE], openings: [{ kind: "door", at: -13.6, side: "b", door: { id: "1-05b", state: "closed", room: "1-05", leaf: "veneer" } }] })
+  partition(b, {
+    axis: "z",
+    at: G[5],
+    from: SHELL.z0,
+    to: -1.75,
+    finish: [OFFICE, OFFICE],
+    openings: [
+      { kind: "door", at: -13.6, side: "b", door: { id: "1-05b", state: "closed", room: "1-05", leaf: "veneer" } },
+      { kind: "door", at: -5.6, side: "a", door: { id: "1-03w", state: "closed", room: "1-03", leaf: "veneer" } },
+    ],
+  })
   partition(b, { axis: "x", at: ZW, from: G[3] + 0.06, to: G[7] - 0.06, finish: [OFFICE, OFFICE], openings: [
     { kind: "door", at: -22.0, side: "b", door: { id: "1-06", state: "closed", room: "1-06", leaf: "veneer", sign: { number: "1-06" } } },
     { kind: "door", at: -16.6, side: "b", door: { id: "1-07", state: "open", room: "1-07", leaf: "veneer", sign: { number: "1-07", label: "CHIEF" } } },

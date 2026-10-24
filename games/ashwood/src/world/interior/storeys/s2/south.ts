@@ -174,7 +174,8 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
 
   // ---------------------------------------------------------------- 2-25 Electronics & sensor lab
   rooms.push(room(b, { id: "2-25", name: "Electronics & sensor lab", rect: rect(G[6], G[9], 1.75, 21.65), windows: { blinds: "random" } }))
-  partition(b, { axis: "z", at: G[9], from: 1.75, to: 21.65, finish: [LAB, ROOM_BANDS] })
+  // Electronics → break room → Analytical 4: inner doors by the windows, a way along the south side off the spine.
+  partition(b, { axis: "z", at: G[9], from: 1.75, to: 21.65, finish: [LAB, ROOM_BANDS], openings: [{ kind: "door", at: 15.0, side: "a", door: { id: "2-26w", state: "closed", room: "2-26" } }] })
   const wx = G[6] + 0.06
   benchRun(b, "z", 2.4, 20.8, wx, wx + 0.65)
   for (const z of [5.0, 8.5, 12.5, 16.5]) scope(b, wx + 0.3, BENCH, z, yawToward(1, 0))
@@ -204,7 +205,7 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
 
   // ---------------------------------------------------------------- 2-26 Lab break room
   rooms.push(room(b, { id: "2-26", name: "Lab break room", rect: rect(G[9], G[11], 1.75, 21.65), lit: [[0.6, 6.0]], windows: { blinds: "random" } }))
-  partition(b, { axis: "z", at: G[11], from: 1.75, to: 21.65, finish: [ROOM_BANDS, LAB] })
+  partition(b, { axis: "z", at: G[11], from: 1.75, to: 21.65, finish: [ROOM_BANDS, LAB], openings: [{ kind: "door", at: 16.8, side: "a", door: { id: "2-27x", state: "closed", room: "2-27" } }] })
   kitchenette(b, G[9] + 0.06 + 0.31, 4.5, -Math.PI / 2, 2.4, { coffeeOn: true })
   placeModels(b, "vending_machine", [3.2, 3.9].map((z) => ({ position: [G[11] - 0.06 - 0.32, FLOOR_Y, z] as const, yaw: yawToward(-1, 0) })))
   b.lamp({ kind: "window", position: [5.0, FLOOR_Y + 1.3, 3.55], color: [0.92, 0.92, 0.84], intensity: 2.2, range: 3.8, size: 0.4 })

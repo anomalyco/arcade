@@ -71,6 +71,13 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
       { x: -19.0, side: "north" },
       { x: 17.4, side: "south" },
     ],
+    // Fire-door baffles, door halves alternating: no straight line down the 89 m spine.
+    baffles: [
+      { x: -48.5, side: "south", swing: 1 },
+      { x: -37.5, side: "north", swing: -1 },
+      { x: -7.5, side: "south", swing: -1 },
+      { x: 16.5, side: "north", swing: 1 },
+    ],
   })
   // West end: the facade window at the end of the corridor (blind down), tiled lining.
   const endWin = WINDOWS(0, "west").filter((w) => w.u0 > -2 && w.u1 < 2)

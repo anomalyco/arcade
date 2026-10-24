@@ -38,23 +38,29 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
     { kind: "cased", from: 13.0, to: 14.8 },
     { kind: "door", at: 30.0, side: "a", door: { id: "3-25s", state: "janitor", room: "3-25s", sign: { number: "3-25S", label: "SUPPLIES" } } },
   ]
-  const lit: number[] = []
-  for (let x = -30; x <= -6; x += 3) lit.push(x)
+  // Only the night circuit along the glass (every third fitting), one of them dying: the machine room reads dark.
   const sp = spine(b, {
     north,
     south,
     nightCircuit: 3,
-    lit,
-    intensity: 6,
+    intensity: 4.5,
+    flicker: [{ x: -18, amount: 0.75 }],
     raised: [[-31.6, -4.6]],
     tray: true,
     extinguishers: [{ x: 9.8, side: "north" }, { x: -24.0, side: "south" }],
     bulletins: [{ x: -39.5, side: "north" }, { x: 9.0, side: "south" }],
+    // Fire-door baffles, door halves alternating (the one at 22.5 stands free at the bullpen's edge).
+    baffles: [
+      { x: -47.5, side: "south", swing: 1 },
+      { x: -36.9, side: "north", swing: -1 },
+      { x: -0.5, side: "south", swing: -1 },
+      { x: 22.5, side: "north", swing: 1 },
+    ],
   })
-  // Halon discharge beacons over the machine-room doors (amber lit: system armed; red: discharge, off).
+  // Halon beacons over the machine-room doors (amber: system armed; red: "DO NOT ENTER", lit since the alarm tripped).
   b.box(M.darkSteel, -18.75, FLOOR_Y + 2.38, -1.6, -17.25, FLOOR_Y + 2.42, -1.48)
   beacon(b, -18.4, FLOOR_Y + 2.42, -1.54, "amber")
-  beacon(b, -17.6, FLOOR_Y + 2.42, -1.54, "red", false)
+  beacon(b, -17.6, FLOOR_Y + 2.42, -1.54, "red", true, { intensity: 1.4, range: 4 })
   b.rbox(M.safety, T(-16.75, FLOOR_Y + 1.6, -1.594), 0.32, 0.42, 0.012, 0.004)
   s.doc("sign_halon_area", [-16.75, FLOOR_Y + 1.6, -1.588], [0, 0, 1], { pin: "none", curl: 0, size: [0.3, 0.4] })
   s.doc("map_evac_3", [-37.6, FLOOR_Y + 1.55, -1.598], [0, 0, 1], { pin: "tape" })
