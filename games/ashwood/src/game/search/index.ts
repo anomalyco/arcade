@@ -11,6 +11,7 @@ import { transmitter } from "../../world/interior/storeys/s3/transmitter-state"
 import { showSubtitle } from "../shell/subtitles"
 import { ITEMS, NOTES, addItem, addNote, hasItem, hasNote, markSearched, wasSearched, type ItemId, type NoteId } from "../inventory"
 import { showNote } from "./note-view"
+import type { FacilityInteractions } from "../../world/interactive/live"
 
 // Searching (play mode): aim at a desk, filing cabinet, locker or body and HOLD E for about a second (the prompt's
 // key cap fills); the drawer or door is gone through and whatever is there is taken (an item, or a note, which opens
@@ -71,7 +72,7 @@ function loot(id: string, kind: SearchSpot["kind"]): { items?: ItemId[]; notes?:
 
 const storeyOf = (y: number) => Math.max(0, Math.min(4, Math.floor((y - 1.0 - BUILDING.floorY) / BUILDING.main.storeyHeight + 0.15)))
 
-function buildSpots(): Spot[] {
+function buildSpots(physical = false): Spot[] {
   const out: Spot[] = []
   const Y3 = BUILDING.floorY + 0.01 + 3 * BUILDING.main.storeyHeight
   const Y0 = BUILDING.floorY + 0.01
@@ -87,7 +88,7 @@ function buildSpots(): Spot[] {
     label: () => (hasNote("signout") ? "Read the vehicle sign-out again" : "Read the vehicle sign-out"),
     take: () => ({ notes: ["signout"] }),
   })
-  if (securityKeyBox.at)
+  if (!physical && securityKeyBox.at)
     out.push({
       id: "story:security-key",
       kind: "key-cabinet",
@@ -123,7 +124,7 @@ function buildSpots(): Spot[] {
       label: () => (transmitter.reached("revealed") ? "Search the body (Hargrove)" : null),
       take: () => ({ items: ["badge-hargrove"], notes: ["note-hargrove"] }),
     })
-  if (keyCabinet.at)
+  if (!physical && keyCabinet.at)
     out.push({
       id: "story:key-cabinet",
       kind: "key-cabinet",
@@ -156,7 +157,7 @@ function buildSpots(): Spot[] {
   return out
 }
 
-export type SearchHost = { flow: Flow; camera: THREE.Camera; player: { pos: { x: number; y: number; z: number } } }
+export type SearchHost = { flow: Flow; camera: THREE.Camera; player: { pos: { x: number; y: number; z: number } }; interactions?: FacilityInteractions }
 
 export function startSearch(host: SearchHost, signal?: AbortSignal) {
   const { flow, camera } = host
@@ -211,7 +212,7 @@ export function startSearch(host: SearchHost, signal?: AbortSignal) {
   }
 
   const onDown = (e: KeyboardEvent) => {
-    if (e.code !== "KeyE" || e.repeat || !flow.playerActive || !aimed) return
+    if (e.code !== "KeyE" || e.repeat || !flow.playerActive || !aimed || host.interactions?.focused || host.interactions?.world.target(camera)) return
     if (aimed.ready && !aimed.ready()) return
     holding = aimed
     held = 0
@@ -225,12 +226,13 @@ export function startSearch(host: SearchHost, signal?: AbortSignal) {
   addEventListener("keyup", onUp)
 
   const off = flow.onUpdate((dt) => {
-    if (!flow.playerActive) {
+    if (!flow.playerActive || host.interactions?.focused || host.interactions?.world.target(camera)) {
       holding = null
       show("")
       return
     }
-    spots ??= searchSpots.length ? buildSpots() : null
+    // Articulated props replace the legacy registry; story notes remain searchable when it is empty.
+    spots ??= buildSpots(Boolean(host.interactions))
     if (!spots) return
     const eye = camera.position
     const s = storeyOf(eye.y)
@@ -288,11 +290,11 @@ export function startSearch(host: SearchHost, signal?: AbortSignal) {
     },
     /** Automation: complete the search of a spot by id (as if held). */
     search: (id: string) => {
-      const sp = (spots ??= buildSpots()).find((x) => x.id === id || x.id.startsWith(id))
+      const sp = (spots ??= buildSpots(Boolean(host.interactions))).find((x) => x.id === id || x.id.startsWith(id))
       if (sp && (!sp.ready || sp.ready())) complete(sp)
       return !!sp
     },
-    spots: () => (spots ??= buildSpots()).map((x) => ({ id: x.id, kind: x.kind, storey: x.storey, at: x.at.toArray() })),
+    spots: () => (spots ??= buildSpots(Boolean(host.interactions))).map((x) => ({ id: x.id, kind: x.kind, storey: x.storey, at: x.at.toArray() })),
   }
   return stop
 }

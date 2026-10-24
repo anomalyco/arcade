@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { Box3, BoxGeometry, Float32BufferAttribute, Matrix4, Scene, Vector3 } from "three/webgpu"
 import { packWorldGeometry, surfaceSections } from "../../gpu/world-bridge"
-import { breaker, desk, filingCabinet, keyCabinet, locker, mobileShelving, wallSafe } from "./assemblies"
+import { breaker, desk, filingCabinet, keyCabinet, locker, lockerBank, mobileShelving, wallSafe } from "./assemblies"
+import { addNote, bindPropPersistence, hasNote, inventoryState, mapMarks, restoreInventory } from "../../game/inventory"
 import { Terminal, type TerminalDoor } from "./terminal"
 import { InteractiveWorld } from "./world"
 import type { Box } from "../context"
@@ -54,6 +55,25 @@ describe("articulated world", () => {
     h.world.dispose()
   })
 
+  test("a player-sized body fits paired numbered lockers and closing both doors conceals it", () => {
+    const h = harness(), prop = h.world.add(lockerBank({ ...placement, storey: 3 }, 6, 9, () => []))
+    prop.toggle("locker-14"); prop.toggle("locker-13"); h.advance()
+    const compartment = prop.hidingCompartments[0], center = compartment.volume.getCenter(new Vector3())
+    for (const z of [0.9, 0.7, 0.5, 0.3, 0]) {
+      const at = prop.root.localToWorld(new Vector3(center.x, 0, z))
+      const path = new Box3(at.clone().add(new Vector3(-0.29, 0.06, -0.29)), at.clone().add(new Vector3(0.29, 1.75, 0.29)))
+      expect(h.colliders.some(b => new Box3(new Vector3(...b.min), new Vector3(...b.max)).intersectsBox(path))).toBe(false)
+    }
+    const feet = prop.root.localToWorld(new Vector3(center.x, 0, 0))
+    const body = new Box3(feet.clone().add(new Vector3(-0.29, 0.06, -0.29)), feet.clone().add(new Vector3(0.29, 1.75, 0.29)))
+    h.body(body)
+    expect(prop.hides(body)).toBe(false)
+    prop.toggle("locker-14"); prop.toggle("locker-13"); h.advance()
+    expect(prop.hides(body)).toBe(true)
+    expect(h.world.hiddenIn()).toBe(prop.id)
+    h.world.dispose()
+  })
+
   test("shelving stops when a body occupies its swept path", () => {
     const h = harness(), prop = h.world.add(mobileShelving({ ...placement, storey: 1 }))
     prop.root.updateWorldMatrix(true, true)
@@ -98,6 +118,22 @@ describe("articulated world", () => {
     expect(prop.parts.get("switch")!.amount).toBe(1)
     h.world.dispose()
   })
+})
+
+test("terminal discoveries mark the clipboard and checkpoints restore physical drawers", () => {
+  const h = harness(), prop = h.world.add(filingCabinet(placement))
+  bindPropPersistence({ save: () => h.world.save(), restore: state => { if (state) h.world.restore(state) } })
+  restoreInventory(undefined)
+  const terminal = new Terminal("director", { powered: () => true, lockers: () => [], specimens: () => [], doors: () => [], setDoor: () => false,
+    logs: () => [{ id: "terminal-safe", text: "4-16 / 2-4-7" }], discover: () => { addNote("terminal-safe") } })
+  terminal.enter(); terminal.key("ArrowDown"); terminal.key("Enter"); terminal.key("Enter")
+  expect(hasNote("terminal-safe")).toBe(true)
+  expect(mapMarks().some(m => m.room === "4-16" && m.text.includes("2 / 4 / 7"))).toBe(true)
+  prop.toggle("drawer-0"); h.advance()
+  const saved = inventoryState()
+  prop.toggle("drawer-0"); h.advance(); restoreInventory(saved)
+  expect(prop.parts.get("drawer-0")!.amount).toBe(1)
+  bindPropPersistence(null); restoreInventory(undefined); h.world.dispose()
 })
 
 test("terminal operates the live selected door, preserves locks, paginates and disconnects on power loss", () => {

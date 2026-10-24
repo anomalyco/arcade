@@ -6,6 +6,8 @@
 //   onInventory(() => …)             any change (an item taken, a note read)
 //   addItem("lighter")               ids from ITEMS (unknown ids are ignored)
 
+import type { InteractiveState } from "../../world/interactive/world"
+
 export type ItemId =
   | "truck-keys"
   | "cabinet-key"
@@ -41,10 +43,18 @@ export const ITEMS: Record<ItemId, Item> = {
   "keyring-misc": { id: "keyring-misc", name: "Odd keys", desc: "Three small keys on a ring. They don't fit anything you've tried." },
 }
 
-export type NoteId = "signout" | "cabinet-tag" | "log-0312" | "note-hargrove" | "note-shift" | "note-coffee" | "note-overtime" | "note-woods" | "note-phone" | "note-parking"
+export type NoteId = "signout" | "cabinet-tag" | "log-0312" | "note-hargrove" | "note-shift" | "note-coffee" | "note-overtime" | "note-woods" | "note-phone" | "note-parking" | "terminal-lockers" | "terminal-safe" | "terminal-specimens" | `map-floor-${0 | 1 | 2 | 3 | 4}`
 export type Note = { id: NoteId; title: string; text: string[]; /** Story note (shapes the objectives and map marks). */ key?: boolean }
 
 export const NOTES: Record<NoteId, Note> = {
+  "terminal-lockers": { id: "terminal-lockers", title: "Locker directory", text: ["R. Hargrove: locker 14, Operators' room 3-20.", "Paired locker doors share a compartment. Open both to step inside."] },
+  "terminal-safe": { id: "terminal-safe", title: "Directorate access log", text: ["4-16 DIRECTOR'S FILES", "Combination reset: 2 / 4 / 7. Return the dial to zero after use."] },
+  "terminal-specimens": { id: "terminal-specimens", title: "Specimen inventory", text: ["Cold room 2-06: refrigerated samples.", "Archive 2-07: retained specimens.", "Containment 2-10: restricted samples; enter through airlock 2-10a."] },
+  "map-floor-0": { id: "map-floor-0", title: "Ground-floor plan", text: ["Security 0-38 holds the Facilities cabinet key. Facilities 0-30 holds the vehicle keys."] },
+  "map-floor-1": { id: "map-floor-1", title: "Records floor plan", text: ["Records 1-01 and vault 1-01v. Turn the shelving handwheels to move the open aisle."] },
+  "map-floor-2": { id: "map-floor-2", title: "Laboratory floor plan", text: ["Cold room 2-06, darkroom 2-09a, containment airlock 2-10a."] },
+  "map-floor-3": { id: "map-floor-3", title: "Computing floor plan", text: ["Mainframe 3-04, Signal Room 3-08, operator lockers 3-20, terminal pool 3-24."] },
+  "map-floor-4": { id: "map-floor-4", title: "Directorate floor plan", text: ["Director's files and safe: 4-16. Directorate reception 4-10. Director's office 4-14."] },
   signout: {
     id: "signout",
     title: "Vehicle sign-out, by 3-08",
@@ -75,6 +85,9 @@ export const NOTES: Record<NoteId, Note> = {
  *  on the site plan when `site`. */
 export type MapMark = { storey: number; room?: string; at?: readonly [number, number]; site?: boolean; text: string[] }
 export const MAP_MARKS: Partial<Record<NoteId | ItemId, MapMark[]>> = {
+  "terminal-lockers": [{ storey: 3, room: "3-20", text: ["Hargrove", "locker 14"] }],
+  "terminal-safe": [{ storey: 4, room: "4-16", text: ["SAFE", "2 / 4 / 7"] }],
+  "terminal-specimens": [{ storey: 2, room: "2-06", text: ["cold samples"] }, { storey: 2, room: "2-10a", text: ["containment entry"] }],
   signout: [{ storey: 0, room: "0-30", text: ["TRUCK 2 keys", "in the cabinet"] }],
   "cabinet-tag": [{ storey: 0, room: "0-38", text: ["cabinet key", "at Security"] }],
   // The vehicle shed in the dock court (src/game/escape/places.ts SHED).
@@ -130,8 +143,10 @@ export function mapMarks(): MapMark[] {
   return [...notes, ...items].flatMap((k) => MAP_MARKS[k as NoteId] ?? [])
 }
 
-export type InventoryState = { items: ItemId[]; notes: NoteId[]; searched: string[] }
-export const inventoryState = (): InventoryState => ({ items: [...items], notes: [...notes], searched: [...searched] })
+let propPersistence: { save(): InteractiveState; restore(state?: InteractiveState): void } | null = null
+export function bindPropPersistence(persistence: typeof propPersistence) { propPersistence = persistence }
+export type InventoryState = { items: ItemId[]; notes: NoteId[]; searched: string[]; props?: InteractiveState }
+export const inventoryState = (): InventoryState => ({ items: [...items], notes: [...notes], searched: [...searched], props: propPersistence?.save() })
 export function restoreInventory(s: Partial<InventoryState> | undefined) {
   items.length = 0
   notes.length = 0
@@ -139,6 +154,7 @@ export function restoreInventory(s: Partial<InventoryState> | undefined) {
   for (const i of s?.items ?? []) if (ITEMS[i]) items.push(i)
   for (const n of s?.notes ?? []) if (NOTES[n]) notes.push(n)
   for (const k of s?.searched ?? []) searched.add(k)
+  propPersistence?.restore(s?.props)
   changed()
 }
 

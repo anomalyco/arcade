@@ -247,6 +247,7 @@ export function shelvingRows(b: Builder, r: { x0: number; x1: number; z0: number
 /** Bank of steel lockers (n doors along local x), back at +Z: louvred doors, handles, number plates (blank). */
 /** A bank of `n` lockers; `first` numbers their doors (searchable, src/game/search) from that number. */
 export function lockers(b: Builder, x: number, z: number, yaw: number, n = 6, first = 1) {
+  if (b.ctx.interactions) { b.ctx.interactions.lockers(b, x, z, yaw, n, first); return }
   const m = frame(x, z, yaw)
   const w = 0.38
   const len = n * w

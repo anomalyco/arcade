@@ -14,6 +14,7 @@ import { AUTOPLAY_KEY, startEncounters } from "../encounters"
 // Static: its input listeners must register before the shell's input gate (src/game/escape/input.ts).
 import { startEscape } from "../escape"
 import { powerForRun } from "../power"
+import { installInteractionInput } from "../../world/interactive/input"
 
 // Play mode: the home screen over a slow drift past the foggy station while the world loads behind it, then
 // Play → title card → intro (src/game/intro) → explore, with an Esc pause menu. Owns input gating: the controller's
@@ -54,11 +55,12 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     // The station arrives with the power out (src/game/power.ts).
     if (to === "intro") powerForRun()
     if (to === "explore" && world) {
+      if (run) installInteractionInput({ world: world.interactions.world, flow, camera: world.camera, player: world.player, terminals: world.interactions.terminals, hud, signal: run.signal })
       map ??= createMap(world, { active: () => flow.playerActive })
       startObjectives(flow, world.camera, run?.signal, objectivesFrom)
       // Searching desks, cabinets, lockers and bodies (hold E): the key trail (src/game/search).
       const w0 = world
-      void import("../search").then((m) => run?.signal.aborted || m.startSearch({ flow, camera: w0.camera, player: w0.player }, run?.signal))
+      void import("../search").then((m) => run?.signal.aborted || m.startSearch({ flow, camera: w0.camera, player: w0.player, interactions: w0.interactions }, run?.signal))
       // The Wendigo hunter: dormant until the 3-08 transmitter is switched off (src/game/hunter).
       const w = world
       void import("../hunter").then((m) => run?.signal.aborted || m.installHunter(w, { flow, signal: run?.signal }))
@@ -369,7 +371,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
       if (flow.phase === "menu") drift(world, time)
       // In the intro, `player.update` is the cutscene's frame (src/game/intro), so it runs there too.
       const open = inputOpen()
-      world.player.inputEnabled = open
+      world.interactions.simulation = flow.phase === "explore" && !flow.paused
+      world.player.inputEnabled = open && !world.interactions.focused
       if (open) world.player.update(dt)
       // Outside play the controller doesn't step, so its audio (levels, listener, night ambience) is stepped here.
       else world.player.audio?.update(dt, world.camera)

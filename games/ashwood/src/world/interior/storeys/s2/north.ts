@@ -614,6 +614,10 @@ function darkroom(k: K) {
 /** 2-10 containment airlock (decon shower, eyewash, PPE, pass box) and lab (isolator facing the spine window). */
 function containment(k: K) {
   const b = k.b
+  if (b.ctx.interactions) {
+    table(b, 19.1, -9.0, 0, 1.2, 0.7, 0.9, P.stainless, M.darkSteel)
+    b.ctx.interactions.terminal(b, "terminal:2-10a", 19.1, FLOOR_Y + 0.9, -9.0, Math.PI)
+  }
   // Airlock: decon shower stall in the NE corner beside the lab door, eyewash, bench, suits, boot rack.
   const sx0 = 21.0
   const sx1 = G[14] - 0.06

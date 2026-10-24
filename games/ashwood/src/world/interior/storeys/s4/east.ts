@@ -377,6 +377,7 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   floorLamp(b, 23.7, -1.05, true, 26)
   // Desk turned to the wall, the chair facing north; lamp on, papers everywhere.
   placeModels(b, "office_desk", [{ position: [28.6, FLOOR_Y, 14.0], yaw: yawToward(-1, 0) }])
+  b.ctx.interactions?.terminal(b, "terminal:4-14", 28.6, deskTop, 14.0, yawToward(-1, 0))
   placeModels(b, "office_chair", [{ position: [29.6, FLOOR_Y, 14.6], yaw: 0 }])
   deskLamp(b, 28.35, deskTop, 13.35, yawToward(0.3, 0.6), true, { shadow: true, intensity: 70 })
   paper(s, "printout_greenbar", [28.5, deskTop, 14.2], [0, 1, 0], { rotation: Math.PI / 2 + 0.1 })

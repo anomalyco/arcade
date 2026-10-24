@@ -1,6 +1,7 @@
 import type * as THREE from "three/webgpu"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
 import type { Doors } from "./doors"
+import type { FacilityInteractions } from "./interactive/live"
 
 /** Axis-aligned solid the player cannot walk through. */
 export type Box = { min: readonly [number, number, number]; max: readonly [number, number, number] }
@@ -75,4 +76,5 @@ export type WorldContext = {
   settings: LabSettings
   controls: LabControl[]
   params: URLSearchParams
+  interactions?: FacilityInteractions
 }

@@ -134,6 +134,12 @@ export function halonBank(b: Builder, x: number, z: number, yaw: number, n = 3) 
 /** Desk-top video terminal (IBM 3278 / VT class) at (x, y, z), front −Z; `on` shows scrolling green text. Returns the
  *  screen centre (for a screen lamp). */
 export function terminal(b: Builder, x: number, y: number, z: number, yaw: number, on = true, kbDrop = 0) {
+  const id = x === -9.5 && z < 0 ? "terminal:3-04" : x === -12.5 && z > 17.5 ? "terminal:3-24" : null
+  if (id && b.ctx.interactions && !b.ctx.interactions.terminals.some(t => t.terminal.id === id)) {
+    const view = b.ctx.interactions.terminal(b, id, x, y, z, yaw)
+    const at = view.glass.getWorldPosition(new THREE.Vector3())
+    return [at.x, at.y - b.oy, at.z] as [number, number, number]
+  }
   const m = T(x, y, z, yaw)
   b.rbox(OFFWHITE, m, 0.42, 0.34, 0.38, 0.035, 0, 0.21, 0.04)
   b.rbox(OFFWHITE, m, 0.36, 0.28, 0.12, 0.03, 0, 0.21, 0.27)

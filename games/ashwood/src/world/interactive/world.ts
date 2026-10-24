@@ -1,4 +1,4 @@
-import { Box3, Group, Ray, Vector3, type Camera, type Mesh } from "three/webgpu"
+import { Box3, Group, Ray, Vector3, type Camera, type Mesh, type Object3D } from "three/webgpu"
 import type { Box, WorldContext } from "../context"
 import type { DoorInternals } from "../../game/hunter/nav"
 import { visibleInHierarchy } from "../../gpu/world-bridge"
@@ -10,13 +10,14 @@ export type InteractiveHost = {
   take: (item: Item) => boolean
   event: (event: PropEvent) => void
   /** Invalidate hunter navigation after moving shelving, rather than leaving its old occupancy behind. */
-  geometryChanged: () => void
+  geometryChanged: (storey: number) => void
 }
 export type InteractiveState = { version: 1; props: PropState[] }
 
 export class InteractiveWorld {
   readonly root = new Group()
   readonly props = new Map<string, InteractiveProp>()
+  readonly colliders = new Set<Box>()
   private readonly boxes = new Map<Mesh, Box>()
   private readonly bounds = new Box3()
   private readonly point = new Vector3()
@@ -30,19 +31,20 @@ export class InteractiveWorld {
     ctx.scene.add(this.root)
   }
 
-  add(prop: InteractiveProp): InteractiveProp {
+  add(prop: InteractiveProp, parent: Object3D = this.root): InteractiveProp {
     if (this.props.has(prop.id)) throw new Error(`Duplicate interactive prop ${prop.id}`)
     this.props.set(prop.id, prop)
-    this.root.add(prop.root)
+    parent.add(prop.root)
     prop.bind({ hasKey: this.host.hasKey, take: this.host.take, event: this.host.event, canMove: (p, part, next) => this.canMove(p, part, next) })
     prop.root.updateWorldMatrix(true, true)
     for (const mesh of prop.solids) {
       const box: Box = { min: [0, 0, 0], max: [0, 0, 0] }
       this.boxes.set(mesh, box)
+      this.colliders.add(box)
       this.ctx.colliders.push(box)
       this.syncBox(mesh, box)
     }
-    this.host.geometryChanged()
+    this.host.geometryChanged(prop.storey)
     return prop
   }
 
@@ -84,11 +86,12 @@ export class InteractiveWorld {
 
   update(dt: number): void {
     for (const prop of this.props.values()) {
+      if (![...prop.parts.values()].some(p => p.amount !== p.target)) continue
       prop.update(dt)
       prop.root.updateWorldMatrix(true, true)
       for (const mesh of prop.solids) this.syncBox(mesh, this.boxes.get(mesh)!)
+      if (this.dirty) { this.dirty = false; this.host.geometryChanged(prop.storey) }
     }
-    if (this.dirty) { this.dirty = false; this.host.geometryChanged() }
   }
 
   hiddenIn(): string | null {
@@ -136,15 +139,18 @@ export class InteractiveWorld {
       if (!prop) throw new Error(`Unknown saved prop ${entry.id}`)
       prop.restore(entry)
     }
-    this.update(0)
-    this.host.geometryChanged()
+    for (const prop of this.props.values()) {
+      prop.root.updateWorldMatrix(true, true)
+      for (const mesh of prop.solids) this.syncBox(mesh, this.boxes.get(mesh)!)
+      this.host.geometryChanged(prop.storey)
+    }
   }
 
   dispose(): void {
     const owned = new Set(this.boxes.values())
     for (let i = this.ctx.colliders.length - 1; i >= 0; i--) if (owned.has(this.ctx.colliders[i])) this.ctx.colliders.splice(i, 1)
     for (const prop of this.props.values()) prop.dispose()
-    this.props.clear(); this.boxes.clear(); this.root.removeFromParent()
-    this.host.geometryChanged()
+    this.props.clear(); this.boxes.clear(); this.colliders.clear(); this.root.removeFromParent()
+    for (let s = 0; s < 5; s++) this.host.geometryChanged(s)
   }
 }

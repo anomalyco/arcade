@@ -61,6 +61,7 @@ export function wastebasket(b: Builder, x: number, z: number, mat: Mat = M.darkS
 }
 
 export function placeModels(b: Builder, name: ModelName, props: Prop[], opts: { cast?: boolean } = {}) {
+  if (b.ctx.interactions) props = props.filter(p => !b.ctx.interactions!.placeModel(b, name, p))
   if (!props.length) return
   const [w, , d] = MODELS[name].size
   const oy = b.oy

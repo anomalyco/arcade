@@ -133,6 +133,7 @@ export type KeyBox = { door: THREE.Group; keys: THREE.Group; at: [number, number
 
 /** Builds the cabinet on the wall face at `wallX` (an x-facing wall), centred at (y, z). */
 export function keyCabinetOn(b: Builder, wallX: number, y: number, z: number, o: KeyBoxOpts = {}): KeyBox {
+  if (b.ctx.interactions) return b.ctx.interactions.keyCabinet(b, wallX, y, z, Boolean(o.special), o.side ?? -1)
   const side = o.side ?? -1
   const special = o.special ?? TRUCK
   // Cabinet frame: origin at the box centre, front at local −z facing the room; local +x is the viewer's left.

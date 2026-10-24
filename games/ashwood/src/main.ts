@@ -9,6 +9,8 @@ import { resolveMode } from "./game/shell/mode"
 import { createPlayShell } from "./game/shell/play"
 import { createMap } from "./game/map"
 import { hunterControls } from "./game/hunter/settings"
+import { Flow } from "./game/flow"
+import { installInteractionInput } from "./world/interactive/input"
 import "./style.css"
 
 // The game page: boot overlay, HUD, frame loop and automation status around the shared world boot (src/boot/world.ts).
@@ -58,6 +60,8 @@ const world = await bootWorld(canvas, params, {
   throw e
 })
 const { renderer, camera, player } = world
+const debugFlow = debug ? new Flow() : null
+debugFlow?.set("explore")
 shell?.attach(world)
 // The Wendigo hunter's Lab controls exist before the panel is built; the hunter itself loads after streaming.
 hunterControls(world.ctx)
@@ -92,6 +96,7 @@ const tick = () => {
     player.update(dt)
     hunter?.update(dt)
   }
+  debugFlow?.update(dt, time)
   const t0 = performance.now()
   world.render(dt, time)
   // Until the textures are in, frames are untextured: keep them out of the loading screen's picture.
@@ -168,6 +173,7 @@ await world
     },
   })
   .catch((e: unknown) => status.errors.push(`world warm-up: ${e instanceof Error ? (e.stack ?? e.message) : e}`))
+if (debugFlow) installInteractionInput({ world: world.interactions.world, flow: debugFlow, camera, player, terminals: world.interactions.terminals, hud, signal: new AbortController().signal })
 // `?intro` (debug): the opening cutscene straight after boot (src/game/intro), its car warmed behind the loader.
 // Debug: the hunter (src/game/hunter), dormant until the 3-08 transmitter is switched off; `?hunter` starts it now.
 if (debug && !shot) hunter = (await import("./game/hunter")).installHunter(world, { start: params.get("hunter"), debug: params.has("hunterDebug") })

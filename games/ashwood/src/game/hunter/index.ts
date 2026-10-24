@@ -75,6 +75,7 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   const { ctx, player } = world
   hunterControls(ctx)
   const nav = new NavGraph(ctx)
+  ctx.interactions?.changedStoreys.clear()
   const seed = Number(ctx.params.get("hunterSeed") ?? NaN)
   const hunter = new Hunter(ctx, player, world.scene, nav, Number.isFinite(seed) ? seed : undefined)
   const noises = new PlayerNoises(ctx, player, hunter.ownDoorIds)
@@ -175,6 +176,10 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   let clock = 0
   let trailAt = 0
   const update = (dt: number) => {
+    if (ctx.interactions && !ctx.interactions.moving && ctx.interactions.changedStoreys.size) {
+      nav.refreshStoreys(ctx.interactions.changedStoreys)
+      ctx.interactions.changedStoreys.clear()
+    }
     clock += dt
     noises.update(dt)
     entry(dt)

@@ -217,6 +217,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   const carriages = [-47.0, -46.24, -45.48, -43.62, -42.86, -42.1]
   const unitZ = [-20.2, -17.83, -15.46, -13.09, -10.72]
   for (const x of carriages) {
+    if (b.ctx.interactions) { b.ctx.interactions.shelving(b, x, x < -44 ? 1 : -1); continue }
     for (const z of unitZ) {
       put("steel_shelves", { position: [x, FLOOR_Y + 0.03, z], yaw: Math.PI / 2, inset: 0.03 })
       fillShelf(b, x, z, rnd, { y0: FLOOR_Y + 0.03, decks: SHELF_DECKS, gap: 0.06 })
@@ -263,9 +264,9 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   bookTruck(b, -49.2, -5.0, -1.2, rnd)
   put("stack_chair", { position: [-51.2, FLOOR_Y, -7.7], yaw: face(0, -1) + 0.4 })
   // Vignette: the open aisle — step stool, a box pulled and spilt, the roster on the counter ledge.
-  stepStool(b, openAisle, -16.2, 0)
+  stepStool(b, openAisle, b.ctx.interactions ? -7.4 : -16.2, 0)
   put("cardboard_box", { position: [openAisle + 0.05, FLOOR_Y, -14.4], yaw: 0.4, collide: false, blob: 0, tilt: new THREE.Euler(0.0, 0, 1.45) })
-  put("cardboard_box", { position: [openAisle - 0.1, FLOOR_Y, -18.9], yaw: 1.2 })
+  put("cardboard_box", { position: [openAisle - 0.1, FLOOR_Y, b.ctx.interactions ? -6.1 : -18.9], yaw: 1.2 })
   paper.flat("roster_field_team", -46.0 + 0.84, FLOOR_Y + 1.066, -1.675 + 0.075 + 0.14, 0.12)
   for (const [id, dx, dz, t] of [
     ["envelope_interoffice", 0.1, -13.6, 0.7],
@@ -435,7 +436,8 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
       put("stack_chair", { position: [x - 0.85 + (rnd() - 0.5) * 0.2, FLOOR_Y, z + (turned ? -0.3 : (rnd() - 0.5) * 0.4)], yaw: turned ? face(0, -1) : face(1, 0) + (rnd() - 0.5) * 0.5 })
       // Desk-top: typewriter on most, phone, card file, paperwork (worker side = local −z).
       const m = T(x, FLOOR_Y, z, yaw)
-      if (i % 4 !== 3) {
+       if (i === 18 && b.ctx.interactions) b.ctx.interactions.terminal(b, "terminal:1-09", x, DESK_TOP, z, yaw)
+       if (i % 4 !== 3 && (i !== 18 || !b.ctx.interactions)) {
         const tp = typewriter(b, ...xyz(pt(m, -0.3, 0, -0.1), DESK_TOP), yaw, { tan: i % 3 === 0 })
         if (i === 14) paper.add({ id: "letter_regret", position: tp.position, normal: tp.normal, pin: "none", curl: 0.25 })
         else if (i % 5 === 0) paper.add({ id: "form_requisition", position: tp.position, normal: tp.normal, pin: "none", curl: 0.2 })

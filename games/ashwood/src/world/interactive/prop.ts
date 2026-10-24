@@ -23,6 +23,7 @@ export class InteractiveProp {
   readonly solids: Mesh[] = []
   readonly digits = [0, 0, 0]
   hideVolume: Box3 | null = null
+  hidingCompartments: { volume: Box3; doors: string[] }[] = []
   combination: readonly number[] | null = null
   powered = true
   onRestore?: () => void
@@ -93,10 +94,10 @@ export class InteractiveProp {
 
   /** This is physical concealment: the actor must be inside and the door shut, not teleported to a hiding flag. */
   hides(worldPosition: Vector3 | Box3): boolean {
-    if (!this.hideVolume || [...this.parts.values()].some(p => p.amount > 0.08)) return false
     this.root.updateWorldMatrix(true, false)
-    if (worldPosition instanceof Box3) return this.hideVolume.containsBox(worldPosition.clone().applyMatrix4(new Matrix4().copy(this.root.matrixWorld).invert()))
-    return this.hideVolume.containsPoint(this.root.worldToLocal(worldPosition.clone()))
+    const local = worldPosition instanceof Box3 ? worldPosition.clone().applyMatrix4(new Matrix4().copy(this.root.matrixWorld).invert()) : this.root.worldToLocal(worldPosition.clone())
+    const compartments = this.hideVolume ? [{ volume: this.hideVolume, doors: [...this.parts.keys()] }] : this.hidingCompartments
+    return compartments.some(c => c.doors.every(id => this.parts.get(id)!.amount < 0.08) && (local instanceof Box3 ? c.volume.containsBox(local) : c.volume.containsPoint(local)))
   }
 
   save(): PropState {

@@ -55,7 +55,6 @@ export function installInteractionInput(options: {
   window.addEventListener("blur", release, { signal })
   document.addEventListener("visibilitychange", hidden, { signal })
   const stop = flow.onUpdate(dt => {
-    world.update(dt)
     const terminal = activeTerminal()
     if (!flow.playerActive) release()
     else if (terminal) {
@@ -64,6 +63,7 @@ export function installInteractionInput(options: {
     }
     focus()
     const target = flow.playerActive && !activeTerminal() ? world.target(camera) : null
+    if (!prompt.isConnected) options.hud.append(prompt)
     prompt.innerHTML = target ? keyPromptHtml("KeyE", target.label()) : ""
   })
   const offPause = flow.onPause(paused => { if (paused) { release(); prompt.innerHTML = "" } })

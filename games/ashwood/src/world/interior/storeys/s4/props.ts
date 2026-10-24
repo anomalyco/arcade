@@ -197,6 +197,7 @@ export function intercom(b: Builder, x: number, y: number, z: number, yaw: numbe
 
 /** Heavy floor safe (combination dial, handle) in a corner, front −Z. */
 export function safe(b: Builder, x: number, z: number, yaw: number) {
+  if (b.ctx.interactions) { b.ctx.interactions.safe(b, x, z, yaw); return }
   const m = T(x, FLOOR_Y, z, yaw)
   b.rbox(M.frame, m, 0.75, 1.05, 0.7, 0.03, 0, 0.6, 0)
   b.boxM(M.darkSteel, m, 0.76, 0.08, 0.66, 0, 0.04, 0)

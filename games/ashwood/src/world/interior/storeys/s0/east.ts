@@ -343,6 +343,7 @@ function security(b: Builder, docs: Docs): RoomHandle {
   // Desk facing the monitors, chair pushed back; logbook, ashtray with a cigarette burnt to the filter, mug, radio.
   placeModels(b, "office_desk", [{ position: [cx, y, 10.9], yaw: Math.PI }])
   const top = y + MODELS.office_desk.size[1]
+  b.ctx.interactions?.terminal(b, "terminal:0-38", 13.7, top, 10.75, Math.PI)
   placeModels(b, "office_chair", [{ position: [cx + 0.35, y, 12.45], yaw: 0.8, inset: 0.12 }])
   docs.flat("security_log", cx - 0.15, top, 11.05, Math.PI + 0.12)
   docs.flat("checklist_rounds", cx - 0.62, top, 10.85, Math.PI - 0.3, { offset: 0.003 })

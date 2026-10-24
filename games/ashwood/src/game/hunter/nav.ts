@@ -158,6 +158,12 @@ export class NavGraph {
 
   // ------------------------------------------------------------------------------------------------- build
 
+  refreshStoreys(storeys: Iterable<number>) {
+    for (const s of storeys) { this.grids[s] = this.buildGrid(s); this.components(this.grids[s]!) }
+    this.rooms.length = 0
+    this.buildRooms()
+  }
+
   private collectDoors() {
     const all = this.ctx.doors.all() as readonly DoorInternals[]
     for (const h of all) {
@@ -461,6 +467,11 @@ export class NavGraph {
     const len = Math.hypot(dx, dz)
     const gen = ++this.gen
     let n = 0
+    const dynamic = this.ctx.interactions?.world.colliders
+    if (dynamic) for (const b of dynamic) {
+      if (tall && b.max[1] - b.min[1] < 1.9) continue
+      if (segBox(ax, ay, az, dx, dy, dz, b) && ++n >= max) return n
+    }
     let lastKey = NaN
     const steps = Math.max(1, Math.ceil(len / 0.5))
     for (let k = 0; k <= steps; k++) {
@@ -474,6 +485,7 @@ export class NavGraph {
         if (this.stamp[i] === gen) continue
         this.stamp[i] = gen
         const b = this.boxes[i]!
+        if (dynamic?.has(b)) continue
         if (tall && b.max[1] - b.min[1] < 1.9) continue
         if (segBox(ax, ay, az, dx, dy, dz, b)) {
           if (++n >= max) return n

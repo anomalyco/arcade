@@ -43,6 +43,7 @@ function label(prop: InteractiveProp, parent: Object3D, text: string, at: [numbe
   ctx.fillText(text, 256, 64, 480)
   const map = new CanvasTexture(canvas); map.colorSpace = SRGBColorSpace
   plate.material.map = map
+  plate.material.name = `interactive:label:${text}`
   plate.material.color.set(0xffffff)
   plate.material.addEventListener("dispose", () => map.dispose())
   return plate
@@ -96,7 +97,7 @@ export function filingCabinet(p: Placement, contents: Item[] = []) {
   const prop = start(p)
   carcass(prop, prop.root, 0.52, 1.25, 0.66)
   for (const [i, text] of ["A-G", "H-M", "N-Z"].entries()) {
-    const id = `drawer-${i}`, tray = drawer(prop, prop.root, id, text, 0, 0.09 + i * 0.38, 0.46, 0.33, 0.6)
+    const id = `drawer-${i}`, tray = drawer(prop, prop.root, id, text, 0, 0.09 + (2 - i) * 0.38, 0.46, 0.33, 0.6)
     if (contents[i]) itemSocket(prop, tray, id, contents[i], [0, 0.025, 0.06], id)
   }
   return prop
@@ -135,6 +136,30 @@ export function locker(p: Placement & { number: number }, contents: Item[] = [])
   // An inside pull can be reached without aiming through the closed door.
   const handle = pull(prop, leaf, 0.7, 0.95, -0.06)
   prop.targets.push({ id: `${p.id}/inside-pull`, node: handle, label: () => prop.parts.get("door")!.target ? "Close locker" : "Open locker", use: () => prop.toggle("door"), available: () => true })
+  return prop
+}
+
+/** Paired doors share a walk-in compartment while retaining the original bank's width and numbering. */
+export function lockerBank(p: Placement, count: number, first: number, contents: (number: number) => Item[]) {
+  const prop = start(p), width = count * 0.38, depth = 0.8
+  carcass(prop, prop.root, width, 1.92, depth)
+  for (let i = 0; i < count; i++) {
+    const number = first + count - 1 - i, id = `locker-${number}`, x = -width / 2 + i * 0.38
+    const right = i % 2 === 1
+    const pivot = new Group(); pivot.position.set(x + (right ? 0.38 : 0), 0, depth / 2); pivot.scale.x = right ? -1 : 1; prop.root.add(pivot)
+    box(prop, pivot, [0.36, 1.82, 0.02], [0.19, 0.97, 0])
+    const handle = pull(prop, pivot, 0.27, 1.05, 0.035)
+    label(prop, pivot, String(number), [0.19, 1.72, 0.013], 0.1)
+    for (let k = 0; k < 4; k++) box(prop, pivot, [0.23, 0.009, 0.004], [0.19, 1.5 + k * 0.03, 0.013], "inside", false)
+    prop.part(id, `locker ${number}`, pivot, { kind: "hinge", axis: "y", angle: (right ? 1 : -1) * Math.PI * 0.6 }, handle)
+    const inside = pull(prop, pivot, 0.27, 1.05, -0.06)
+    prop.targets.push({ id: `${p.id}/${id}/inside`, node: inside, label: () => `${prop.parts.get(id)!.target ? "Close" : "Open"} locker ${number}`, use: () => prop.toggle(id), available: () => true })
+    contents(number).forEach((item, j) => itemSocket(prop, prop.root, `${id}-${j}`, item, [x + 0.19, 0.07, -0.22 + j * 0.15], id))
+    if (i % 2 === 0 && i + 1 < count) {
+      prop.hidingCompartments.push({ volume: new Box3(new Vector3(x + 0.026, -0.01, -0.36), new Vector3(x + 0.734, 1.84, 0.36)), doors: [id, `locker-${number - 1}`] })
+      if (i > 0) box(prop, prop.root, [0.018, 1.84, depth], [x, 0.96, 0])
+    }
+  }
   return prop
 }
 
@@ -186,18 +211,21 @@ export function breaker(p: Placement, onChange: (on: boolean) => void) {
   return prop
 }
 
-export function mobileShelving(p: Placement, travel = 1.15) {
+export function mobileShelving(p: Placement, travel = 1.15, length = 2.1) {
   if (!Number.isFinite(travel) || travel <= 0) throw new Error("Shelving travel must be positive")
   const prop = start(p)
-  for (const z of [-0.8, 0.8]) box(prop, prop.root, [travel + 0.85, 0.012, 0.035], [travel / 2, 0.008, z], "brass", false)
+  for (const z of [-length * 0.4, length * 0.4]) box(prop, prop.root, [travel + 0.85, 0.012, 0.035], [travel / 2, 0.008, z], "brass", false)
   const carriage = new Group(); prop.root.add(carriage)
-  for (const x of [-0.37, 0.37]) box(prop, carriage, [0.025, 2.2, 2.1], [x, 1.13, 0])
-  for (let y = 0.05; y <= 2.2; y += 0.43) box(prop, carriage, [0.74, 0.025, 2.1], [0, y, 0], "inside")
-  box(prop, carriage, [0.74, 2.2, 0.025], [0, 1.13, 1.05])
-  const wheel = new Mesh(new TorusGeometry(0.16, 0.012, 8, 32), material("brass")); wheel.position.set(0, 1.1, 1.12); carriage.add(wheel)
+  for (const x of [-0.37, 0.37]) box(prop, carriage, [0.025, 2.2, length], [x, 1.13, 0])
+  for (let y = 0.05; y <= 2.2; y += 0.43) {
+    box(prop, carriage, [0.74, 0.025, length], [0, y, 0], "inside")
+    if (y < 2) for (let z = -length / 2 + 0.3; z < length / 2 - 0.2; z += 0.48) box(prop, carriage, [0.56, 0.29, 0.4], [0, y + 0.16, z], "paper", false)
+  }
+  box(prop, carriage, [0.74, 2.2, 0.025], [0, 1.13, length / 2])
+  const wheel = new Mesh(new TorusGeometry(0.16, 0.012, 8, 32), material("brass")); wheel.position.set(0, 1.1, length / 2 + 0.07); carriage.add(wheel)
   for (let i = 0; i < 3; i++) { const spoke = box(prop, wheel, [0.31, 0.012, 0.012], [0, 0, 0], "brass", false); spoke.rotation.z = i * Math.PI / 3 }
   prop.part("carriage", "shelving aisle", carriage, { kind: "slide", offset: new Vector3(travel, 0, 0) }, wheel)
-  label(prop, carriage, "MOBILE RECORDS", [0, 1.55, 1.068], 0.5)
+  label(prop, carriage, "MOBILE RECORDS", [0, 1.55, length / 2 + 0.018], 0.5)
   const update = prop.update.bind(prop)
   prop.update = dt => { update(dt); wheel.rotation.z = prop.parts.get("carriage")!.amount * Math.PI * 4 }
   return prop

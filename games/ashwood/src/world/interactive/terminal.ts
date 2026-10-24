@@ -8,6 +8,7 @@ export type TerminalServices = {
   doors: () => TerminalDoor[]
   specimens: () => TerminalRow[]
   setDoor: (id: string, open: boolean) => boolean
+  discover?: (row: TerminalRow, page: TerminalPage) => void
 }
 export type TerminalFrame = { title: string; lines: string[]; selected: number; status: string; powered: boolean }
 const MENU = [
@@ -76,6 +77,9 @@ export class Terminal {
       if (!door) this.status = "DOOR NO LONGER AVAILABLE"
       else if (door.locked) this.status = "ACCESS DENIED / DOOR LOCKED"
       else this.status = this.services.setDoor(door.id, !door.open) ? `COMMAND SENT / ${door.label}` : "COMMAND REJECTED"
+    } else {
+      const row = rows.find(r => r.id === this.selectedId) ?? rows[this.selected]
+      if (row && this.services.discover) { this.services.discover(row, this.page); this.status = "COPIED TO YOUR CLIPBOARD" }
     }
     return true
   }

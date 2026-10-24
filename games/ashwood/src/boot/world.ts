@@ -16,6 +16,7 @@ import { distanceTo } from "./priority"
 import { modelLoadsInFlight, modelLoadsPending } from "./loads"
 import { prefetch } from "./prefetch"
 import { MODELS as MODEL_LIBRARY, initModels, preloadModels, type ModelName } from "../render/models"
+import { FacilityInteractions } from "../world/interactive/live"
 
 // The world boot, shared by the game (src/main.ts) and the Look Lab. `bootWorld` builds only terrain plus the render rig
 // and resolves when the first frame can be drawn. The caller starts its frame loop (calling `render`) and then awaits
@@ -213,6 +214,9 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   performance.mark("rig:start")
   step("lighting", 0.75)
   const player = new Player(camera, canvas, ctx, options.input ?? !params.has("shot"))
+  const interactions = new FacilityInteractions(ctx, player)
+  ctx.interactions = interactions
+  ;(globalThis as { __ashwoodInteractions?: FacilityInteractions }).__ashwoodInteractions = interactions
   const gameBody = createGameBody(ctx, player)
   updates.push(gameBody.update)
   // The flashlight comes out of the torch in the body's hand (render/lighting.ts falls back to the eye when hidden).
@@ -251,6 +255,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   const render = (dt: number, time: number) =>
     warmup.frame(() => {
       for (const u of updates) u(dt, time, camera)
+      interactions.update(dt)
       atmosphere.update(dt, time)
       lighting.update(dt, time)
       const done = shadowWarm
@@ -497,6 +502,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     scene,
     camera,
     player,
+    interactions,
     atmosphere,
     lighting,
     post,
