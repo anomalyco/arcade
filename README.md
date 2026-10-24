@@ -12,6 +12,8 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 
 ## Prototypes
 
+Unlisted draft (work in progress, not finished): [ASHWOOD](https://anoma.ly/arcade/ashwood/) (`games/ashwood`, Worker `arcade-ashwood`, `/arcade/ashwood/`). First-person night horror at Ashwood Research Station (1984): drive in, restore power in 3-08, call for help, and escape while hunted. WASD, mouse look, F flashlight, C crouch, M map, E interact. No landing link or indexing.
+
 Unlisted: [TIMBER](https://anoma.ly/arcade/timber/) — greybox 1-vs-all in a night forest: one chainsaw lumberjack hunts
 three survivors, who fix a logging truck (fuel can, spark plug, keys) to escape and can drop half-cut trees on him. Pick
 a side on the title; bots take the other seats. Free-for-all chainsaw brawl stays on the `mode` knob. Backquote feel

@@ -1,5 +1,7 @@
 # Ashwood (games/ashwood): world build brief (shared by every agent)
 
+> **Status: Draft (work in progress, not finished).** Unlisted prototype at `/arcade/ashwood/` (`noindex`, no landing panel).
+
 We are building a walkable, near-photoreal night environment in the browser: a secret federal research facility (IOPS ·
 Ashwood Station, in full Ashwood Research Station) in the pine forest of Ashwood State Forest, outside a small town, 1984. It has to look like the approved concept art, run fast in the browser
 on WebGPU, and be walkable in first person.
