@@ -9,6 +9,8 @@
  * felling cam cuts out to the low shot).
  * still-*.png: a glance back at him during the flee. `--stills` takes only look stills of every scene (fast);
  * `--perf` measures whole-frame GPU ms per scene at both fern densities (no captures).
+ * `--saw`: the first-person saw's stills (in the dark, by a torch, close up, third person), the pull-start clip
+ * (saw-pull.webm) and its GPU cost (saw-perf.txt).
  */
 import { mkdirSync, renameSync } from "node:fs"
 import { resolve, sep } from "node:path"
@@ -18,7 +20,7 @@ import { browserBudget } from "../../../scripts/browser-budget"
 await using budget = browserBudget()
 const { chromium } = budget
 
-const { values: o } = parseArgs({ options: { out: { type: "string", default: process.env.LEASE_OUT ?? "captures/proof" }, stills: { type: "boolean", default: false }, perf: { type: "boolean", default: false }, sweep: { type: "boolean", default: false }, vm: { type: "boolean", default: false } } })
+const { values: o } = parseArgs({ options: { out: { type: "string", default: process.env.LEASE_OUT ?? "captures/proof" }, stills: { type: "boolean", default: false }, perf: { type: "boolean", default: false }, sweep: { type: "boolean", default: false }, vm: { type: "boolean", default: false }, saw: { type: "boolean", default: false } } })
 const prefix = "/arcade/timber/"
 const root = resolve("dist/arcade/timber")
 const out = resolve(o.out!)
@@ -171,6 +173,65 @@ const down = (side: boolean) => `
   } else { input.mx = input.my = 0; input.saw = false }
 `
 
+// The pull stage: two yanks on the cord, it catches, idles, revs, then you step into the trunk and saw it.
+const PULL = `
+  const me = g.world.jacks[0], t = g.world.t, s = (g.pull ??= { n: 0, on: 0 })
+  if (s.n === 0) { g.feel.cutTime = 7; g.feel.floodSafe = 1; g.look.fellCam = 0 }
+  if (s.n === 0 && t > 0.5) { input.engine = true; s.n = 1 }
+  if (s.n === 1 && me.engine === "pulling" && me.pullT > 0.5) { input.engine = true; s.n = 2 }
+  if (me.engine === "on" && !s.on) s.on = t
+  const since = s.on ? t - s.on : -1
+  const tree = g.world.trees.at(-1)
+  const d = Math.hypot(tree.x - me.x, tree.y - me.y)
+  input.saw = since > 1
+  input.mx = since > 2 && d > 1.15 ? 1 : 0
+`
+// The engine already running, idling at the trunk: for the look stills.
+const IDLE = `
+  const s = (g.pull ??= { n: 0 })
+  if (s.n === 0) { input.engine = true; s.n = 1; g.feel.floodSafe = 1 }
+  g.world.jacks[1].torch = g.torchOn ?? false
+`
+
+/** `--saw`: the first-person saw. Stills (dark, close materials, third person), the pull-start clip and its GPU cost. */
+async function saw() {
+  await stills("saw-dark", "pull", [3500], null, `g.torchOn = false; ${IDLE}`)
+  await stills("saw-torch", "pull", [3500], null, `g.torchOn = true; ${IDLE}`)
+  await stills("saw-close", "pull", [3500], null, `g.torchOn = true; Object.assign(g.look, { sawFov: 38, sawX: 0.32, sawY: -0.36, sawZ: -0.62, sawPitch: 0.35, sawYaw: 0.55, sawRoll: 0.15, sawLag: 0 }); ${IDLE}`)
+  await stills("saw-close-4x", "pull", [3500], null, `g.torchOn = true; g.sawView.msaa = 4; Object.assign(g.look, { sawFov: 38, sawX: 0.32, sawY: -0.36, sawZ: -0.62, sawPitch: 0.35, sawYaw: 0.55, sawRoll: 0.15, sawLag: 0 }); ${IDLE}`)
+  for (const [n, yaw] of [["a", Math.PI / 2 + 0.7], ["b", Math.PI / 2 - 0.6]] as const)
+    await stills(`saw-third-${n}`, "pull", [3500], { x: -1.9, y: 12, dist: 2.6, pitch: 0.12, yaw, height: 1.15, fov: 34 }, `g.torchOn = true; ${IDLE}`)
+  await clip("saw-pull", "pull", 13, PULL)
+  // GPU cost: the idle first-person view with the saw shown (4× MSAA in its box, and 1× straight onto the scene) and
+  // hidden, in turn.
+  const { context, page } = await open(false)
+  await page.evaluate(() => (globalThis as unknown as { timber: Timber }).timber.peopleReady())
+  const rows = await page.evaluate(async (drive) => {
+    const g = (globalThis as unknown as { timber: Timber & { sawView: { enabled: boolean; msaa: 1 | 4 }; measure(n: number): Promise<{ median: number } | null> } }).timber
+    g.stage("pull")
+    g.auto.camera = null
+    const input = { mx: 0, my: 0, aim: 0, saw: false, dash: false, sprint: false, engine: false, torch: false, flare: false, use: false }
+    g.auto.input = input
+    const step = new Function("g", "input", drive) as (g: Timber, input: object) => void
+    setInterval(() => step(g, input), 30)
+    await new Promise((r) => setTimeout(r, 4000))
+    const out: string[] = []
+    for (let i = 0; i < 3; i++)
+      for (const v of [4, 1, 0] as const) {
+        g.sawView.enabled = v > 0
+        if (v) g.sawView.msaa = v
+        await new Promise((r) => setTimeout(r, 400))
+        const ms = await g.measure(40).then((m) => m?.median.toFixed(2) ?? "-", (e: Error) => `error ${e.message}`)
+        out.push(`saw ${v ? `shown, ${v}× MSAA` : "hidden"}: ${ms} ms`)
+      }
+    g.sawView.msaa = 1
+    return out
+  }, `g.torchOn = true; ${IDLE}`)
+  console.log(rows.join("\n"))
+  await Bun.write(resolve(out, "saw-perf.txt"), rows.join("\n") + "\n")
+  await context.close()
+}
+
 /** Whole-frame GPU ms per scene at each fern density: `--perf` (no captures). */
 async function perf() {
   const { context, page } = await open(false)
@@ -250,7 +311,9 @@ async function sweep() {
   await context.close()
 }
 
-if (o.sweep) {
+if (o.saw) {
+  await saw()
+} else if (o.sweep) {
   await sweep()
 } else if (o.perf) {
   await perf()

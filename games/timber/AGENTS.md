@@ -57,8 +57,11 @@
 - Blood: dark wet pools (four `poolMesh` variants) that grow over ~3.5 s, merge when close, max 60; the downed drip a
   new one every 0.9 s (`bloodPool`, `bloodDrops`). Getting hurt is a red vignette from `cam.damageFlash`.
 - People (`src/people-view.ts`, `TimberPeople`): Microsoft Rocketbox avatars on the kit people rig, as in BARBARA. The
-  lumberjack is m04 in a dark oxblood work jacket, grown by `jackScale` (1.12), both hands on the saw (`SAW_HANDS`
-  through `People.drive`'s `reach`); survivors are the other cast members with the torch in the right hand (the beam
+  lumberjack is m05 repainted (`public/people/lumberjack.glb`, made by `scripts/lumberjack.ts` → `lumberjack.py`: a
+  red and black buffalo-check flannel shirt under a black canvas vest, dark work trousers and boots; tints can't do
+  this, since a Rocketbox outfit is one texture), grown by `jackScale` (1.12), both hands on the saw (`SAW_HANDS`
+  through `People.drive`'s `reach`, each within 95% of the rig's arm, past which the reach eases and the left hand
+  stops short of the wrap handle); survivors are the other cast members with the torch in the right hand (the beam
   starts at the torch in it) and the axe in the left, swung while chopping. The downed and the dead are the game's
   ragdolls posed onto the person (`lie`), so a crush pins the body under the trunk. The downed crawl face down on their
   forearms (`src/downed.ts`, `crawl*` knobs), and their torch drops and keeps shining along the ground: a ground
@@ -70,10 +73,11 @@
   is wired to the saw and dies with the engine. It sits at 1.72 m × `jackScale`, dim (`torchPower` 85, a 12° cone,
   `torchSpill` 0.02), eases towards the kerf while he cuts, and watches
   the falling tree's mid-trunk for `fellCamTime` after a `fell` (the `lamps` map). It is on the helmet, not the saw,
-  because a lamp 0.4 m from the bark floods the frame. In your own first person it shines from `sawLampAhead` (0.8 m)
-  down its axis, its level making up the shorter throw: your hands and saw sit on the line to the kerf, and in the
-  beam's core (50× its spill) they blew out at any albedo. A short-reach warm light at the eye (`sawFill`) stands in for
-  its spill on them. While it watches a falling trunk its beam shows little in the mist (`fellLampAir`): pointed up
+  because a lamp 0.4 m from the bark floods the frame. Your own, in first person, can shine from `sawLampAhead` down its
+  axis (its level makes up the shorter throw; off by default: at 0.8 m it lit the mist in front of the lens and lifted
+  the black between the beams grey), with `sawFill` standing in for its spill on your hands; your saw takes it from the
+  helmet whatever `sawLampAhead` is, as if no nearer than `sawLampNear` (in the beam's core, 50× its spill, it blew out at any albedo). Each pull of the cord flickers it (the
+  magneto). While it watches a falling trunk its beam shows little in the mist (`fellLampAir`): pointed up
   through it, along the low felling view, it washed the frame grey. Flares come through `view.lights`; the truck's lamps are
   torches 900/901 plus a glow (`truckLamps`). Veiling glare is TIMBER's own (`glare` 0.1, written into the forest
   settings): at the forest's default 0.5 the lamp spot on the ground a metre ahead lifts the whole frame grey.
@@ -83,18 +87,32 @@
   on the Camera knob. First person still runs `cam.follow`/`update` for the shake, then overrides `cam.eye` and
   `cam.viewProj` (`mat4.lookAt`, near 0.05): shake becomes a small yaw/pitch jitter plus the saw's buzz (`sawBuzz`,
   harder revving and in wood), the eye is `firstEye` × `jackScale` plus head bob, and mouse Y pitches the view (locked;
-  unlocked it eases to `firstPitch`, or down into the cut). Your own body isn't drawn; the viewmodel is
-  (`src/viewmodel.ts`): a procedural two-tone saw (worn orange and dark plastic, engine, top handle, rear grip, a bar
-  whose chain visibly runs, `sawChain`), canted so the bar shows past the guard, dimmed by `sawLit`, with a thin
-  exhaust (`sawExhaust`). His Rocketbox arms hold it (`TimberPeople.arms`, `sawArms`): wrists solved onto `SAW_HANDS`
-  with a feedback term for the rig's shortfall, each hand turned to its handle and closed in `SAW_GRIP`, gloves and an
-  oxblood sleeve tinted onto the m04 `hands` and `outfit` pieces. While the bar
-  bites wood, chips fly from its nose at the lens (`WoodFx.toward`). Click locks the pointer for mouse look (first,
+  unlocked it eases to `firstPitch`, or down into the cut). Your own body isn't drawn; the viewmodel is (see below),
+  and while the bar bites wood, chips fly from under the bar at the lens (`WoodFx.toward`). Click locks the pointer for mouse look (first,
   chase, shoulder); bots, automation and spectating ease the yaw towards the aim. The chase (`chase*` knobs) is low,
   over the right shoulder, pulled in at trunks. The felling cam (`fellCam*`): when a tree you drop (or one within
   22 m) goes over, the view drops to a low eye (`fellCamHeight`) up to `fellCamDist` off your shoulder, on the bearing
   with the clearest view between the trunks, looking a third of the way up the trunk; from chase or shoulder it blends
   in over 0.6 s and out over 0.7 s, from first person it cuts. It holds for `fellCamTime`.
+- First-person saw (`src/viewmodel.ts` `SawView`, shader in `src/viewmodel-shader.ts`, knobs under "First-person
+  saw"): `public/saw/saw.glb`, a CC BY photogrammetry scan's powerhead (credited in `CREDITS.md`, built by
+  `scripts/saw/build-saw.ts` → `build-saw.py` in headless Blender) with a made 18" bar, 66-link chain (the vertex
+  shader runs it round the bar, speed ∝ throttle, smearing when fast), T-grip and cord, worn tan leather work gloves
+  (creases, grime, oil-dark palms, a stitched gauntlet cuff: baked by `build-saw.py`'s `leather()` and packed under the
+  bar in its three maps, so they bind nothing more) and flannel sleeves. The chain has no maps (a palette by UV cell;
+  `sawWear` adds its flecks). LOD0 31.7k tris, 2k WebP maps, indexed; LOD1 4.6k tris, vertex coloured, is the lumberjack's saw in third person
+  (`sawWorldMesh`, held at `SAW_HANDS`/`SAW_PITCH` in `people-view.ts`). It is a kit `OverlayPass` with its own lens
+  (`sawFov`) and near plane, drawn after TAA and motion blur (onto their output, so it never clips trees, never smears
+  and never feeds the exposure meter), cropped to its parts' box on screen: there 1× straight onto the scene with a scissor
+  (`sawView.msaa` 1, the default), or 4× MSAA in a box-sized target, resolved and copied over (`msaa` 4). On the mini
+  (High, 720p, idle first person, Oct 24) it costs ~0.3 ms at 1× and ~1.2 ms at 4× (it was 2.6 ms full-screen at 4×
+  before the crop, the light early-outs and the baked gloves); the edges barely differ.
+  Back faces culled, gloves and sleeves drawn first. Lit by the scene's own lights (the same count clamp and range
+  early-outs as the forest's) (lamps held at least `sawLampNear` away, or the helmet lamp 0.5 m above floods it) plus torch spill and
+  sky. Only six maps are bound: the forest's group 0 already uses ten of the stage's sixteen textures. It vibrates
+  (finer at idle, harsher revved and in wood), kicks on rev, start, clash and hits, the left hand pulls the cord on a
+  start, it lags the look, pushes into the trunk, lunges, and drops to a carry at a sprint. Exhaust comes from its
+  muffler, oil mist off the nose, sparks on a clash (`SawPoints`).
 - Running: a sprint eases `sprintK` in, which widens the FOV (`sprintFov`), scales the kit `MotionBlur` strength
   (`sprintBlur`, knobs under "Motion") and adds a small radial `MotionBlurBurst` each frame; head bob follows the
   stride (`headBob`). Bursts also come on a lunge, saw contact and tree impacts. A tree landing within 9 m of its trunk
@@ -145,12 +163,13 @@ lunge (revved), Q engine, F torch, G flare, hold E revive/shove, R new round. Al
   torch on and a fast, aggressive bot lumberjack behind; `kill` is first person: a survivor with his back to you and a
   half-cut tree beyond him), `blur` (motion blur settings), `people` (`TimberPeople`), `peopleReady()` (resolves once
   the Rocketbox cast has loaded), `dread`, `sound` (`TimberSound`), `style` (the resolved view), `paused`,
-  `newRound()`, `frames`. `?seed=N` fixes the forest; `?quality=high` pins quality (Auto
+  `newRound()`, `frames`, `sawView` (`enabled` hides the saw, `msaa` 4 or 1). `?seed=N` fixes the forest; `?quality=high` pins quality (Auto
   steps down mid-run on a slow worker); `?smoke` is the software-GPU smoke (low, Today sky, offscreen).
 - Proof captures: `hivemind run --kind browser --worker mini -- sh -c 'bunx vite build && bun scripts/proof.ts'`
   writes `flee.webm` (a survivor fleeing him in the dark), `kill.webm` (a first-person saw kill, then a tree drop) and
   a still to `captures/proof/`. `--stills` takes only look stills of flee, kill and fell plus the hunt (fast);
-  `--perf` measures GPU ms per scene at both fern densities; `--sweep` turns costs off one at a time in the chase lane.
+  `--saw` takes the chainsaw's stills (dark, torch, close, third person), the pull-start clip (stage `pull`: engine off
+  at a trunk, a survivor's torch nearby) and its GPU cost (shown at 4× and 1× MSAA vs hidden); `--perf` measures GPU ms per scene at both fern densities; `--sweep` turns costs off one at a time in the chase lane.
   Studio has no Playwright ffmpeg, so video runs need the mini.
 - `bun run check` (typecheck, tests, build). Tests run through HiveMind: `hivemind run --kind cargo -- bun run test`.
 

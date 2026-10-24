@@ -1,0 +1,9 @@
+{
+  "licence": "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+  "model": "Chainsaw",
+  "author": "Lassi Kaukonen (https://sketchfab.com/thesidekick)",
+  "source": "https://sketchfab.com/3d-models/052d0c1d5e6f48358dc89d6cefe45a38",
+  "files": {
+    "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-089/052d0c1d5e6f48358dc89d6cefe45a38.glb": "97ef54ae82919d698d9b8be9b55a733d8bb2bf3356676d09da22cc264f0de294"
+  }
+}
