@@ -869,6 +869,64 @@ defineClass("paint", {
   },
 })
 
+// ---- weathered: enamelled sheet-steel furniture (lockers, filing cabinets, safes, key boxes) ---------------------
+// p0 paint rgb, wear   p1 grime, rust, streaks, -
+// UV metres with v = height above the floor (box-projected by the caller; tops carry v ≥ 2 so they skip the kick zone).
+// The painted-metal scan's flake mask chips through to bare steel, rust blooms in the chips and the scuffed kick zone,
+// grime settles low and in run-down streaks, and the scan's AO and normal stay. Uses vertex colours for baked AO.
+defineClass("weathered", {
+  graph: (p) => {
+    const base = uv()
+    const A = texture(noise(), base.div(3.1))
+    const B = texture(noise(), base.div(0.7))
+    const ang = 0.37
+    const ca = Math.cos(ang)
+    const sa = Math.sin(ang)
+    const w = base.add(A.rg.sub(0.5).mul(0.07))
+    const q = vec2(w.x.mul(ca).sub(w.y.mul(sa)), w.x.mul(sa).add(w.y.mul(ca)))
+    const s0 = sample("metal_painted", q)
+    const sn = s0.normal.mul(2).sub(1)
+    const normal = vec3(sn.x.mul(ca).add(sn.y.mul(sa)), sn.y.mul(ca).sub(sn.x.mul(sa)), sn.z).mul(0.5).add(0.5)
+    const h = base.y
+    const kick = float(1).sub(smoothstep(0.04, 0.42, h))
+    const handle = smoothstep(0.85, 1.0, h).mul(float(1).sub(smoothstep(1.1, 1.3, h)))
+    const patchy = smoothstep(0.45, 0.95, A.b)
+    const wear = clamp(kick.mul(0.75).add(handle.mul(0.35)).add(patchy.mul(0.4)), 0, 1).mul(p[0].w)
+    const bare = aaStep(mix(float(0.985), float(0.55), clamp(wear, 0, 1)), s0.metal, 0.02)
+    // Rain-streak runs: fine across, long down.
+    const run = texture(noise(), vec2(base.x.div(0.45), base.y.div(5.5))).a
+    const streak = smoothstep(0.62, 0.92, run).mul(p[1].z)
+    const grime = clamp(kick.mul(0.55).add(patchy.mul(0.3)).add(streak.mul(0.45)).add(B.a.mul(0.18)), 0, 1).mul(p[1].x)
+    const rust = clamp(bare.mul(B.r.mul(0.7).add(0.35)).add(kick.mul(smoothstep(0.6, 0.88, B.g)).mul(0.7)).add(streak.mul(smoothstep(0.7, 0.95, B.b)).mul(0.5)), 0, 1).mul(p[1].y)
+    const lum = luma(s0.color).div(0.45)
+    const paint = p[0].xyz.mul(mix(float(0.86), float(1.08), lum)).mul(float(1).sub(grime.mul(0.6)))
+    const rustColor = mix(vec3(0.075, 0.03, 0.012), vec3(0.2, 0.085, 0.03), B.b)
+    const color = mix(mix(paint, vec3(0.2, 0.2, 0.19), bare), rustColor, rust)
+    const rough = mix(mix(float(0.4).add(s0.rough.mul(0.4)).add(grime.mul(0.35)), float(0.42), bare), float(0.88), rust)
+    return { color, rough: clamp(rough, 0.05, 1), metal: bare.mul(float(1).sub(rust)), normal: mix(normal, FLAT, rust.mul(0.4)), normalScale: float(0.4), ao: s0.ao }
+  },
+  flags: (m) => {
+    m.vertexColors = true
+  },
+})
+
+const weatheredCache = new Map<string, SurfaceMaterial>()
+
+/**
+ * Enamelled sheet steel with chips, rust, grime and baked vertex AO (`weathered` class; every member shares one
+ * shader). `wear` 0 new … 1 battered; `grime`, `rust`, `streaks` 0..1. Cached by parameters; clone before changing flags.
+ */
+export function weatheredSteel(o: { color: THREE.ColorRepresentation; wear?: number; grime?: number; rust?: number; streaks?: number; name?: string }): SurfaceMaterial {
+  const params = [...rgb(o.color), o.wear ?? 0.5, o.grime ?? 0.5, o.rust ?? 0.3, o.streaks ?? 0.4, 0]
+  const key = params.map((v) => v.toFixed(4)).join(",")
+  const hit = weatheredCache.get(key)
+  if (hit) return hit
+  const m = member("weathered", params)
+  m.name = o.name ?? `weathered_${weatheredCache.size}`
+  weatheredCache.set(key, m)
+  return m
+}
+
 // ---- tile: glazed ceramic wall tile with grout -------------------------------------------------------------------
 // p0 glaze rgb, tile size (m)   p1 grout rgb, joint (m)
 defineClass("tile", {

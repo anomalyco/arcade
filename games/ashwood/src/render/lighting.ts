@@ -384,7 +384,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
     },
     { key: "light.spillInterior", label: "Spot spill/bounce indoors", group: "Lighting", min: 0, max: 0.6, step: 0.01, value: 0.22 },
     { key: "light.spillExterior", label: "Spot spill outdoors", group: "Lighting", min: 0, max: 0.3, step: 0.005, value: 0.02 },
-    { key: "light.bounce", label: "Interior bounce from lamps", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.005, value: 0.3 },
+    { key: "light.bounce", label: "Interior bounce from lamps", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.005, value: 0.12 },
     { key: "light.sodiumShift", label: "Sodium deepening (towards orange)", group: "Lighting", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },

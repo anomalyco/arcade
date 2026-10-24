@@ -51,6 +51,12 @@ export class BridgeMaterials {
     const recipe = this.recipes.get(material.name)
     if (recipe) return recipe(material)
     if (material.name === "interior_paint") return { base: this.white, normal: this.flatNormal, orm: this.white, color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 1, blend: false }
+    // Library surface classes keep their base colour and finish natively; their TSL wear and grime need a port.
+    const surface = material as Material & { surfaceClass?: string; surfaceParams?: Float32Array }
+    if (surface.surfaceParams && (surface.surfaceClass === "weathered" || surface.surfaceClass === "flat")) {
+      const p = surface.surfaceParams, weathered = surface.surfaceClass === "weathered"
+      return { base: this.white, normal: this.flatNormal, orm: this.white, color: [p[0], p[1], p[2], 1], roughness: weathered ? 0.6 : p[8], metalness: weathered ? 0 : p[10], normalScale: 1, blend: false }
+    }
     if (!(material instanceof MeshStandardMaterial) || "isNodeMaterial" in material) throw new Error(`Native material recipe required: ${material.name || material.type}`)
     if (material.emissiveIntensity && material.emissive.getHex() !== 0) throw new Error(`Emissive recipe required: ${material.name}`)
     if (material.roughnessMap && material.metalnessMap && material.roughnessMap !== material.metalnessMap) throw new Error(`Pack roughness/metalness for ${material.name}`)

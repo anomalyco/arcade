@@ -21,6 +21,8 @@ export class InteractiveProp {
   readonly sockets = new Map<string, Socket>()
   readonly targets: PropTarget[] = []
   readonly solids: Mesh[] = []
+  /** Contents drawn only while one of their parts is open (shut drawers cost no draws). */
+  readonly reveals: { node: Object3D; parts: string[] }[] = []
   readonly digits = [0, 0, 0]
   hideVolume: Box3 | null = null
   hidingCompartments: { volume: Box3; doors: string[] }[] = []
@@ -39,6 +41,12 @@ export class InteractiveProp {
     this.parts.set(id, p)
     this.targets.push({ id: `${this.id}/${id}`, node: handle, label: () => `${p.target ? "Close" : "Open"} ${p.label}`, use: () => this.toggle(id), available: () => true })
     return p
+  }
+
+  reveal(node: Object3D, ...parts: string[]): Object3D {
+    this.reveals.push({ node, parts })
+    node.visible = parts.some(id => (this.parts.get(id)?.amount ?? 0) > 0.002)
+    return node
   }
 
   socket(id: string, node: Group, item: Item, part?: string): Socket {
@@ -75,6 +83,7 @@ export class InteractiveProp {
     const motion = part.motion
     if (motion.kind === "slide") part.pivot.position.copy(part.origin).addScaledVector(motion.offset, amount)
     else part.pivot.rotation[motion.axis] = part.restAngle + motion.angle * amount
+    for (const r of this.reveals) if (r.parts.includes(part.id)) r.node.visible = r.parts.some(id => (id === part.id ? amount : this.parts.get(id)!.amount) > 0.002)
     part.pivot.updateWorldMatrix(true, true)
   }
 
@@ -123,6 +132,6 @@ export class InteractiveProp {
     const geometries = new Set<Mesh["geometry"]>(), materials = new Set<Mesh["material"]>()
     this.root.traverse(node => { if (node instanceof Mesh) { geometries.add(node.geometry); materials.add(node.material) } })
     geometries.forEach(g => g.dispose())
-    materials.forEach(m => { for (const material of Array.isArray(m) ? m : [m]) material.dispose() })
+    materials.forEach(m => { for (const material of Array.isArray(m) ? m : [m]) if (!material.userData.shared) material.dispose() })
   }
 }

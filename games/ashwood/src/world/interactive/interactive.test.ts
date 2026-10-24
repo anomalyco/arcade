@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Box3, BoxGeometry, Float32BufferAttribute, Matrix4, Scene, Vector3 } from "three/webgpu"
 import { packWorldGeometry, surfaceSections } from "../../gpu/world-bridge"
-import { breaker, desk, filingCabinet, keyCabinet, locker, lockerBank, mobileShelving, wallSafe } from "./assemblies"
+import { breaker, desk, filingCabinet, keyCabinet, locker, lockerBank, mobileShelving, terminalHousing, wallSafe } from "./assemblies"
 import { addNote, bindPropPersistence, hasNote, inventoryState, mapMarks, restoreInventory } from "../../game/inventory"
 import { Terminal, type TerminalDoor } from "./terminal"
 import { InteractiveWorld } from "./world"
@@ -43,6 +43,19 @@ describe("articulated world", () => {
     expect(prop.parts.get("drawer-1")!.amount).toBeCloseTo(0.18)
     expect(prop.parts.get("drawer-2")!.amount).toBe(0)
     expect(prop.sockets.get("drawer-0")!.node.visible).toBe(false)
+    h.world.dispose()
+  })
+
+  test("drawer contents are drawn only while the drawer is open, and the terminal keeps its screen mount", () => {
+    const h = harness(), prop = h.world.add(filingCabinet(placement))
+    const files = prop.reveals.find(r => r.parts.includes("drawer-1"))!.node
+    expect(files.visible).toBe(false)
+    prop.toggle("drawer-1"); h.world.update(1 / 60)
+    expect(files.visible).toBe(true)
+    prop.toggle("drawer-1"); h.advance()
+    expect(files.visible).toBe(false)
+    const housing = terminalHousing({ ...placement, id: "crt" }, new Terminal("crt", { powered: () => true, lockers: () => [], logs: () => [], specimens: () => [], doors: () => [], setDoor: () => false }))
+    expect(housing.glass.parent).toBe(housing.prop.root)
     h.world.dispose()
   })
 
