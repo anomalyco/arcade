@@ -1,11 +1,11 @@
-import { Box3, Group, Mesh, Vector3, type Object3D } from "three/webgpu"
+import { Box3, Group, Matrix4, Mesh, Vector3, type Object3D } from "three/webgpu"
 
 export type Item = { id: string; kind: "key" | "badge" | "clipboard" | "map"; label: string }
 export type Motion = { kind: "slide"; offset: Vector3 } | { kind: "hinge"; axis: "x" | "y" | "z"; angle: number }
 export type Part = { id: string; label: string; pivot: Group; motion: Motion; amount: number; target: number; origin: Vector3; restAngle: number; key?: string }
 export type Socket = { id: string; node: Group; item: Item; part?: string; taken: boolean }
 export type PropEvent = { kind: "move"; prop: string; part: string; open: boolean } | { kind: "take"; prop: string; socket: string; item: Item } | { kind: "breaker"; prop: string; on: boolean }
-export type PropState = { id: string; parts: Record<string, { amount: number; target: number }>; taken: string[]; digits: number[] }
+export type PropState = { id: string; parts: Record<string, { amount: number; target: number }>; taken: string[]; digits: number[]; powered: boolean }
 export type PropTarget = { id: string; node: Object3D; label: () => string; use: () => boolean; available: () => boolean }
 export type PropHost = {
   hasKey: (id: string) => boolean
@@ -25,6 +25,7 @@ export class InteractiveProp {
   hideVolume: Box3 | null = null
   combination: readonly number[] | null = null
   powered = true
+  onRestore?: () => void
   private host: PropHost | null = null
 
   constructor(readonly id: string, readonly storey: number) { this.root.name = id }
@@ -91,14 +92,15 @@ export class InteractiveProp {
   }
 
   /** This is physical concealment: the actor must be inside and the door shut, not teleported to a hiding flag. */
-  hides(worldPosition: Vector3): boolean {
+  hides(worldPosition: Vector3 | Box3): boolean {
     if (!this.hideVolume || [...this.parts.values()].some(p => p.amount > 0.08)) return false
     this.root.updateWorldMatrix(true, false)
+    if (worldPosition instanceof Box3) return this.hideVolume.containsBox(worldPosition.clone().applyMatrix4(new Matrix4().copy(this.root.matrixWorld).invert()))
     return this.hideVolume.containsPoint(this.root.worldToLocal(worldPosition.clone()))
   }
 
   save(): PropState {
-    return { id: this.id, parts: Object.fromEntries([...this.parts].map(([id, p]) => [id, { amount: p.amount, target: p.target }])), taken: [...this.sockets.values()].filter(s => s.taken).map(s => s.id), digits: [...this.digits] }
+    return { id: this.id, parts: Object.fromEntries([...this.parts].map(([id, p]) => [id, { amount: p.amount, target: p.target }])), taken: [...this.sockets.values()].filter(s => s.taken).map(s => s.id), digits: [...this.digits], powered: this.powered }
   }
 
   restore(state: PropState): void {
@@ -107,10 +109,12 @@ export class InteractiveProp {
       const value = state.parts[id]
       if (!value || ![value.amount, value.target].every(n => Number.isFinite(n) && n >= 0 && n <= 1)) throw new Error(`Invalid part state ${id}`)
     }
-    if (state.digits.length !== 3 || state.digits.some(n => !Number.isInteger(n) || n < 0 || n > 9) || state.taken.some(id => !this.sockets.has(id))) throw new Error(`Invalid prop state ${this.id}`)
+    if (typeof state.powered !== "boolean" || state.digits.length !== 3 || state.digits.some(n => !Number.isInteger(n) || n < 0 || n > 9) || state.taken.some(id => !this.sockets.has(id))) throw new Error(`Invalid prop state ${this.id}`)
     for (const [id, p] of this.parts) { Object.assign(p, state.parts[id]); this.pose(p, p.amount) }
     for (const s of this.sockets.values()) { s.taken = state.taken.includes(s.id); s.node.visible = !s.taken }
     this.digits.splice(0, 3, ...state.digits)
+    this.powered = state.powered
+    this.onRestore?.()
   }
 
   dispose(): void {

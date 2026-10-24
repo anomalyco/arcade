@@ -2,6 +2,7 @@ import { Box3, CanvasTexture, CylinderGeometry, Group, Mesh, MeshStandardMateria
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { floorWorldY } from "../interior/plan"
 import { InteractiveProp, type Item } from "./prop"
+import type { Terminal } from "./terminal"
 
 export type Placement = { id: string; storey: number; x: number; z: number; yaw?: number; height?: number }
 type Finish = "steel" | "inside" | "brass" | "paper" | "wood" | "rubber"
@@ -129,7 +130,7 @@ export function locker(p: Placement & { number: number }, contents: Item[] = [])
   const leaf = swingingDoor(prop, 0.9, 2.05, 0.9, String(p.number).padStart(2, "0"))
   for (let i = 0; i < 4; i++) box(prop, leaf, [0.25, 0.012, 0.003], [0.45, 1.72 + i * 0.035, 0.016], "inside", false)
   box(prop, prop.root, [0.84, 0.025, 0.84], [0, 1.84, 0], "inside")
-  prop.hideVolume = new Box3(new Vector3(-0.4, 0.03, -0.4), new Vector3(0.4, 1.8, 0.39))
+  prop.hideVolume = new Box3(new Vector3(-0.4, -0.01, -0.4), new Vector3(0.4, 1.8, 0.39))
   contents.forEach((item, i) => itemSocket(prop, prop.root, `shelf-${i}`, item, [-0.23 + i * 0.23, 1.87, 0.08], "door"))
   // An inside pull can be reached without aiming through the closed door.
   const handle = pull(prop, leaf, 0.7, 0.95, -0.06)
@@ -138,6 +139,7 @@ export function locker(p: Placement & { number: number }, contents: Item[] = [])
 }
 
 export function keyCabinet(p: Placement & { key?: string }, keys: { number: number; item: Item }[]) {
+  if (new Set(keys.map(k => k.number)).size !== keys.length || keys.some(k => !Number.isInteger(k.number) || k.number < 1 || k.number > 10)) throw new Error("Key cabinet hooks must be unique numbers 1–10")
   const prop = start(p)
   carcass(prop, prop.root, 0.62, 0.75, 0.14)
   swingingDoor(prop, 0.62, 0.75, 0.14, "KEY REGISTER", p.key)
@@ -152,16 +154,20 @@ export function keyCabinet(p: Placement & { key?: string }, keys: { number: numb
 }
 
 export function wallSafe(p: Placement & { combination: readonly [number, number, number] }, contents: Item[] = []) {
+  if (p.combination.some(n => !Number.isInteger(n) || n < 0 || n > 9)) throw new Error("Safe combination must contain three digits")
   const prop = start(p)
   carcass(prop, prop.root, 0.62, 0.6, 0.38)
   const leaf = swingingDoor(prop, 0.62, 0.6, 0.38, "SECURITY")
   prop.combination = p.combination
+  const wheels: Mesh[] = []
   for (let i = 0; i < 3; i++) {
     const wheel = new Mesh(new CylinderGeometry(0.028, 0.028, 0.04, 20), material("brass"))
     wheel.rotation.x = Math.PI / 2; wheel.position.set(0.2 + i * 0.07, 0.3, 0.04); leaf.add(wheel)
+    wheels.push(wheel)
     prop.targets.push({ id: `${p.id}/dial-${i}`, node: wheel, label: () => `Dial ${i + 1}: ${prop.digits[i]}`, available: () => prop.parts.get("door")!.amount < 0.08,
       use: () => { prop.digits[i] = (prop.digits[i] + 1) % 10; wheel.rotation.y = prop.digits[i] * Math.PI / 5; return true } })
   }
+  prop.onRestore = () => wheels.forEach((wheel, i) => { wheel.rotation.y = prop.digits[i] * Math.PI / 5 })
   contents.forEach((item, i) => itemSocket(prop, prop.root, `safe-${i}`, item, [-0.16 + i * 0.16, 0.055, 0], "door"))
   return prop
 }
@@ -176,10 +182,12 @@ export function breaker(p: Placement, onChange: (on: boolean) => void) {
   const target = prop.targets[0]
   target.label = () => prop.powered ? "Switch floor power off" : "Switch floor power on"
   target.use = () => { if (!prop.toggle("switch")) return false; prop.powered = prop.parts.get("switch")!.target === 0; onChange(prop.powered); return true }
+  prop.onRestore = () => onChange(prop.powered)
   return prop
 }
 
 export function mobileShelving(p: Placement, travel = 1.15) {
+  if (!Number.isFinite(travel) || travel <= 0) throw new Error("Shelving travel must be positive")
   const prop = start(p)
   for (const z of [-0.8, 0.8]) box(prop, prop.root, [travel + 0.85, 0.012, 0.035], [travel / 2, 0.008, z], "brass", false)
   const carriage = new Group(); prop.root.add(carriage)
@@ -193,4 +201,19 @@ export function mobileShelving(p: Placement, travel = 1.15) {
   const update = prop.update.bind(prop)
   prop.update = dt => { update(dt); wheel.rotation.z = prop.parts.get("carriage")!.amount * Math.PI * 4 }
   return prop
+}
+
+export function terminalHousing(p: Placement, terminal: Terminal) {
+  const prop = start(p)
+  box(prop, prop.root, [0.52, 0.35, 0.42], [0, 0.25, -0.025], "inside")
+  box(prop, prop.root, [0.23, 0.08, 0.22], [0, 0.04, 0], "steel")
+  // The native ScreenQuadPass fills this recessed face, separately from the opaque housing.
+  for (const x of [-0.245, 0.245]) box(prop, prop.root, [0.03, 0.35, 0.035], [x, 0.25, 0.198], "steel", false)
+  for (const y of [0.09, 0.41]) box(prop, prop.root, [0.49, 0.03, 0.035], [0, y, 0.198], "steel", false)
+  const keyboard = box(prop, prop.root, [0.5, 0.035, 0.2], [0, 0.025, 0.39], "inside")
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 12; col++) box(prop, prop.root, [0.03, 0.012, 0.032], [-0.21 + col * 0.038, 0.05, 0.32 + row * 0.043], "steel", false)
+  prop.targets.push({ id: `${p.id}/terminal`, node: keyboard, label: () => "Use terminal", available: () => terminal.services.powered(), use: () => terminal.enter() })
+  const glass = new Group(); glass.position.set(0, 0.25, 0.216); prop.root.add(glass)
+  prop.root.updateWorldMatrix(true, true)
+  return { prop, glass, terminal, placement: { center: glass.getWorldPosition(new Vector3()).toArray() as [number, number, number], yaw: Math.PI / 2 - (p.yaw ?? 0), width: 0.46, height: 0.29 } }
 }

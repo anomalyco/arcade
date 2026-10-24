@@ -1,5 +1,6 @@
 import { Box3, Group, Ray, Vector3, type Camera, type Mesh } from "three/webgpu"
 import type { Box, WorldContext } from "../context"
+import type { DoorInternals } from "../../game/hunter/nav"
 import { visibleInHierarchy } from "../../gpu/world-bridge"
 import { InteractiveProp, type Item, type Part, type PropEvent, type PropState, type PropTarget } from "./prop"
 
@@ -24,7 +25,7 @@ export class InteractiveWorld {
   private readonly direction = new Vector3()
   private dirty = false
 
-  constructor(private readonly ctx: Pick<WorldContext, "scene" | "colliders">, private readonly host: InteractiveHost) {
+  constructor(private readonly ctx: Pick<WorldContext, "scene" | "colliders"> & Partial<Pick<WorldContext, "doors">>, private readonly host: InteractiveHost) {
     this.root.name = "interactive-props"
     ctx.scene.add(this.root)
   }
@@ -63,13 +64,14 @@ export class InteractiveWorld {
       return false
     })
     const before = moving.map(mesh => this.meshBounds(mesh).clone())
+    const own = new Set(prop.solids.map(mesh => this.boxes.get(mesh)))
     prop.pose(part, next)
     let clear = true
     for (const [i, mesh] of moving.entries()) {
       const sweep = before[i].union(this.meshBounds(mesh))
       if (sweep.intersectsBox(body)) { clear = false; break }
-      for (const [otherMesh, box] of this.boxes) {
-        if (prop.solids.includes(otherMesh)) continue
+      for (const box of this.ctx.colliders) {
+        if (own.has(box)) continue
         const other = new Box3(new Vector3(...box.min), new Vector3(...box.max))
         if (sweep.intersectsBox(other)) { clear = false; break }
       }
@@ -90,8 +92,8 @@ export class InteractiveWorld {
   }
 
   hiddenIn(): string | null {
-    const center = this.host.body().getCenter(new Vector3())
-    for (const prop of this.props.values()) if (prop.hides(center)) return prop.id
+    const body = this.host.body()
+    for (const prop of this.props.values()) if (prop.hides(body)) return prop.id
     return null
   }
 
@@ -114,6 +116,10 @@ export class InteractiveWorld {
       const blocked = this.ctx.colliders.some(box => {
         this.bounds.set(new Vector3(...box.min), new Vector3(...box.max))
         return this.ray.intersectBox(this.bounds, hit) && hit.distanceTo(this.cameraPosition) < distance - 0.06
+      }) || (this.ctx.doors?.all() as readonly DoorInternals[] | undefined)?.some(door => {
+        const o = this.ray.origin, d = this.ray.direction
+        const hit = door.ray(o.x, o.y, o.z, d.x, d.y, d.z)
+        return hit >= 0 && hit < distance - 0.06
       })
       const rank = off / Math.max(distance, 0.01) + distance * 0.015
       if (!blocked && rank < score) { score = rank; best = target }

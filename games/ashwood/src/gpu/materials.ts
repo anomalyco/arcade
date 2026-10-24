@@ -1,4 +1,4 @@
-import { Color, MeshStandardMaterial, type Material, type Texture } from "three/webgpu"
+import { MeshStandardMaterial, type Material, type Texture } from "three/webgpu"
 import { imageTexture } from "@arcade/kit/gpu/gltf"
 import type { BridgeSurface } from "./world-bridge"
 
@@ -57,7 +57,7 @@ export class BridgeMaterials {
       this.texture(material.map, true, this.white), this.texture(material.normalMap, false, this.flatNormal, true),
       this.texture(material.roughnessMap ?? material.metalnessMap, false, this.white), this.texture(material.aoMap, false, this.white),
     ])
-    const color = new Color().copy(material.color).convertLinearToSRGB()
+    const color = material.color
     return { base, normal, orm, ao, color: [color.r, color.g, color.b, material.opacity], roughness: material.roughness, metalness: material.metalness,
       normalScale: material.normalScale.x, aoStrength: material.aoMap ? material.aoMapIntensity : 0, alphaCutoff: material.alphaTest, blend: material.transparent }
   }

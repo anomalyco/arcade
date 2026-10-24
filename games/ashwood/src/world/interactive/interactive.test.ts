@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { Box3, BoxGeometry, Matrix4, Scene, Vector3 } from "three/webgpu"
 import { packWorldGeometry } from "../../gpu/world-bridge"
-import { desk, filingCabinet, keyCabinet, locker, mobileShelving, wallSafe } from "./assemblies"
+import { breaker, desk, filingCabinet, keyCabinet, locker, mobileShelving, wallSafe } from "./assemblies"
+import { Terminal, type TerminalDoor } from "./terminal"
 import { InteractiveWorld } from "./world"
 import type { Box } from "../context"
 import type { Item, PropEvent } from "./prop"
@@ -73,6 +74,54 @@ describe("articulated world", () => {
     safe.digits.splice(0, 3, 2, 4, 7); expect(safe.toggle("door")).toBe(true)
     h.world.dispose()
   })
+
+  test("shelving also respects existing building walls", () => {
+    const h = harness(), prop = h.world.add(mobileShelving({ ...placement, storey: 0 }))
+    h.colliders.push({ min: [3.6, 0, 2], max: [3.7, 3, 6] })
+    prop.toggle("carriage"); h.advance()
+    expect(prop.parts.get("carriage")!.amount).toBeLessThan(0.2)
+    h.world.dispose()
+    expect(h.colliders).toHaveLength(1)
+  })
+
+  test("breaker restores circuit state as well as switch pose", () => {
+    const h = harness()
+    let power = true
+    const prop = h.world.add(breaker(placement, on => { power = on }))
+    prop.targets[0].use(); h.advance()
+    expect(power).toBe(false)
+    const saved = h.world.save()
+    prop.targets[0].use(); h.advance()
+    expect(power).toBe(true)
+    h.world.restore(saved)
+    expect(power).toBe(false)
+    expect(prop.parts.get("switch")!.amount).toBe(1)
+    h.world.dispose()
+  })
+})
+
+test("terminal operates the live selected door, preserves locks, paginates and disconnects on power loss", () => {
+  let power = true
+  const doors: TerminalDoor[] = [{ id: "s0:0-38", label: "SECURITY", open: false, locked: true }, { id: "s2:2-06", label: "COLD ROOM", open: false, locked: false }]
+  const commands: string[] = []
+  const terminal = new Terminal("security-console", { powered: () => power, lockers: () => Array.from({ length: 14 }, (_, i) => ({ id: String(i), text: `LOCKER ${i}` })), logs: () => [], specimens: () => [], doors: () => doors,
+    setDoor: (id, open) => { commands.push(id); doors.find(d => d.id === id)!.open = open; return true } })
+  terminal.enter(); terminal.key("Enter")
+  for (let i = 0; i < 11; i++) terminal.key("ArrowDown")
+  expect(terminal.frame().lines[0]).toBe("LOCKER 10")
+  terminal.key("Backspace"); terminal.key("ArrowDown"); terminal.key("ArrowDown"); terminal.key("Enter")
+  terminal.frame(); terminal.key("Enter")
+  expect(commands).toHaveLength(0)
+  expect(terminal.status).toContain("ACCESS DENIED")
+  terminal.key("ArrowDown"); terminal.frame()
+  doors.reverse()
+  terminal.key("Enter")
+  expect(commands).toEqual(["s2:2-06"])
+  expect(doors[0].open).toBe(true)
+  power = false
+  expect(terminal.frame().powered).toBe(false)
+  expect(terminal.active).toBe(false)
+  expect(terminal.enter()).toBe(false)
 })
 
 test("native bridge retains storey height, transformed normals and geometry groups", () => {
